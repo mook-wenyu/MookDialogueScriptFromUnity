@@ -58,7 +58,11 @@ namespace MookDialogueScript
 
         public override string ToString()
         {
-            return Value?.ToString() ?? "null";
+            if (Value == null)
+                return "null";
+            if (Type == ValueType.Boolean)
+                return Value.ToString().ToLower();
+            return Value.ToString();
         }
     }
 
@@ -123,12 +127,10 @@ namespace MookDialogueScript
         /// <param name="name">变量名</param>
         /// <param name="getter">获取变量值的委托</param>
         /// <param name="setter">设置变量值的委托</param>
-        /// <param name="description">变量描述</param>
-        public void RegisterBuiltinVariable(string name, Func<object> getter, Action<object> setter, string description = "")
+        public void RegisterBuiltinVariable(string name, Func<object> getter, Action<object> setter)
         {
-            _variableManager.RegisterBuiltinVariable(name, getter, setter, description);
+            _variableManager.RegisterBuiltinVariable(name, getter, setter);
         }
-
 
         /// <summary>
         /// 注册对象实例的属性作为脚本变量
@@ -141,12 +143,21 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 获取所有已注册的变量信息
+        /// 获取所有内置变量
         /// </summary>
-        /// <returns>变量名和描述的字典</returns>
-        public Dictionary<string, string> GetRegisteredVariables()
+        /// <returns>内置变量字典</returns>
+        public Dictionary<string, RuntimeValue> GetBuiltinVariables()
         {
-            return _variableManager.GetRegisteredVariables();
+            return _variableManager.GetBuiltinVariables();
+        }
+
+        /// <summary>
+        /// 获取所有变量（包括内置变量和脚本变量）
+        /// </summary>
+        /// <returns>所有变量字典</returns>
+        public Dictionary<string, RuntimeValue> GetAllVariables()
+        {
+            return _variableManager.GetAllVariables();
         }
 
         /// <summary>
@@ -215,16 +226,6 @@ namespace MookDialogueScript
         public void RegisterObjectFunctions(string objectName, object instance)
         {
             _functionManager.RegisterObjectFunctions(objectName, instance);
-        }
-
-        /// <summary>
-        /// 注册脚本函数
-        /// </summary>
-        /// <param name="name">函数名</param>
-        /// <param name="function">函数</param>
-        public void RegisterFunction(string name, Func<List<RuntimeValue>, Task<RuntimeValue>> function)
-        {
-            _functionManager.RegisterScriptFunction(name, function);
         }
 
         /// <summary>

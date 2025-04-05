@@ -24,6 +24,7 @@ namespace MookDialogueScript
     public class DefaultDialogueLoader : IDialogueLoader
     {
         private readonly string _rootDir;
+        private readonly string[] _extensions;
 
         public DefaultDialogueLoader() : this(string.Empty)
         {
@@ -33,7 +34,8 @@ namespace MookDialogueScript
         /// 创建一个默认对话脚本加载器
         /// </summary>
         /// <param name="rootDir">脚本文件根目录</param>
-        public DefaultDialogueLoader(string rootDir)
+        /// <param name="extensions">脚本文件扩展名数组（包含点号，如 .txt, .mds）</param>
+        public DefaultDialogueLoader(string rootDir, string[] extensions = null)
         {
             if (string.IsNullOrEmpty(rootDir))
             {
@@ -42,7 +44,8 @@ namespace MookDialogueScript
             else
             {
                 _rootDir = rootDir;
-            } 
+            }
+            _extensions = extensions ?? new[] { ".txt", ".mds" };
         }
 
         /// <summary>
@@ -51,13 +54,18 @@ namespace MookDialogueScript
         public void LoadScripts(Runner runner)
         {
             // 加载所有对话脚本
-            var assets = Resources.LoadAll<TextAsset>(_rootDir);
+            var assets = Resources.LoadAll(_rootDir);
+
             foreach (var asset in assets)
             {
                 try
                 {
-                    LoadScriptContent(asset.text, runner, asset.name);
-                    Debug.Log($"加载脚本文件 {asset.name} 成功");
+                    var textAsset = asset as TextAsset;
+                    if (textAsset != null)
+                    {
+                        LoadScriptContent(textAsset.text, runner, asset.name);
+                        Debug.Log($"加载脚本文件 {asset.name} 成功");
+                    }
                 }
                 catch (Exception ex)
                 {

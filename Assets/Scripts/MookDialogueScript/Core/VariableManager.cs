@@ -18,26 +18,12 @@ namespace MookDialogueScript
         public string Name { get; }
 
         /// <summary>
-        /// 变量描述
-        /// </summary>
-        public string Description { get; }
-
-        /// <summary>
-        /// 变量是否只读
-        /// </summary>
-        public bool IsReadOnly { get; }
-
-        /// <summary>
         /// 创建一个新的脚本变量特性
         /// </summary>
         /// <param name="name">在脚本中使用的变量名，如果为null则使用属性/字段名</param>
-        /// <param name="description">变量描述</param>
-        /// <param name="isReadOnly">是否只读</param>
-        public ScriptVarAttribute(string name = "", string description = "", bool isReadOnly = false)
+        public ScriptVarAttribute(string name = "")
         {
             Name = name;
-            Description = description;
-            IsReadOnly = isReadOnly;
         }
     }
 
@@ -49,14 +35,11 @@ namespace MookDialogueScript
         #region 字段和属性
 
         // 脚本定义的变量字典
-        private Dictionary<string, RuntimeValue> _scriptVariables = new Dictionary<string, RuntimeValue>();
+        private Dictionary<string, RuntimeValue> _scriptVariables = new Dictionary<string, RuntimeValue>(StringComparer.OrdinalIgnoreCase);
 
         // 内置变量字典：变量名 -> (getter, setter)
         private Dictionary<string, (Func<object> getter, Action<object> setter)> _builtinVariables =
-            new Dictionary<string, (Func<object> getter, Action<object> setter)>();
-
-        // 变量描述字典
-        private Dictionary<string, string> _variableDescriptions = new Dictionary<string, string>();
+            new Dictionary<string, (Func<object> getter, Action<object> setter)>(StringComparer.OrdinalIgnoreCase);
 
         #endregion
 
@@ -68,14 +51,9 @@ namespace MookDialogueScript
         /// <param name="name">变量名</param>
         /// <param name="getter">获取变量值的委托</param>
         /// <param name="setter">设置变量值的委托</param>
-        /// <param name="description">变量描述</param>
-        public void RegisterBuiltinVariable(string name, Func<object> getter, Action<object> setter, string description = "")
+        public void RegisterBuiltinVariable(string name, Func<object> getter, Action<object> setter)
         {
             _builtinVariables[name] = (getter, setter);
-            if (!string.IsNullOrEmpty(description))
-            {
-                _variableDescriptions[name] = description;
-            }
         }
 
         /// <summary>
@@ -156,7 +134,7 @@ namespace MookDialogueScript
                     if (attribute != null)
                     {
                         string varName = attribute.Name ?? property.Name;
-                        RegisterPropertyAsVariable(property, varName, attribute.IsReadOnly, attribute.Description);
+                        RegisterPropertyAsVariable(property, varName);
                     }
                 }
                 catch (Exception ex)
@@ -182,8 +160,8 @@ namespace MookDialogueScript
                     if (attribute != null)
                     {
                         string varName = attribute.Name ?? field.Name;
-                        bool isReadOnly = attribute.IsReadOnly || field.IsInitOnly;
-                        RegisterFieldAsVariable(field, varName, isReadOnly, attribute.Description);
+                        bool isReadOnly = field.IsInitOnly;
+                        RegisterFieldAsVariable(field, varName, isReadOnly);
                     }
                 }
                 catch (Exception ex)
@@ -197,15 +175,13 @@ namespace MookDialogueScript
         /// <summary>
         /// 注册属性作为变量
         /// </summary>
-        private void RegisterPropertyAsVariable(PropertyInfo property, string varName, bool isReadOnly, string description)
+        private void RegisterPropertyAsVariable(PropertyInfo property, string varName)
         {
-            _variableDescriptions[varName] = description;
-
             // 创建getter
             Func<object> getter = () => property.GetValue(null);
 
             // 创建setter
-            Action<object> setter = isReadOnly 
+            Action<object> setter = !property.CanWrite 
                 ? (obj) => { Debug.LogError($"变量 '{varName}' 是只读的"); } 
                 : (obj) => property.SetValue(null, obj);
 
@@ -215,7 +191,7 @@ namespace MookDialogueScript
         /// <summary>
         /// 注册字段作为变量
         /// </summary>
-        private void RegisterFieldAsVariable(FieldInfo field, string varName, bool isReadOnly, string description)
+        private void RegisterFieldAsVariable(FieldInfo field, string varName, bool isReadOnly)
         {
             // 创建getter
             Func<object> getter = () => field.GetValue(null);
@@ -226,7 +202,7 @@ namespace MookDialogueScript
             : (obj) => field.SetValue(null, obj);
 
             // 注册变量
-            RegisterBuiltinVariable(varName, getter, setter, description);
+            RegisterBuiltinVariable(varName, getter, setter);
         }
 
         /// <summary>
@@ -265,7 +241,7 @@ namespace MookDialogueScript
             : (obj) => property.SetValue(instance, obj);
 
             // 注册变量
-            RegisterBuiltinVariable(varName, getter, setter, $"对象属性");
+            RegisterBuiltinVariable(varName, getter, setter);
         }
 
         #endregion
@@ -291,22 +267,39 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 获取所有已注册的变量信息
+        /// 获取所有内置变量
         /// </summary>
-        /// <returns>变量名和描述的字典</returns>
-        public Dictionary<string, string> GetRegisteredVariables()
+        /// <returns>内置变量字典</returns>
+        public Dictionary<string, RuntimeValue> GetBuiltinVariables()
         {
-            var result = new Dictionary<string, string>(_variableDescriptions);
-
-            // 添加脚本变量
-            foreach (string key in _scriptVariables.Keys)
+            var result = new Dictionary<string, RuntimeValue>();
+            foreach (var pair in _builtinVariables)
             {
-                if (!result.ContainsKey(key))
-                {
-                    result[key] = "脚本变量";
-                }
+                result[pair.Key] = ConvertToRuntimeValue(pair.Value.getter());
             }
+            return result;
+        }
 
+        /// <summary>
+        /// 获取所有变量（包括内置变量和脚本变量）
+        /// </summary>
+        /// <returns>所有变量字典</returns>
+        public Dictionary<string, RuntimeValue> GetAllVariables()
+        {
+            var result = new Dictionary<string, RuntimeValue>();
+            
+            // 添加内置变量
+            foreach (var pair in _builtinVariables)
+            {
+                result[pair.Key] = ConvertToRuntimeValue(pair.Value.getter());
+            }
+            
+            // 添加脚本变量
+            foreach (var pair in _scriptVariables)
+            {
+                result[pair.Key] = pair.Value;
+            }
+            
             return result;
         }
 

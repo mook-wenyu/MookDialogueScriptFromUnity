@@ -12,105 +12,109 @@ namespace MookDialogueScript
         /// <summary>
         /// 冒号 :
         /// </summary>
-        COLON,          // :
+        COLON,
         /// <summary>
         /// 箭头 ->
         /// </summary>
-        ARROW,          // ->
+        ARROW,
         /// <summary>
         /// 双冒号 ::
         /// </summary>
-        DOUBLE_COLON,   // ::
+        DOUBLE_COLON,
         /// <summary>
         /// 左中括号 [
         /// </summary>
-        LEFT_BRACKET,   // [
+        LEFT_BRACKET,
         /// <summary>
         /// 右中括号 ]
         /// </summary>
-        RIGHT_BRACKET,  // ]
+        RIGHT_BRACKET,
         /// <summary>
         /// 左大括号 {
         /// </summary>
-        LEFT_BRACE,     // {
+        LEFT_BRACE,
         /// <summary>
         /// 右大括号 }
         /// </summary>
-        RIGHT_BRACE,    // }
+        RIGHT_BRACE,
         /// <summary>
         /// 左括号 (
         /// </summary>
-        LEFT_PAREN,     // (
+        LEFT_PAREN,
         /// <summary>
         /// 右括号 )
         /// </summary>
-        RIGHT_PAREN,    // )
+        RIGHT_PAREN,
         /// <summary>
         /// 逗号 ,
         /// </summary>
-        COMMA,          // ,
+        COMMA,
         /// <summary>
         /// 井号 #
         /// </summary>
-        HASH,           // #
+        HASH,
 
         // 运算符
         /// <summary>
         /// 加号 +
         /// </summary>
-        PLUS,           // +
+        PLUS,
         /// <summary>
         /// 减号 -
         /// </summary>
-        MINUS,          // -
+        MINUS,
         /// <summary>
         /// 乘号 *
         /// </summary>
-        MULTIPLY,       // \*
+        MULTIPLY,
         /// <summary>
         /// 除号 /
         /// </summary>
-        DIVIDE,         // /
+        DIVIDE,
         /// <summary>
         /// 取模 %
         /// </summary>
-        MODULO,         // %
+        MODULO,
         /// <summary>
-        /// 等于 ==
+        /// 等于 == 或 eq 或 is
         /// </summary>
-        EQUALS,         // ==
+        EQUALS,
         /// <summary>
-        /// 不等于 !=
+        /// 不等于 != 或 neq
         /// </summary>
-        NOT_EQUALS,     // \!=
+        NOT_EQUALS,
         /// <summary>
-        /// 大于 >
+        /// 大于 > 或 gt
         /// </summary>
-        GREATER,        // >
+        GREATER,
         /// <summary>
-        /// 小于 <
+        /// 小于 < 或 lt
         /// </summary>
-        LESS,           // <
+        LESS,
         /// <summary>
-        /// 大于等于 >=
+        /// 大于等于 >= 或 gte
         /// </summary>
-        GREATER_EQUALS, // >=
+        GREATER_EQUALS,
         /// <summary>
-        /// 小于等于 <=
+        /// 小于等于 <= 或 lte
         /// </summary>
-        LESS_EQUALS,    // <=
+        LESS_EQUALS,
         /// <summary>
-        /// 与 &&
+        /// 与 && 或 and
         /// </summary>
-        AND,            // &&
+        AND,
         /// <summary>
-        /// 或 ||
+        /// 或 || 或 or
         /// </summary>
-        OR,            // ||
+        OR,
         /// <summary>
-        /// 非 !
+        /// 非 ! 或 not
         /// </summary>
-        NOT,           // \!
+        NOT,
+        /// <summary>
+        /// 异或 ^ 或 xor
+        /// </summary>
+        XOR,
 
         // 关键字
         /// <summary>
@@ -143,7 +147,7 @@ namespace MookDialogueScript
         /// <summary>
         /// 命令关键字
         /// </summary>
-        COMMAND,        // 命令关键字
+        COMMAND,
         /// <summary>
         /// 声明变量
         /// </summary>
@@ -175,7 +179,7 @@ namespace MookDialogueScript
         /// <summary>
         /// 跳转 => or jump
         /// </summary>
-        JUMP,           // => or jump
+        JUMP,
         /// <summary>
         /// 调用 call
         /// </summary>
@@ -189,41 +193,41 @@ namespace MookDialogueScript
         /// <summary>
         /// 标识符
         /// </summary>
-        IDENTIFIER,     // 标识符
+        IDENTIFIER,
         /// <summary>
         /// 变量，以$开头 如 $name
         /// </summary>
-        VARIABLE,       // 变量，如 $name
+        VARIABLE,
         /// <summary>
         /// 数字
         /// </summary>
-        NUMBER,         // 数字
+        NUMBER,
         /// <summary>
         /// 字符串
         /// </summary>
-        STRING,         // 字符串
+        STRING,
         /// <summary>
         /// 文本 对话内容和选项内容，不需要引号的字符串
         /// </summary>
-        TEXT,           // 对话内容和选项内容，不需要引号的字符串
+        TEXT,
         /// <summary>
         /// 赋值 =
         /// </summary>
-        ASSIGN,         // =
+        ASSIGN,
 
         // 其他
         /// <summary>
         /// 换行
         /// </summary>
-        NEWLINE,        // 换行
+        NEWLINE,
         /// <summary>
         /// 缩进
         /// </summary>
-        INDENT,         // 缩进
+        INDENT,
         /// <summary>
         /// 减少缩进
         /// </summary>
-        DEDENT,         // 减少缩进
+        DEDENT,
     }
 
     public class Token

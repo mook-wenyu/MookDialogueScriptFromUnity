@@ -194,15 +194,6 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 获取所有已注册的变量信息
-        /// </summary>
-        /// <returns>变量名和描述的字典</returns>
-        public Dictionary<string, string> GetRegisteredVariables()
-        {
-            return _context.GetRegisteredVariables();
-        }
-
-        /// <summary>
         /// 获取所有脚本变量（用于保存游戏状态）
         /// </summary>
         /// <returns>脚本变量的字典</returns>
@@ -218,6 +209,24 @@ namespace MookDialogueScript
         public void LoadScriptVariables(Dictionary<string, RuntimeValue> variables)
         {
             _context.LoadScriptVariables(variables);
+        }
+
+        /// <summary>
+        /// 获取所有内置变量
+        /// </summary>
+        /// <returns>内置变量字典</returns>
+        public Dictionary<string, RuntimeValue> GetBuiltinVariables()
+        {
+            return _context.GetBuiltinVariables();
+        }
+
+        /// <summary>
+        /// 获取所有变量（包括内置变量和脚本变量）
+        /// </summary>
+        /// <returns>所有变量字典</returns>
+        public Dictionary<string, RuntimeValue> GetAllVariables()
+        {
+            return _context.GetAllVariables();
         }
 
         /// <summary>

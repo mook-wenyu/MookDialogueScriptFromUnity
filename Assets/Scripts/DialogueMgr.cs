@@ -36,13 +36,13 @@ public class DialogueMgr : MonoBehaviour
     public static class GameSystem
     {
         // 静态变量示例
-        [ScriptVar("GameVersion", "游戏版本号")]
+        [ScriptVar("GameVersion")]
         public static string GameVersion { get; } = "1.0.0";
 
-        [ScriptVar("GameDifficulty", "游戏难度", isReadOnly: false)]
+        [ScriptVar("GameDifficulty")]
         public static int GameDifficulty { get; set; } = 1;
 
-        [ScriptVar("IsDebugMode", "调试模式")]
+        [ScriptVar("IsDebugMode")]
         public static bool IsDebugMode { get; set; } = false;
     }
 

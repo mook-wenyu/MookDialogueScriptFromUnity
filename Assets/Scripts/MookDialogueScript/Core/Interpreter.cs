@@ -19,7 +19,30 @@ namespace MookDialogueScript
             _operators = new Dictionary<string, Func<ExpressionNode, Task<RuntimeValue>>>
             {
                 ["-"] = async (right) => new RuntimeValue(-await GetNumberValue(right)),
-                ["!"] = async (right) => new RuntimeValue(!await GetBooleanValue(right))
+                ["!"] = async (right) => new RuntimeValue(!await GetBooleanValue(right)),
+                ["not"] = async (right) => new RuntimeValue(!await GetBooleanValue(right))
+            };
+        }
+
+        /// <summary>
+        /// 将语义关键字映射到对应的运算符
+        /// </summary>
+        /// <param name="op">原始运算符</param>
+        /// <returns>映射后的运算符</returns>
+        private string MapOperator(string op)
+        {
+            return op.ToLower() switch
+            {
+                "eq" or "is" => "==",
+                "neq" => "!=",
+                "gt" => ">",
+                "lt" => "<",
+                "gte" => ">=",
+                "lte" => "<=",
+                "and" => "&&",
+                "or" => "||",
+                "xor" => "^",
+                _ => op
             };
         }
 
@@ -56,35 +79,38 @@ namespace MookDialogueScript
                     var left = await EvaluateExpression(b.Left);
                     var right = await EvaluateExpression(b.Right);
 
+                    // 将语义关键字映射到对应的运算符
+                    string op = MapOperator(b.Operator);
+
                     // 如果任一操作数是函数调用的结果，确保类型匹配
-                    if (b.Operator is "-" or "*" or "/" or "%" or ">" or "<" or ">=" or "<=")
+                    if (op is "-" or "*" or "/" or "%" or ">" or "<" or ">=" or "<=")
                     {
                         if (left.Type != RuntimeValue.ValueType.Number)
                         {
-                            Debug.LogError($"运算符 '{b.Operator}' 的左操作数必须是数值类型");
+                            Debug.LogError($"运算符 '{op}' 的左操作数必须是数值类型");
                             return RuntimeValue.Null;
                         }
                         if (right.Type != RuntimeValue.ValueType.Number)
                         {
-                            Debug.LogError($"运算符 '{b.Operator}' 的右操作数必须是数值类型");
+                            Debug.LogError($"运算符 '{op}' 的右操作数必须是数值类型");
                             return RuntimeValue.Null;
                         }
                     }
-                    else if (b.Operator is "&&" or "||")
+                    else if (op is "&&" or "||" or "^")
                     {
                         if (left.Type != RuntimeValue.ValueType.Boolean)
                         {
-                            Debug.LogError($"运算符 '{b.Operator}' 的左操作数必须是布尔类型");
+                            Debug.LogError($"运算符 '{op}' 的左操作数必须是布尔类型");
                             return RuntimeValue.Null;
                         }
                         if (right.Type != RuntimeValue.ValueType.Boolean)
                         {
-                            Debug.LogError($"运算符 '{b.Operator}' 的右操作数必须是布尔类型");
+                            Debug.LogError($"运算符 '{op}' 的右操作数必须是布尔类型");
                             return RuntimeValue.Null;
                         }
                     }
 
-                    switch (b.Operator)
+                    switch (op)
                     {
                         case "+":
                             if (left.Type == RuntimeValue.ValueType.String || right.Type == RuntimeValue.ValueType.String)
@@ -149,8 +175,11 @@ namespace MookDialogueScript
                         case "||":
                             return new RuntimeValue((bool)left.Value || (bool)right.Value);
 
+                        case "^":
+                            return new RuntimeValue((bool)left.Value ^ (bool)right.Value);
+
                         default:
-                            Debug.LogError($"未知的二元运算符 '{b.Operator}'");
+                            Debug.LogError($"未知的二元运算符 '{op}'");
                             return RuntimeValue.Null;
                     }
 

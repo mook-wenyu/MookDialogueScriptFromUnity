@@ -19,19 +19,12 @@ namespace MookDialogueScript
         public string Name { get; }
 
         /// <summary>
-        /// 函数描述
-        /// </summary>
-        public string Description { get; }
-
-        /// <summary>
         /// 创建一个新的脚本函数特性
         /// </summary>
         /// <param name="name">在脚本中使用的函数名，如果为空则使用方法名</param>
-        /// <param name="description">函数描述</param>
-        public ScriptFuncAttribute(string name = "", string description = "")
+        public ScriptFuncAttribute(string name = "")
         {
             Name = name;
-            Description = description;
         }
     }
 
@@ -44,11 +37,7 @@ namespace MookDialogueScript
 
         // 编译后的函数字典：函数名 -> 函数实现
         private readonly Dictionary<string, Func<List<RuntimeValue>, Task<RuntimeValue>>> _compiledFunctions =
-            new Dictionary<string, Func<List<RuntimeValue>, Task<RuntimeValue>>>();
-
-        // 函数元数据字典：函数名 -> (方法信息, 描述)
-        private readonly Dictionary<string, (MethodInfo Method, string Description)> _functionMetadata =
-            new Dictionary<string, (MethodInfo, string)>();
+            new Dictionary<string, Func<List<RuntimeValue>, Task<RuntimeValue>>>(StringComparer.OrdinalIgnoreCase);
 
         // 任务处理器缓存：Task类型 -> 处理函数
         private readonly Dictionary<Type, Func<Task, Task<object>>> _taskResultHandlers =
@@ -285,16 +274,13 @@ namespace MookDialogueScript
                     var attribute = method.GetCustomAttribute<ScriptFuncAttribute>();
                     string funcName = attribute.Name ?? method.Name;
 
-                    // 创建并注册适配器
-                    var adapter = CreateFunctionAdapter(method);
-                    if (adapter != null)
+                    try
                     {
-                        _compiledFunctions[funcName] = adapter;
-                        _functionMetadata[funcName] = (method, attribute.Description);
+                        _compiledFunctions[funcName] = CompileMethod(method, null);
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        Debug.LogError($"无法为函数 '{funcName}' 创建适配器");
+                        Debug.LogError($"无法为函数 '{funcName}' 创建适配器: {ex.Message}");
                     }
                 }
             }
@@ -306,69 +292,6 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 为方法创建适配器函数
-        /// </summary>
-        private Func<List<RuntimeValue>, Task<RuntimeValue>> CreateFunctionAdapter(MethodInfo method)
-        {
-            try
-            {
-                var parameters = method.GetParameters();
-                var returnType = method.ReturnType;
-
-                return async (args) =>
-                {
-                    try
-                    {
-                        object[] nativeArgs = PrepareArguments(args, parameters);
-                        object result = await InvokeMethodAsync(method, null, nativeArgs, returnType);
-                        return ConvertToRuntimeValue(result);
-                    }
-                    catch (TargetInvocationException ex)
-                    {
-                        Debug.LogError($"调用函数时出错: {ex.InnerException?.Message}");
-                        return RuntimeValue.Null; // 返回空值而不是抛出异常
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogError($"调用函数时出错: {ex.Message}");
-                        return RuntimeValue.Null; // 返回空值而不是抛出异常
-                    }
-                };
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"创建函数适配器时出错: {ex.Message}");
-                return null;
-            }
-        }
-
-        /// <summary>
-        /// 通用的方法调用逻辑
-        /// </summary>
-        private async Task<object> InvokeMethodAsync(MethodInfo method, object instance, object[] args, Type returnType)
-        {
-            // 处理异步方法 - 有返回值
-            if (returnType.IsAssignableFrom(typeof(Task<object>)) ||
-                (returnType.IsGenericType && returnType.GetGenericTypeDefinition() == typeof(Task<>)))
-            {
-                var task = (Task)method.Invoke(instance, args);
-                return await GetTaskResultAsync(task);
-            }
-            // 处理异步方法 - 无返回值
-            else if (returnType == typeof(Task))
-            {
-                var task = (Task)method.Invoke(instance, args);
-                await task.ConfigureAwait(false);
-                return null;
-            }
-            // 处理同步方法
-            else
-            {
-                return method.Invoke(instance, args);
-            }
-        }
-
-        /// <summary>
         /// 注册对象实例的方法作为脚本函数
         /// </summary>
         public void RegisterObjectFunctions(string objectName, object instance)
@@ -376,7 +299,7 @@ namespace MookDialogueScript
             if (instance == null)
             {
                 Debug.LogError("注册对象实例的方法作为脚本函数时，对象实例不能为null");
-                return; // 直接返回而不是抛出异常
+                return;
             }
 
             // 获取所有非Object基类的公共实例方法
@@ -389,26 +312,20 @@ namespace MookDialogueScript
                 string funcName = $"{objectName}__{method.Name}";
                 try
                 {
-                    var adapter = CreateObjectMethodAdapter(method, instance, funcName);
-                    if (adapter != null)
-                    {
-                        _compiledFunctions[funcName] = adapter;
-                        _functionMetadata[funcName] = (method, $"{objectName}对象的{method.Name}方法");
-                    }
+                    _compiledFunctions[funcName] = CompileMethod(method, instance);
                 }
                 catch (Exception ex)
                 {
                     Debug.LogError($"注册 {funcName} 时出错: {ex.Message}");
-                    // 继续处理其他方法，不是抛出异常
+                    // 继续处理其他方法
                 }
             }
         }
 
         /// <summary>
-        /// 为对象方法创建适配器
+        /// 编译方法为可执行函数
         /// </summary>
-        private Func<List<RuntimeValue>, Task<RuntimeValue>> CreateObjectMethodAdapter(
-            MethodInfo method, object instance, string funcName)
+        private Func<List<RuntimeValue>, Task<RuntimeValue>> CompileMethod(MethodInfo method, object instance)
         {
             var parameters = method.GetParameters();
             var returnType = method.ReturnType;
@@ -417,21 +334,49 @@ namespace MookDialogueScript
             {
                 try
                 {
+                    // 准备参数
                     object[] nativeArgs = PrepareArguments(args, parameters);
-                    object result = await InvokeMethodAsync(method, instance, nativeArgs, returnType);
+
+                    // 调用并处理结果
+                    object result = null;
+
+                    if (returnType.IsAssignableFrom(typeof(Task<object>)) ||
+                        returnType.IsGenericType && returnType.GetGenericTypeDefinition() == typeof(Task<>))
+                    {
+                        var task = (Task)method.Invoke(instance, nativeArgs);
+                        result = await GetTaskResultAsync(task);
+                    }
+                    else if (returnType == typeof(Task))
+                    {
+                        var task = (Task)method.Invoke(instance, nativeArgs);
+                        await task.ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        result = method.Invoke(instance, nativeArgs);
+                    }
+
                     return ConvertToRuntimeValue(result);
                 }
                 catch (TargetInvocationException ex)
                 {
-                    Debug.LogError($"调用函数 '{funcName}' 时出错: {ex.InnerException?.Message}");
-                    return RuntimeValue.Null; // 返回空值而不是抛出异常
+                    Debug.LogError($"调用函数 '{method.Name}' 时出错: {ex.InnerException?.Message}");
+                    return RuntimeValue.Null;
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"调用函数 '{funcName}' 时出错: {ex.Message}");
-                    return RuntimeValue.Null; // 返回空值而不是抛出异常
+                    Debug.LogError($"调用函数 '{method.Name}' 时出错: {ex.Message}");
+                    return RuntimeValue.Null;
                 }
             };
+        }
+
+        /// <summary>
+        /// 编译委托为可执行函数
+        /// </summary>
+        private Func<List<RuntimeValue>, Task<RuntimeValue>> CompileDelegate(Delegate function)
+        {
+            return CompileMethod(function.Method, function.Target);
         }
 
         /// <summary>
@@ -439,66 +384,7 @@ namespace MookDialogueScript
         /// </summary>
         public void RegisterFunction(string name, Delegate function)
         {
-            _compiledFunctions[name] = CompileFunction(function);
-
-            // 添加到函数元数据
-            var methodInfo = function.Method;
-            string description = "内置函数";
-
-            // 尝试获取函数的描述信息
-            var attr = methodInfo.GetCustomAttribute<ScriptFuncAttribute>();
-            if (attr != null && !string.IsNullOrEmpty(attr.Description))
-            {
-                description = attr.Description;
-            }
-
-            _functionMetadata[name] = (methodInfo, description);
-        }
-
-        /// <summary>
-        /// 编译函数委托
-        /// </summary>
-        private Func<List<RuntimeValue>, Task<RuntimeValue>> CompileFunction(Delegate function)
-        {
-            var methodInfo = function.Method;
-            var parameters = methodInfo.GetParameters();
-            var returnType = methodInfo.ReturnType;
-
-            return async (args) =>
-            {
-                // 准备参数
-                object[] nativeArgs = PrepareArguments(args, parameters);
-
-                // 调用并处理结果
-                object result = null;
-
-                if (returnType.IsAssignableFrom(typeof(Task<object>)) ||
-                    returnType.IsGenericType && returnType.GetGenericTypeDefinition() == typeof(Task<>))
-                {
-                    var task = (Task)function.DynamicInvoke(nativeArgs);
-                    result = await GetTaskResultAsync(task);
-                }
-                else if (returnType == typeof(Task))
-                {
-                    var task = (Task)function.DynamicInvoke(nativeArgs);
-                    await task.ConfigureAwait(false);
-                }
-                else
-                {
-                    result = function.DynamicInvoke(nativeArgs);
-                }
-
-                return ConvertToRuntimeValue(result);
-            };
-        }
-
-        /// <summary>
-        /// 注册脚本函数
-        /// </summary>
-        public void RegisterScriptFunction(string name, Func<List<RuntimeValue>, Task<RuntimeValue>> function)
-        {
-            _compiledFunctions[name] = function;
-            _functionMetadata[name] = (null, $"脚本函数 {name}");
+            _compiledFunctions[name] = CompileDelegate(function);
         }
 
         /// <summary>
@@ -517,19 +403,10 @@ namespace MookDialogueScript
         public Dictionary<string, string> GetRegisteredScriptFunctions()
         {
             var result = new Dictionary<string, string>();
-
-            // 添加函数元数据
-            foreach (var pair in _functionMetadata)
-            {
-                result[pair.Key] = pair.Value.Description;
-            }
-
-            // 添加手动注册的函数
             foreach (string key in _compiledFunctions.Keys)
             {
-                result.TryAdd(key, "手动注册的函数");
+                result[key] = "已注册的函数";
             }
-
             return result;
         }
 
@@ -562,7 +439,7 @@ namespace MookDialogueScript
         /// <summary>
         /// 输出日志
         /// </summary>
-        [ScriptFunc("cs_log", "输出日志消息")]
+        [ScriptFunc("cs_log")]
         public static void CsLog(string message)
         {
             Debug.Log($"[LOG] {message}");
@@ -571,7 +448,7 @@ namespace MookDialogueScript
         /// <summary>
         /// 输出日志
         /// </summary>
-        [ScriptFunc("log", "输出日志消息")]
+        [ScriptFunc("log")]
         public static void Log(string message, string type = "log")
         {
             if (type == "log")
@@ -591,7 +468,7 @@ namespace MookDialogueScript
         /// <summary>
         /// 连接字符串
         /// </summary>
-        [ScriptFunc("concat", "连接字符串")]
+        [ScriptFunc("concat")]
         public static string Concat(string str1, string str2 = "", string str3 = "", string str4 = "",
             string str5 = "", string str6 = "", string str7 = "", string str8 = "")
         {

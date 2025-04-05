@@ -34,6 +34,17 @@ namespace MookDialogueScript
             {"jump", TokenType.JUMP},
             {"call", TokenType.CALL},
             {"wait", TokenType.WAIT},
+            {"eq", TokenType.EQUALS},
+            {"is", TokenType.EQUALS},
+            {"neq", TokenType.NOT_EQUALS},
+            {"gt", TokenType.GREATER},
+            {"lt", TokenType.LESS},
+            {"gte", TokenType.GREATER_EQUALS},
+            {"lte", TokenType.LESS_EQUALS},
+            {"and", TokenType.AND},
+            {"or", TokenType.OR},
+            {"not", TokenType.NOT},
+            {"xor", TokenType.XOR},
         };
 
         public Lexer(string source)
@@ -232,14 +243,25 @@ namespace MookDialogueScript
         private Token HandleString()
         {
             char quoteType = _currentChar;
-            Advance(); // Skip opening quote
+            char closingQuote = quoteType;
+
+            // 确定对应的闭合引号
+            switch (quoteType)
+            {
+                case '\u2018': closingQuote = '\u2019'; break; // 中文单引号
+                case '\u201C': closingQuote = '\u201D'; break; // 中文双引号
+                case '\'': closingQuote = '\''; break;         // 英文单引号
+                case '"': closingQuote = '"'; break;           // 英文双引号
+            }
+
+            Advance(); // 跳过开引号
             StringBuilder result = new StringBuilder(32); // 预分配合理容量
 
-            while (_currentChar != '\0' && _currentChar != quoteType)
+            while (_currentChar != '\0' && _currentChar != closingQuote)
             {
-                if (_currentChar == '\\' && Peek() == quoteType)
+                if (_currentChar == '\\' && Peek() == closingQuote)
                 {
-                    Advance(); // Skip backslash
+                    Advance(); // 跳过反斜杠
                     result.Append(_currentChar);
                 }
                 else
@@ -249,14 +271,14 @@ namespace MookDialogueScript
                 Advance();
             }
 
-            if (_currentChar == quoteType)
+            if (_currentChar == closingQuote)
             {
-                Advance(); // Skip closing quote
+                Advance(); // 跳过闭引号
                 return new Token(TokenType.STRING, result.ToString(), _line, _column);
             }
             else
             {
-                Debug.LogError($"词法错误: 第{_line}行，第{_column}列，未闭合的字符串");
+                Debug.LogError($"词法错误: 第{_line}行，第{_column}列，未闭合的字符串，期望 {closingQuote}");
                 // 尝试恢复 - 将收集到的字符串内容作为Token返回
                 return new Token(TokenType.STRING, result.ToString(), _line, _column);
             }
@@ -448,7 +470,7 @@ namespace MookDialogueScript
                 }
 
                 // 处理变量
-                if (_currentChar == '$')
+                if (_currentChar == '$' || _currentChar == '￥')
                 {
                     return HandleVariable();
                 }
@@ -466,7 +488,8 @@ namespace MookDialogueScript
                 }
 
                 // 处理字符串
-                if (_currentChar == '\'' || _currentChar == '"')
+                if (_currentChar == '\'' || _currentChar == '"' ||
+                    _currentChar == '\u2018' || _currentChar == '\u201C')
                 {
                     return HandleString();
                 }
@@ -475,7 +498,7 @@ namespace MookDialogueScript
                 switch (_currentChar)
                 {
                     case ':':
-                    case '：': // 中文冒号
+                    case '：':
                         Advance();
                         if (_currentChar == ':' || _currentChar == '：')
                         {
@@ -487,7 +510,7 @@ namespace MookDialogueScript
 
                     case '-':
                         Advance();
-                        if (_currentChar == '>' || _currentChar == '》') // 支持中文后书名号
+                        if (_currentChar == '>' || _currentChar == '》')
                         {
                             Advance();
                             // 不直接处理后面的文本，只返回箭头标记
@@ -497,7 +520,7 @@ namespace MookDialogueScript
 
                     case '=':
                         Advance();
-                        if (_currentChar == '>' || _currentChar == '》') // 支持中文后书名号
+                        if (_currentChar == '>' || _currentChar == '》')
                         {
                             Advance();
                             return new Token(TokenType.JUMP, "=>", _line, _column - 2);
@@ -513,16 +536,43 @@ namespace MookDialogueScript
                     case '*': Advance(); return new Token(TokenType.MULTIPLY, "*", _line, _column - 1);
                     case '/': Advance(); return new Token(TokenType.DIVIDE, "/", _line, _column - 1);
                     case '%': Advance(); return new Token(TokenType.MODULO, "%", _line, _column - 1);
-                    case '(': Advance(); return new Token(TokenType.LEFT_PAREN, "(", _line, _column - 1);
-                    case ')': Advance(); return new Token(TokenType.RIGHT_PAREN, ")", _line, _column - 1);
-                    case '[': Advance(); return new Token(TokenType.LEFT_BRACKET, "[", _line, _column - 1);
-                    case ']': Advance(); return new Token(TokenType.RIGHT_BRACKET, "]", _line, _column - 1);
-                    case '{': Advance(); return new Token(TokenType.LEFT_BRACE, "{", _line, _column - 1);
-                    case '}': Advance(); return new Token(TokenType.RIGHT_BRACE, "}", _line, _column - 1);
-                    case ',': Advance(); return new Token(TokenType.COMMA, ",", _line, _column - 1);
+
+                    case '(':
+                    case '（':
+                        Advance();
+                        return new Token(TokenType.LEFT_PAREN, "(", _line, _column - 1);
+
+                    case ')':
+                    case '）':
+                        Advance();
+                        return new Token(TokenType.RIGHT_PAREN, ")", _line, _column - 1);
+
+                    case '[':
+                    case '【':
+                        Advance();
+                        return new Token(TokenType.LEFT_BRACKET, "[", _line, _column - 1);
+
+                    case ']':
+                    case '】':
+                        Advance();
+                        return new Token(TokenType.RIGHT_BRACKET, "]", _line, _column - 1);
+
+                    case '{':
+                        Advance();
+                        return new Token(TokenType.LEFT_BRACE, "{", _line, _column - 1);
+
+                    case '}':
+                        Advance();
+                        return new Token(TokenType.RIGHT_BRACE, "}", _line, _column - 1);
+
+                    case ',':
+                    case '，':
+                        Advance();
+                        return new Token(TokenType.COMMA, ",", _line, _column - 1);
                     case '#': Advance(); return new Token(TokenType.HASH, "#", _line, _column - 1);
 
                     case '!':
+                    case '！':
                         Advance();
                         if (_currentChar == '=')
                         {
@@ -532,6 +582,7 @@ namespace MookDialogueScript
                         return new Token(TokenType.NOT, "!", _line, _column - 1);
 
                     case '>':
+                    case '》':
                         Advance();
                         if (_currentChar == '=')
                         {
@@ -541,6 +592,7 @@ namespace MookDialogueScript
                         return new Token(TokenType.GREATER, ">", _line, _column - 1);
 
                     case '<':
+                    case '《':
                         Advance();
                         if (_currentChar == '=')
                         {
@@ -570,6 +622,10 @@ namespace MookDialogueScript
                         Debug.LogError($"词法错误: 第{_line}行，第{_column - 1}列，无效的字符序列 '|'，期望 '||'");
                         // 尝试恢复 - 返回单个|的Token
                         return new Token(TokenType.TEXT, "|", _line, _column - 1);
+
+                    case '^':
+                        Advance();
+                        return new Token(TokenType.XOR, "^", _line, _column - 1);
 
                     default:
                         // 如果是其他字符，作为Text处理

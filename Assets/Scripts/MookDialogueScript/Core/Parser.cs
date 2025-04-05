@@ -396,6 +396,9 @@ namespace MookDialogueScript
             return new DialogueNode(speaker, emotion, text, labels, line, column);
         }
 
+        /// <summary>
+        /// 解析文本
+        /// </summary>
         private List<TextSegmentNode> ParseText()
         {
             var segments = new List<TextSegmentNode>();
@@ -444,6 +447,9 @@ namespace MookDialogueScript
             return segments;
         }
 
+        /// <summary>
+        /// 解析插值
+        /// </summary>
         private InterpolationNode ParseInterpolation()
         {
             int line = _currentToken.Line;
@@ -855,6 +861,7 @@ namespace MookDialogueScript
             // 逻辑运算符 (优先级 1-2)
             { TokenType.OR, new OperatorInfo(1, "逻辑或", TokenType.OR) },
             { TokenType.AND, new OperatorInfo(2, "逻辑与", TokenType.AND) },
+            { TokenType.XOR, new OperatorInfo(2, "异或", TokenType.XOR) },
             
             // 比较运算符 (优先级 3)
             { TokenType.EQUALS, new OperatorInfo(3, "等于", TokenType.EQUALS) },

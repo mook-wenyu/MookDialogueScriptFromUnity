@@ -14,6 +14,10 @@ var $hp 100
 // 数字类型
 var $has_item false
 // 布尔类型
+var $has_sword false
+// 是否拥有剑
+var $has_shield false
+// 是否拥有盾
 
 // 2. 变量操作
 set $hp 80
@@ -34,22 +38,22 @@ call log($name)
 // ----------- 内置CS对象访问 -----------
 
 // 1. 访问玩家对象属性
-call cs_log("玩家名称: {$player__Name}")
+call log("玩家名称: {$player__Name}")
 // 访问Name属性
-call cs_log("玩家等级: {$player__Level}")  
+call log("玩家等级: {$player__Level}")  
 // 访问Level属性
-call cs_log("玩家生命值: {$player__Health}")
+call log("玩家生命值: {$player__Health}")
 // 访问Health属性
 
 // 2. 在文本中使用玩家属性
 这是一个在文本中使用对象属性的例子\：勇者{$player__Name}当前等级为{$player__Level}，生命值为{$player__Health}。
 
 // 3. 访问游戏系统静态变量
-call cs_log("游戏版本: {$GameVersion}")
+call log("游戏版本: {$GameVersion}")
 // 访问GameVersion属性
-call cs_log("游戏难度: {$GameDifficulty}")
+call log("游戏难度: {$GameDifficulty}")
 // 访问GameDifficulty属性
-call cs_log("调试模式: {$IsDebugMode}")
+call log("调试模式: {$IsDebugMode}")
 // 访问IsDebugMode属性
 
 // ----------- 文本与标签 -----------
@@ -60,13 +64,13 @@ call cs_log("调试模式: {$IsDebugMode}")
 // 2. 带标签的旁白 - 使用#添加标签
 这是一段有标签的旁白。 #场景 #介绍 #教程
 
-// 3. 变量插值 - 使用{}插入变量
+// 3. 变量插值 - 使用插入变量
 你好，{$name}。你的生命值是{$hp}点。
 
 // ----------- 对话系统 -----------
 
 // 1. 基本对话 - 角色名:对话内容
-NPC: 这是一段普通对话。
+NPC: 这是一段{true eq true}普通对话。
 
 // 2. 带情绪的对话 - 角色名[情绪]:对话内容
 NPC[高兴]: 这是一段带情绪{$fault_tolerant}的对话！
@@ -129,33 +133,53 @@ else
 endif
 
 // 4. 条件运算符
-// ==, !=, >, <, >=, <=, &&(与), ||(或), !(非)
+// 比较运算符：
+// ==  或 eq 或 is    : 等于
+// !=  或 neq         : 不等于
+// >   或 gt          : 大于
+// <   或 lt          : 小于
+// >=  或 gte         : 大于等于
+// <=  或 lte         : 小于等于
+// 逻辑运算符：
+// &&  或 and         : 与
+// ||  或 or          : 或
+// !   或 not         : 非
+// ^   或 xor         : 异或
+
+// 使用符号运算符
 if $hp > 20 && $has_item
     NPC: 你有足够的生命值和必要的物品。
 endif
 
-if $hp <= 20 || !$has_item
-    NPC: 你缺少生命值或必要的物品。
+// 使用语义运算符（更易读）
+if $hp gt 20 and $has_item
+    NPC: 你有足够的生命值和必要的物品。
 endif
 
-// 5. 使用玩家属性进行条件判断
-if $player__Level >= 5
-    NPC: 你的等级足够挑战这个副本了。
-else
-    NPC: 你需要更高的等级才能进入，请先去提升等级吧。
+// 使用混合运算符（完全等价）
+if $hp gte 20 || not $has_item
+    NPC: 你的生命值足够，或者没有携带物品。
 endif
 
-// 6. 使用玩家生命值进行判断
-if $player__Health < 20
-    NPC: 你的生命值太低了，先去恢复一下吧。
-else
-    NPC: 你看起来状态不错，可以继续冒险。
+// 使用 is/eq 进行相等性比较
+if $player__Name is "勇者"
+    NPC: 原来你就是预言中的勇者！
+endif
+
+// 使用 neq 进行不相等比较
+if $GameDifficulty neq 1
+    NPC: 这不是简单难度，请小心！
+endif
+
+// 使用 xor 进行异或操作
+if $has_sword xor $has_shield
+    NPC: 你只装备了一样装备，要不要考虑都装备上？
 endif
 
 // ----------- 函数调用 -----------
 
 // 1. 基本函数调用 - 使用call
-call cs_log("这是一条日志")
+call log("这是一条日志")
 
 // ----------- 简单游戏场景示例 -----------
 
@@ -228,5 +252,4 @@ endif
 
 这是语法示例的结尾。希望对你编写对话脚本有所帮助！ #结束
 
--> 重新开始
-    => start
+
