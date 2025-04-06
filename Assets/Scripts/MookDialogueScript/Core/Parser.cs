@@ -98,6 +98,7 @@ namespace MookDialogueScript
             {
                 _currentToken = _lexer.GetNextToken();
             }
+
         }
 
         /// <summary>

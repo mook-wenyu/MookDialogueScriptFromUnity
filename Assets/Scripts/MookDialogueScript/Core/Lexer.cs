@@ -47,13 +47,31 @@ namespace MookDialogueScript
             {"xor", TokenType.XOR},
         };
 
+        /// <summary>
+        /// 获取指定位置的字符，如果位置超出范围则返回'\0'
+        /// </summary>
+        /// <param name="position">要获取字符的位置</param>
+        /// <returns>指定位置的字符，或者'\0'（如果位置超出范围）</returns>
+        private char GetCharAt(int position)
+        {
+            return position < _source.Length ? _source[position] : '\0';
+        }
+
+        /// <summary>
+        /// 更新当前字符
+        /// </summary>
+        private void UpdateCurrentChar()
+        {
+            _currentChar = GetCharAt(_position);
+        }
+
         public Lexer(string source)
         {
             _source = source;
             _position = 0;
             _line = 1;
             _column = 1;
-            _currentChar = _position < _source.Length ? _source[_position] : '\0';
+            _currentChar = GetCharAt(_position);
             _indentStack = new List<int> { 0 };
             _currentIndent = 0;
         }
@@ -65,7 +83,7 @@ namespace MookDialogueScript
         {
             _position++;
             _column++;
-            _currentChar = _position < _source.Length ? _source[_position] : '\0';
+            _currentChar = GetCharAt(_position);
         }
 
         /// <summary>
@@ -73,8 +91,7 @@ namespace MookDialogueScript
         /// </summary>
         private char Peek()
         {
-            int peekPos = _position + 1;
-            return peekPos < _source.Length ? _source[peekPos] : '\0';
+            return GetCharAt(_position + 1);
         }
 
         /// <summary>
@@ -82,8 +99,7 @@ namespace MookDialogueScript
         /// </summary>
         private char LookAhead(int n)
         {
-            int peekPos = _position + n;
-            return peekPos < _source.Length ? _source[peekPos] : '\0';
+            return GetCharAt(_position + n);
         }
 
         /// <summary>
@@ -179,10 +195,131 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 跳过注释
+        /// 处理换行字符、跳过连续的换行和注释行
+        /// </summary>
+        /// <returns>换行Token或EOF Token</returns>
+        private Token HandleNewlineAndComments()
+        {
+            // 记录当前行号用于生成Token
+            int currentLine = _line;
+            
+            // 处理当前换行
+            if (_currentChar == '\r' && Peek() == '\n')
+            {
+                Advance();
+            }
+            Advance();
+            _line++;
+            _column = 1;
+            
+            // 循环处理连续的空行和注释行
+            while (true) 
+            {
+                // 如果列号为1（行首），预检查缩进
+                if (_column == 1)
+                {
+                    // 查看当前行是否是空行或注释行
+                    bool isCommentOrEmptyLine = false;
+                    
+                    // 暂存当前位置
+                    int savedPosition = _position;
+                    int savedColumn = _column;
+                    
+                    // 跳过空白字符计算缩进
+                    int indent = 0;
+                    while (_currentChar == ' ' || _currentChar == '\t')
+                    {
+                        indent++;
+                        Advance();
+                    }
+                    
+                    // 检查跳过空白后是否是注释或空行
+                    if (_currentChar == '/' && Peek() == '/' || 
+                        _currentChar == '\n' || _currentChar == '\r' || 
+                        _currentChar == '\0')
+                    {
+                        isCommentOrEmptyLine = true;
+                    }
+                    
+                    // 如果不是注释行或空行，且缩进与当前缩进不同，则回退并退出循环
+                    if (!isCommentOrEmptyLine && indent != _currentIndent)
+                    {
+                        // 恢复位置，让GetNextToken处理缩进
+                        _position = savedPosition;
+                        _column = savedColumn;
+                        UpdateCurrentChar();
+                        break;
+                    }
+                    
+                    // 如果是注释行或空行，继续处理
+                    if (isCommentOrEmptyLine)
+                    {
+                        // 对于连续的注释行和空行，跳过缩进处理
+                    }
+                }
+                
+                // 跳过行首空白
+                SkipWhitespace();
+                
+                // 检查是否是注释行
+                if (_currentChar == '/' && Peek() == '/')
+                {
+                    // 跳过这一行的注释内容
+                    while (_currentChar != '\0' && _currentChar != '\n' && _currentChar != '\r')
+                    {
+                        Advance();
+                    }
+                    
+                    // 如果注释后没有换行了，结束循环
+                    if (_currentChar != '\n' && _currentChar != '\r')
+                    {
+                        break;
+                    }
+                }
+                // 检查是否是空行
+                else if (_currentChar == '\n' || _currentChar == '\r')
+                {
+                    // 处理换行（空行）
+                }
+                else
+                {
+                    // 不是空行也不是注释行，结束循环
+                    break;
+                }
+                
+                // 处理换行
+                if (_currentChar == '\r' && Peek() == '\n')
+                {
+                    Advance();
+                }
+                if (_currentChar == '\n' || _currentChar == '\r')
+                {
+                    Advance();
+                    _line++;
+                    _column = 1;
+                }
+                else
+                {
+                    break; // 如果没有换行了，结束循环
+                }
+            }
+            
+            // 如果处理完换行和注释后到达了文件末尾，直接返回EOF
+            if (_currentChar == '\0')
+            {
+                return new Token(TokenType.EOF, "", _line, _column);
+            }
+            
+            // 返回一个NEWLINE token，无论有几个连续的换行和注释
+            return new Token(TokenType.NEWLINE, "\\n", currentLine, _column);
+        }
+
+        /// <summary>
+        /// 跳过注释和连续的注释行
         /// </summary>
         private void SkipComment()
         {
+            // 跳过当前行的注释
             while (_currentChar != '\0' && _currentChar != '\n' && _currentChar != '\r')
             {
                 Advance();
@@ -431,9 +568,18 @@ namespace MookDialogueScript
                 // 处理行首缩进
                 if (_column == 1)
                 {
-                    Token indentToken = HandleIndentation();
-                    if (indentToken != null)
-                        return indentToken;
+                    // 跳过注释行和空行前的缩进处理
+                    if (_currentChar == '/' && Peek() == '/' || 
+                        _currentChar == '\n' || _currentChar == '\r')
+                    {
+                        // 对于注释行和空行，不处理缩进，直接进入注释/换行处理逻辑
+                    }
+                    else
+                    {
+                        Token indentToken = HandleIndentation();
+                        if (indentToken != null)
+                            return indentToken;
+                    }
                 }
 
                 // 跳过空白字符
@@ -443,24 +589,27 @@ namespace MookDialogueScript
                     continue;
                 }
 
-                // 处理注释
-                if (_currentChar == '/' && Peek() == '/')
+                // 处理注释和换行的组合
+                if (_currentChar == '/' && Peek() == '/' || _currentChar == '\n' || _currentChar == '\r')
                 {
-                    SkipComment();
-                    continue;
-                }
-
-                // 处理换行
-                if (_currentChar == '\n' || _currentChar == '\r')
-                {
-                    if (_currentChar == '\r' && Peek() == '\n')
+                    // 如果是注释，先跳过当前行的注释内容
+                    if (_currentChar == '/' && Peek() == '/')
                     {
-                        Advance();
+                        SkipComment();
+                        
+                        // 如果注释后没有遇到换行，继续下一个循环
+                        if (_currentChar != '\n' && _currentChar != '\r')
+                        {
+                            if (_currentChar == '\0')
+                            {
+                                return new Token(TokenType.EOF, "", _line, _column);
+                            }
+                            continue;
+                        }
                     }
-                    Advance();
-                    _line++;
-                    _column = 1;
-                    return new Token(TokenType.NEWLINE, "\\n", _line - 1, _column);
+                    
+                    // 处理换行和后续可能的连续空行和注释行
+                    return HandleNewlineAndComments();
                 }
 
                 // 处理转义字符
