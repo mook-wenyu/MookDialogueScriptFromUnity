@@ -49,44 +49,27 @@ public class NormalDialogueUI : MonoBehaviour
         normalDialogue.SetActive(true);
     }
 
-    private void HandleDialogueDisplayed(ContentNode content)
+    private void HandleDialogueDisplayed(DialogueNode dialogue)
     {
         for (int i = 0; i < optionContainer.childCount; i++)
         {
             Destroy(optionContainer.GetChild(i).gameObject);
         }
-        _ = HandleDialogueDisplayedAsync(content);
+        _ = HandleDialogueDisplayedAsync(dialogue);
     }
 
-    private async Task HandleDialogueDisplayedAsync(ContentNode content)
+    private async Task HandleDialogueDisplayedAsync(DialogueNode dialogue)
     {
-        if (content is DialogueNode dialogue)
+        Debug.Log($"角色：{dialogue.Speaker}");
+        Debug.Log($"情绪：{dialogue.Emotion}");
+        string text = await DialogueMgr.Instance.RunMgrs.BuildDialogueText(dialogue);
+        speakerText.text = !string.IsNullOrEmpty(dialogue.Speaker) ? dialogue.Speaker : "";
+        contentText.text = text;
+        if (dialogue.Labels != null && dialogue.Labels.Count > 0)
         {
-            Debug.Log($"角色：{dialogue.Speaker}");
-            Debug.Log($"情绪：{dialogue.Emotion}");
-            string text = await DialogueMgr.Instance.RunMgrs.BuildDialogueText(dialogue);
-            speakerText.text = !string.IsNullOrEmpty(dialogue.Speaker) ? dialogue.Speaker : "";
-            contentText.text = text;
-            if (dialogue.Labels != null && dialogue.Labels.Count > 0)
+            foreach (var label in dialogue.Labels)
             {
-                foreach (var label in dialogue.Labels)
-                {
-                    Debug.Log($"标签：{label}");
-                }
-            }
-        }
-        else if (content is NarrationNode narration)
-        {
-
-            string text = await DialogueMgr.Instance.RunMgrs.BuildNarrationText(narration);
-            speakerText.text = "";
-            contentText.text = text;
-            if (narration.Labels != null && narration.Labels.Count > 0)
-            {
-                foreach (var label in narration.Labels)
-                {
-                    Debug.Log($"标签：{label}");
-                }
+                Debug.Log($"标签：{label}");
             }
         }
     }

@@ -238,15 +238,7 @@ namespace MookDialogueScript
         /// </summary>
         private bool IsEmptyContentNode(ContentNode node)
         {
-            // 对于旁白节点，检查是否只包含空文本
-            if (node is NarrationNode narration)
-            {
-                // 如果没有文本段落，或者所有文本段落都是空的
-                return narration.Text.Count == 0 ||
-                       narration.Text.All(segment => segment is TextNode textNode && string.IsNullOrWhiteSpace(textNode.Text));
-            }
-
-            // 对于对话节点，检查是否只包含空文本
+            // 对于对话节点（包括旁白），检查是否只包含空文本
             if (node is DialogueNode dialogue)
             {
                 // 如果没有文本段落，或者所有文本段落都是空的
@@ -492,7 +484,8 @@ namespace MookDialogueScript
             bool IsEndToken()
             {
                 if (_currentToken.Type == TokenType.DEDENT || _currentToken.Type == TokenType.EOF ||
-                    _currentToken.Type == TokenType.DOUBLE_COLON)
+                    _currentToken.Type == TokenType.DOUBLE_COLON || _currentToken.Type == TokenType.NODE_START ||
+                    _currentToken.Type == TokenType.NODE_END)
                     return true;
 
                 foreach (var endToken in endTokens)
@@ -763,7 +756,7 @@ namespace MookDialogueScript
         /// <summary>
         /// 解析旁白
         /// </summary>
-        private NarrationNode ParseNarration()
+        private DialogueNode ParseNarration()
         {
             int line = _currentToken.Line;
             int column = _currentToken.Column;
@@ -786,7 +779,8 @@ namespace MookDialogueScript
                 Consume(TokenType.NEWLINE);
             }
 
-            return new NarrationNode(text, labels, line, column);
+            // 使用DialogueNode的便捷构造函数创建旁白
+            return new DialogueNode(text, labels, line, column);
         }
 
         /// <summary>

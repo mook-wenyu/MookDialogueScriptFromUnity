@@ -63,7 +63,7 @@ namespace MookDialogueScript
         /// <summary>
         /// 对话显示事件
         /// </summary>
-        public event Action<ContentNode> OnDialogueDisplayed;
+        public event Action<DialogueNode> OnDialogueDisplayed;
 
         /// <summary>
         /// 选项显示事件
@@ -489,7 +489,7 @@ namespace MookDialogueScript
             await ProcessContentCommon(content, conditionNode, index, contents);
 
             // 如果是对话或旁白，更新条件状态
-            if (content is DialogueNode or NarrationNode)
+            if (content is DialogueNode)
             {
                 _conditionStates[conditionNode] = (state.branch, state.elifIndex, index + 1);
             }
@@ -508,12 +508,13 @@ namespace MookDialogueScript
             int index,
             List<ContentNode> contents)
         {
-            // 处理命令节点
-            if (content is CommandNode commandNode)
+            // 设置执行状态
+            _isExecuting = true;
+
+            try
             {
-                // 设置执行状态
-                _isExecuting = true;
-                try
+                // 处理命令节点
+                if (content is CommandNode commandNode)
                 {
                     PrintCommand(commandNode);
                     // 执行命令
@@ -532,17 +533,8 @@ namespace MookDialogueScript
                     // 继续处理下一个内容
                     await Continue();
                 }
-                finally
-                {
-                    _isExecuting = false;
-                }
-            }
-            // 处理选项节点
-            else if (content is ChoiceNode choiceNode)
-            {
-                // 设置执行状态
-                _isExecuting = true;
-                try
+                // 处理选项节点
+                else if (content is ChoiceNode choiceNode)
                 {
                     // 开始收集选项
                     _isCollectingChoices = true;
@@ -575,39 +567,23 @@ namespace MookDialogueScript
                         await Continue();
                     }
                 }
-                finally
+                // 处理嵌套条件节点
+                else if (content is ConditionNode conditionNode)
                 {
-                    _isExecuting = false;
-                }
-            }
-            // 处理嵌套条件节点
-            else if (content is ConditionNode conditionNode)
-            {
-                // 更新执行栈
-                _executionStack.Pop();
-                _executionStack.Push((contentContainer, index + 1)); // 更新容器索引
-                _executionStack.Push((conditionNode, 0)); // 压入条件节点
+                    // 更新执行栈
+                    _executionStack.Pop();
+                    _executionStack.Push((contentContainer, index + 1)); // 更新容器索引
+                    _executionStack.Push((conditionNode, 0)); // 压入条件节点
 
-                _isExecuting = false;
-                // 处理条件内容
-                await ProcessConditionContent(conditionNode, 0);
-            }
-            // 处理对话或旁白
-            else
-            {
-                // 设置执行状态
-                _isExecuting = true;
-                try
+                    _isExecuting = false;
+                    // 处理条件内容
+                    await ProcessConditionContent(conditionNode, 0);
+                }
+                // 处理对话或旁白
+                else if (content is DialogueNode dialogueNode)
                 {
                     // 显示内容
-                    if (content is DialogueNode or NarrationNode)
-                    {
-                        OnDialogueDisplayed?.Invoke(content);
-                    }
-                    else
-                    {
-                        Debug.LogError($"未知的内容类型 {content.GetType().Name}");
-                    }
+                    OnDialogueDisplayed?.Invoke(dialogueNode);
 
                     // 更新执行栈
                     _executionStack.Pop();
@@ -621,10 +597,14 @@ namespace MookDialogueScript
                         await Continue();
                     }
                 }
-                finally
+                else
                 {
-                    _isExecuting = false;
+                    Debug.LogError($"未知的内容类型 {content.GetType().Name}");
                 }
+            }
+            finally
+            {
+                _isExecuting = false;
             }
         }
 
@@ -817,16 +797,6 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 构建旁白文本
-        /// </summary>
-        /// <param name="narrationNode">旁白节点</param>
-        /// <returns>构建好的旁白文本</returns>
-        public async Task<string> BuildNarrationText(NarrationNode narrationNode)
-        {
-            return await _interpreter.BuildText(narrationNode.Text);
-        }
-
-        /// <summary>
         /// 构建选项文本
         /// </summary>
         /// <param name="choiceNode">选项节点</param>
@@ -971,7 +941,7 @@ namespace MookDialogueScript
         private async Task<int> CheckContentType(ContentNode content)
         {
             // 对话和旁白是直接可显示的
-            if (content is DialogueNode || content is NarrationNode)
+            if (content is DialogueNode)
             {
                 return 1; // 对话内容
             }

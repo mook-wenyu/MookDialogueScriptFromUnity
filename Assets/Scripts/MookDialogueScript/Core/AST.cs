@@ -73,12 +73,12 @@ namespace MookDialogueScript
     }
 
     /// <summary>
-    /// 对话节点
+    /// 对话节点（当Speaker为空时代表旁白）
     /// </summary>
     public class DialogueNode : ContentNode
     {
         /// <summary>
-        /// 说话者
+        /// 说话者（为空时代表旁白）
         /// </summary>
         public string Speaker { get; }
 
@@ -105,29 +105,23 @@ namespace MookDialogueScript
             Text = text;
             Labels = labels;
         }
-    }
-
-    /// <summary>
-    /// 旁白节点
-    /// </summary>
-    public class NarrationNode : ContentNode
-    {
-        /// <summary>
-        /// 文本列表
-        /// </summary>
-        public List<TextSegmentNode> Text { get; }
 
         /// <summary>
-        /// 标签列表
+        /// 创建旁白节点的便捷构造函数
         /// </summary>
-        public List<string> Labels { get; }
-
-        public NarrationNode(List<TextSegmentNode> text, List<string> labels, int line, int column)
+        public DialogueNode(List<TextSegmentNode> text, List<string> labels, int line, int column)
             : base(line, column)
         {
+            Speaker = null;
+            Emotion = null;
             Text = text;
             Labels = labels;
         }
+
+        /// <summary>
+        /// 判断节点是否为旁白
+        /// </summary>
+        public bool IsNarration => string.IsNullOrEmpty(Speaker);
     }
 
     /// <summary>
