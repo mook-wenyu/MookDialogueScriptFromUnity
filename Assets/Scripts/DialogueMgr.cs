@@ -24,6 +24,7 @@ public class DialogueMgr : MonoBehaviour
         var player = new Player("二狗");
         // 使用Runner的RegisterObject方法注册玩家对象
         RunMgrs.RegisterObject("player", player);
+        RunMgrs.RegisterObjectFunction("player", player);
 
         // 注册一些测试变量
         RunMgrs.RegisterVariable("gold", new RuntimeValue(100));
@@ -36,13 +37,13 @@ public class DialogueMgr : MonoBehaviour
     public static class GameSystem
     {
         // 静态变量示例
-        [ScriptVar("GameVersion")]
+        [ScriptVar("game_version")]
         public static string GameVersion { get; } = "1.0.0";
 
-        [ScriptVar("GameDifficulty")]
+        [ScriptVar("game_difficulty")]
         public static int GameDifficulty { get; set; } = 1;
 
-        [ScriptVar("IsDebugMode")]
+        [ScriptVar("is_debug_mode")]
         public static bool IsDebugMode { get; set; } = false;
     }
 
@@ -67,12 +68,12 @@ public class DialogueMgr : MonoBehaviour
         }
 
         // 方法
-        public string GetStatus()
+        public string Get_Status()
         {
             return $"{Name} (Lv.{Level}) - HP: {Health}";
         }
 
-        public void TakeDamage(int amount)
+        public void Take_Damage(int amount)
         {
             Health -= amount;
             if (Health <= 0)

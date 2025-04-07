@@ -297,12 +297,14 @@ namespace MookDialogueScript
                                     }
                                     else
                                     {
+                                        Debug.LogError($"变量 '{varNode.Name}' 的值为null");
                                         // 变量为null时显示完整原始文本，包括花括号和$符号
                                         result.Append($"{{${varNode.Name}}}");
                                     }
                                 }
                                 else
                                 {
+                                    Debug.LogError($"变量 '{varNode.Name}' 不存在");
                                     // 变量不存在时显示完整原始文本，包括花括号和$符号
                                     result.Append($"{{${varNode.Name}}}");
                                 }
@@ -356,6 +358,7 @@ namespace MookDialogueScript
                                     }
                                     else
                                     {
+                                        Debug.LogWarning($"表达式返回null");
                                         // 表达式返回null时显示原始文本，包括花括号
                                         result.Append($"{{{FormatExpressionNode(i.Expression)}}}");
                                     }

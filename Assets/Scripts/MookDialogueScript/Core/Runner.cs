@@ -145,6 +145,16 @@ namespace MookDialogueScript
         }
 
         /// <summary>
+        /// 注册内置变量
+        /// </summary>
+        /// <param name="name">变量名</param>
+        /// <param name="value">变量值</param>
+        public void RegisterBuiltinVariable(string name, Func<object> getter, Action<object> setter)
+        {
+            _context.RegisterBuiltinVariable(name, getter, setter);
+        }
+
+        /// <summary>
         /// 注册对象
         /// </summary>
         /// <param name="name">对象名</param>
@@ -525,7 +535,7 @@ namespace MookDialogueScript
                 // 处理命令节点
                 if (content is CommandNode commandNode)
                 {
-                    PrintCommand(commandNode);
+                    // PrintCommand(commandNode);
                     // 执行命令
                     string nextNodeName = await _interpreter.ExecuteCommand(commandNode);
                     if (!string.IsNullOrEmpty(nextNodeName))
@@ -605,9 +615,13 @@ namespace MookDialogueScript
                         // 再把对话节点的内容压入栈，从第一个开始处理
                         _executionStack.Push((dialogueNode, 0));
 
-                        _isExecuting = false;
-                        // 处理对话节点的嵌套内容
-                        await Continue();
+                        // 检查下一个内容是否为选项
+                        int nextContentType = await HasNextContent();
+                        if (nextContentType == 2) // 2表示选项内容
+                        {
+                            _isExecuting = false;
+                            await Continue();
+                        }
                     }
                     else
                     {

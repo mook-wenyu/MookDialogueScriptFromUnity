@@ -181,9 +181,9 @@ namespace MookDialogueScript
             Func<object> getter = () => property.GetValue(null);
 
             // 创建setter
-            Action<object> setter = !property.CanWrite 
-                ? (obj) => { Debug.LogError($"变量 '{varName}' 是只读的"); } 
-                : (obj) => property.SetValue(null, obj);
+            Action<object> setter = !property.CanWrite
+                ? (obj) => { Debug.LogError($"变量 '{varName}' 是只读的"); }
+            : (obj) => property.SetValue(null, obj);
 
             _builtinVariables[varName] = (getter, setter);
         }
@@ -287,19 +287,19 @@ namespace MookDialogueScript
         public Dictionary<string, RuntimeValue> GetAllVariables()
         {
             var result = new Dictionary<string, RuntimeValue>();
-            
+
             // 添加内置变量
             foreach (var pair in _builtinVariables)
             {
                 result[pair.Key] = ConvertToRuntimeValue(pair.Value.getter());
             }
-            
+
             // 添加脚本变量
             foreach (var pair in _scriptVariables)
             {
                 result[pair.Key] = pair.Value;
             }
-            
+
             return result;
         }
 
