@@ -215,7 +215,6 @@ $player__health        // 访问 player 对象的 health 属性
 ```mds
 // 函数调用
 call log("这是一条日志")
-call wait(2)               // 等待2秒
 
 // 对象函数调用
 call player__get_status()
@@ -234,6 +233,21 @@ endif
 - 直接调用函数时必须使用 `call` 关键字
 - 对象函数使用 `objectName__methodName()` 格式调用
 - 在表达式或插值中使用函数时，不需要 `call` 关键字
+
+#### 等待控制
+
+```mds
+// 等待控制
+// 等待1秒
+wait 1
+// 等待0.01秒（10毫秒）
+wait 0.01
+```
+
+等待控制说明：
+- `wait` 是一个特殊关键字，直接使用 `wait 数字` 格式
+- 等待时间单位为秒，可精确到毫秒
+- 用于控制对话或事件的节奏和时序
 
 #### 对话系统
 
@@ -331,15 +345,16 @@ endif
 2. 布尔值：`true`, `false`
 3. 变量操作：`var`, `set`, `add`, `sub`, `mul`, `div`, `mod`
 4. 跳转控制：`=>`, `jump`
-5. 函数调用：`call`, `wait`
-6. 比较运算：
+5. 函数调用：`call`
+6. 等待控制：`wait 数字`（单位：秒，可精确到毫秒，如 `wait 0.01`）
+7. 比较运算：
    - 等于：`==` 或 `eq` 或 `is`
    - 不等于：`!=` 或 `neq`
    - 大于：`>` 或 `gt`
    - 小于：`<` 或 `lt`
    - 大于等于：`>=` 或 `gte`
    - 小于等于：`<=` 或 `lte`
-7. 逻辑运算：
+8. 逻辑运算：
    - 与：`&&` 或 `and`
    - 或：`||` 或 `or`
    - 非：`!` 或 `not`
@@ -387,6 +402,102 @@ RunMgrs.RegisterFunction("calculate_damage", (int base_damage, float multiplier)
     return (int)(base_damage * multiplier);
 });
 ```
+
+### 创建自定义加载器
+
+MookDialogueScript 提供了 `IDialogueLoader` 接口，允许你创建自定义的脚本加载器。默认的加载器会从 Resources 文件夹加载脚本，但你可以根据需要实现自己的加载逻辑。
+
+```csharp
+// 1. 实现 IDialogueLoader 接口
+public class CustomDialogueLoader : IDialogueLoader
+{
+    private readonly string _rootDir;
+    private readonly string[] _extensions;
+
+    public CustomDialogueLoader(string rootDir = "", string[] extensions = null)
+    {
+        _rootDir = string.IsNullOrEmpty(rootDir) ? "DialogueScripts" : rootDir;
+        _extensions = extensions ?? new[] { ".txt", ".mds" };
+    }
+
+    public void LoadScripts(Runner runner)
+    {
+        // 自定义加载逻辑
+        // 例如：从网络加载、从本地文件加载、从数据库加载等
+        
+        // 示例：从 StreamingAssets 加载
+        string scriptPath = Path.Combine(Application.streamingAssetsPath, _rootDir);
+        if (Directory.Exists(scriptPath))
+        {
+            foreach (string file in Directory.GetFiles(scriptPath, "*.*", SearchOption.AllDirectories))
+            {
+                string extension = Path.GetExtension(file).ToLower();
+                if (_extensions.Contains(extension))
+                {
+                    try
+                    {
+                        string scriptContent = File.ReadAllText(file);
+                        string scriptName = Path.GetFileNameWithoutExtension(file);
+                        LoadScriptContent(scriptContent, runner, scriptName);
+                        Debug.Log($"从 StreamingAssets 加载脚本文件 {scriptName} 成功");
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"加载脚本文件 {file} 时出错: {ex.Message}");
+                    }
+                }
+            }
+        }
+        else
+        {
+            Debug.LogWarning($"StreamingAssets 目录 {scriptPath} 不存在，将创建该目录");
+            Directory.CreateDirectory(scriptPath);
+        }
+    }
+
+    private void LoadScriptContent(string scriptContent, Runner runner, string filePath = "")
+    {
+        try
+        {
+            // 创建词法分析器
+            var lexer = new Lexer(scriptContent);
+
+            // 创建语法分析器
+            var parser = new Parser(lexer.Tokenize());
+            var scriptNode = parser.Parse();
+
+            // 注册脚本节点
+            runner.RegisterScript(scriptNode);
+        }
+        catch (Exception ex)
+        {
+            string fileInfo = string.IsNullOrEmpty(filePath) ? "" : $" (文件: {filePath})";
+            Debug.LogError($"解析脚本内容时出错{fileInfo}: {ex.Message}");
+            Debug.LogError(ex.StackTrace);
+        }
+    }
+}
+
+// 2. 使用自定义加载器创建 Runner
+public class DialogueMgr : MonoBehaviour
+{
+    public static DialogueMgr Instance { get; private set; }
+    public Runner RunMgrs { get; private set; }
+    
+    void Awake()
+    {
+        Instance = this;
+        Initialize();
+    }
+    
+    public void Initialize()
+    {
+        Debug.Log("开始初始化对话系统");
+        
+        // 使用自定义加载器，从 StreamingAssets 加载脚本
+        RunMgrs = new Runner(new CustomDialogueLoader());
+    }
+}
 
 ## 开源协议
 

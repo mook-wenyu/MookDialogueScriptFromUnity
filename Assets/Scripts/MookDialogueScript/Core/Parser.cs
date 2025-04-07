@@ -78,7 +78,6 @@ namespace MookDialogueScript
             {
                 _currentToken = new Token(TokenType.EOF, "", _tokens[_tokens.Count - 1].Line, _tokens[_tokens.Count - 1].Column);
             }
-            Debug.Log($"当前Token: {_currentToken}");
         }
 
         /// <summary>

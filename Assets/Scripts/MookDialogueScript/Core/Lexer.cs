@@ -59,7 +59,6 @@ namespace MookDialogueScript
             {
                 token = GetNextToken();
                 tokens.Add(token);
-                Debug.Log($"Token: {token.ToString()}");
             } while (token.Type != TokenType.EOF);
 
             return tokens;
