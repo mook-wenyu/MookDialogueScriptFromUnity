@@ -48,6 +48,24 @@ namespace MookDialogueScript
         };
 
         /// <summary>
+        /// 获取所有Token
+        /// </summary>
+        /// <returns>所有Token</returns>
+        public List<Token> Tokenize()
+        {
+            List<Token> tokens = new List<Token>();
+            Token token;
+            do
+            {
+                token = GetNextToken();
+                tokens.Add(token);
+                Debug.Log($"Token: {token.ToString()}");
+            } while (token.Type != TokenType.EOF);
+
+            return tokens;
+        }
+
+        /// <summary>
         /// 获取指定位置的字符，如果位置超出范围则返回'\0'
         /// </summary>
         /// <param name="position">要获取字符的位置</param>
@@ -163,13 +181,18 @@ namespace MookDialogueScript
         /// </summary>
         private Token HandleIndentDecrease(int indent)
         {
-            // 找到正确的缩进级别
-            while (_indentStack.Count > 0 && _indentStack[_indentStack.Count - 1] > indent)
+            // 只删除一个缩进级别
+            if (_indentStack.Count > 1 && _indentStack[_indentStack.Count - 1] > indent)
             {
                 _indentStack.RemoveAt(_indentStack.Count - 1);
+                // 更新当前缩进为栈顶缩进值
+                _currentIndent = _indentStack[_indentStack.Count - 1];
+
+                return new Token(TokenType.DEDENT, "", _line, _column);
             }
 
-            if (_indentStack.Count == 0 || _indentStack[_indentStack.Count - 1] != indent)
+            // 如果缩进不匹配任何已知级别，报错并尝试恢复
+            if (_indentStack.Count == 0 || (_indentStack.Count > 0 && _indentStack[_indentStack.Count - 1] != indent))
             {
                 Debug.LogError($"词法错误: 第{_line}行，第{_column}列，无效的缩进");
                 // 尝试恢复 - 添加当前缩进到栈中
@@ -177,9 +200,9 @@ namespace MookDialogueScript
                 {
                     _indentStack.Add(indent);
                 }
+                _currentIndent = indent;
             }
 
-            _currentIndent = indent;
             return new Token(TokenType.DEDENT, "", _line, _column);
         }
 
@@ -202,7 +225,7 @@ namespace MookDialogueScript
         {
             // 记录当前行号用于生成Token
             int currentLine = _line;
-            
+
             // 处理当前换行
             if (_currentChar == '\r' && Peek() == '\n')
             {
@@ -211,20 +234,20 @@ namespace MookDialogueScript
             Advance();
             _line++;
             _column = 1;
-            
+
             // 循环处理连续的空行和注释行
-            while (true) 
+            while (true)
             {
                 // 如果列号为1（行首），预检查缩进
                 if (_column == 1)
                 {
                     // 查看当前行是否是空行或注释行
                     bool isCommentOrEmptyLine = false;
-                    
+
                     // 暂存当前位置
                     int savedPosition = _position;
                     int savedColumn = _column;
-                    
+
                     // 跳过空白字符计算缩进
                     int indent = 0;
                     while (_currentChar == ' ' || _currentChar == '\t')
@@ -232,15 +255,15 @@ namespace MookDialogueScript
                         indent++;
                         Advance();
                     }
-                    
+
                     // 检查跳过空白后是否是注释或空行
-                    if (_currentChar == '/' && Peek() == '/' || 
-                        _currentChar == '\n' || _currentChar == '\r' || 
+                    if (_currentChar == '/' && Peek() == '/' ||
+                        _currentChar == '\n' || _currentChar == '\r' ||
                         _currentChar == '\0')
                     {
                         isCommentOrEmptyLine = true;
                     }
-                    
+
                     // 如果不是注释行或空行，且缩进与当前缩进不同，则回退并退出循环
                     if (!isCommentOrEmptyLine && indent != _currentIndent)
                     {
@@ -250,17 +273,17 @@ namespace MookDialogueScript
                         UpdateCurrentChar();
                         break;
                     }
-                    
+
                     // 如果是注释行或空行，继续处理
                     if (isCommentOrEmptyLine)
                     {
                         // 对于连续的注释行和空行，跳过缩进处理
                     }
                 }
-                
+
                 // 跳过行首空白
                 SkipWhitespace();
-                
+
                 // 检查是否是注释行
                 if (_currentChar == '/' && Peek() == '/')
                 {
@@ -269,7 +292,7 @@ namespace MookDialogueScript
                     {
                         Advance();
                     }
-                    
+
                     // 如果注释后没有换行了，结束循环
                     if (_currentChar != '\n' && _currentChar != '\r')
                     {
@@ -286,7 +309,7 @@ namespace MookDialogueScript
                     // 不是空行也不是注释行，结束循环
                     break;
                 }
-                
+
                 // 处理换行
                 if (_currentChar == '\r' && Peek() == '\n')
                 {
@@ -303,13 +326,13 @@ namespace MookDialogueScript
                     break; // 如果没有换行了，结束循环
                 }
             }
-            
+
             // 如果处理完换行和注释后到达了文件末尾，直接返回EOF
             if (_currentChar == '\0')
             {
                 return new Token(TokenType.EOF, "", _line, _column);
             }
-            
+
             // 返回一个NEWLINE token，无论有几个连续的换行和注释
             return new Token(TokenType.NEWLINE, "\\n", currentLine, _column);
         }
@@ -331,7 +354,17 @@ namespace MookDialogueScript
         /// </summary>
         private Token HandleIndentation()
         {
+            // 保存当前位置
+            int savedPosition = _position;
+            int savedColumn = _column;
+            char savedCurrentChar = _currentChar;
+
             int indent = CountIndentation();
+
+            // 恢复位置
+            _position = savedPosition;
+            _column = savedColumn;
+            _currentChar = savedCurrentChar;
 
             if (ShouldSkipIndentation())
                 return null;
@@ -569,7 +602,7 @@ namespace MookDialogueScript
                 if (_column == 1)
                 {
                     // 跳过注释行和空行前的缩进处理
-                    if (_currentChar == '/' && Peek() == '/' || 
+                    if (_currentChar == '/' && Peek() == '/' ||
                         _currentChar == '\n' || _currentChar == '\r')
                     {
                         // 对于注释行和空行，不处理缩进，直接进入注释/换行处理逻辑
@@ -578,7 +611,9 @@ namespace MookDialogueScript
                     {
                         Token indentToken = HandleIndentation();
                         if (indentToken != null)
+                        {
                             return indentToken;
+                        }
                     }
                 }
 
@@ -596,7 +631,7 @@ namespace MookDialogueScript
                     if (_currentChar == '/' && Peek() == '/')
                     {
                         SkipComment();
-                        
+
                         // 如果注释后没有遇到换行，继续下一个循环
                         if (_currentChar != '\n' && _currentChar != '\r')
                         {
@@ -607,7 +642,7 @@ namespace MookDialogueScript
                             continue;
                         }
                     }
-                    
+
                     // 处理换行和后续可能的连续空行和注释行
                     return HandleNewlineAndComments();
                 }

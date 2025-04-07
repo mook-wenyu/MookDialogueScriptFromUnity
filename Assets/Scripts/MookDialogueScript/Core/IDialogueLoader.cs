@@ -86,7 +86,7 @@ namespace MookDialogueScript
                 var lexer = new Lexer(scriptContent);
 
                 // 创建语法分析器
-                var parser = new Parser(lexer);
+                var parser = new Parser(lexer.Tokenize());
                 var scriptNode = parser.Parse();
 
                 // 注册脚本节点
@@ -96,6 +96,7 @@ namespace MookDialogueScript
             {
                 string fileInfo = string.IsNullOrEmpty(filePath) ? "" : $" (文件: {filePath})";
                 Debug.LogError($"解析脚本内容时出错{fileInfo}: {ex.Message}");
+                Debug.LogError(ex.StackTrace);
             }
         }
     }

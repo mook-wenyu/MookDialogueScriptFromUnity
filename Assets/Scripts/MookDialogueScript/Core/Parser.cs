@@ -26,20 +26,9 @@ namespace MookDialogueScript
 
     public class Parser
     {
-        private readonly Lexer _lexer;
-        private Token _currentToken;
         private readonly List<Token> _tokens;
         private int _tokenIndex;
-        private readonly bool _useTokenList;
-
-        public Parser(Lexer lexer)
-        {
-            _lexer = lexer;
-            _tokens = null;
-            _tokenIndex = 0;
-            _useTokenList = false;
-            _currentToken = _lexer.GetNextToken();
-        }
+        private Token _currentToken;
 
         public Parser(List<Token> tokens)
         {
@@ -49,10 +38,8 @@ namespace MookDialogueScript
                 throw new ArgumentException("Token列表不能为空");
             }
 
-            _lexer = null;
             _tokens = tokens;
             _tokenIndex = 0;
-            _useTokenList = true;
             _currentToken = _tokens[0];
         }
 
@@ -82,23 +69,16 @@ namespace MookDialogueScript
         /// </summary>
         private void GetNextToken()
         {
-            if (_useTokenList)
+            _tokenIndex++;
+            if (_tokenIndex < _tokens.Count)
             {
-                _tokenIndex++;
-                if (_tokenIndex < _tokens.Count)
-                {
-                    _currentToken = _tokens[_tokenIndex];
-                }
-                else
-                {
-                    _currentToken = new Token(TokenType.EOF, "", _tokens[_tokens.Count - 1].Line, _tokens[_tokens.Count - 1].Column);
-                }
+                _currentToken = _tokens[_tokenIndex];
             }
             else
             {
-                _currentToken = _lexer.GetNextToken();
+                _currentToken = new Token(TokenType.EOF, "", _tokens[_tokens.Count - 1].Line, _tokens[_tokens.Count - 1].Column);
             }
-
+            Debug.Log($"当前Token: {_currentToken}");
         }
 
         /// <summary>
@@ -114,20 +94,11 @@ namespace MookDialogueScript
         /// </summary>
         private bool CheckNext(TokenType type)
         {
-            if (_useTokenList)
+            if (_tokenIndex + 1 < _tokens.Count)
             {
-                if (_tokenIndex + 1 < _tokens.Count)
-                {
-                    return _tokens[_tokenIndex + 1].Type == type;
-                }
-                return false;
+                return _tokens[_tokenIndex + 1].Type == type;
             }
-            else
-            {
-                // 使用Lexer的PeekNextToken方法，但不缓存结果
-                Token nextToken = _lexer.PeekNextToken();
-                return nextToken.Type == type;
-            }
+            return false;
         }
 
         /// <summary>
@@ -275,12 +246,7 @@ namespace MookDialogueScript
             {
                 case TokenType.TEXT:
                 case TokenType.IDENTIFIER:  // 增加对IDENTIFIER类型的支持，使其也被识别为对话的开始
-                    // 如果后面有冒号，则认为是对话
-                    if (CheckNext(TokenType.LEFT_BRACKET) || CheckNext(TokenType.COLON))
-                    {
-                        return ParseDialogue();
-                    }
-                    return ParseNarration();
+                    return ParseDialogue();
                 case TokenType.ARROW:
                     return ParseChoice();
                 case TokenType.IF:
@@ -301,8 +267,64 @@ namespace MookDialogueScript
                 case TokenType.JUMP:
                     return ParseCommand();
                 default:
-                    return ParseNarration();
+                    return ParseDialogue();
             }
+        }
+
+        /// <summary>
+        /// 解析条件
+        /// </summary>
+        private ConditionNode ParseCondition()
+        {
+            int line = _currentToken.Line;
+            int column = _currentToken.Column;
+            Consume(TokenType.IF);
+
+            var condition = ParseExpression();
+
+            // 解析then分支
+            var thenBranch = new List<ContentNode>();
+            ParseIndentedContent(thenBranch, TokenType.ELIF, TokenType.ELSE, TokenType.ENDIF);
+
+            // 解析elif分支
+            var elifBranches = new List<(ExpressionNode Condition, List<ContentNode> Content)>();
+            while (_currentToken.Type == TokenType.ELIF)
+            {
+                Consume(TokenType.ELIF);
+                var elifCondition = ParseExpression();
+
+                var elifContent = new List<ContentNode>();
+                ParseIndentedContent(elifContent, TokenType.ELIF, TokenType.ELSE, TokenType.ENDIF);
+                elifBranches.Add((elifCondition, elifContent));
+            }
+
+            // 解析else分支
+            List<ContentNode> elseBranch = null;
+            if (_currentToken.Type == TokenType.ELSE)
+            {
+                Consume(TokenType.ELSE);
+                elseBranch = new List<ContentNode>();
+                ParseIndentedContent(elseBranch, TokenType.ENDIF);
+            }
+
+            // 验证并消耗结束标记
+            if (_currentToken.Type != TokenType.ENDIF)
+            {
+                Debug.LogError($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望 ENDIF，但得到了 {_currentToken.Type}");
+                // 尝试恢复 - 搜索下一个ENDIF或文件结束
+                while (_currentToken.Type != TokenType.ENDIF && _currentToken.Type != TokenType.EOF)
+                {
+                    GetNextToken();
+                }
+            }
+
+            if (_currentToken.Type == TokenType.ENDIF)
+            {
+                Consume(TokenType.ENDIF);
+                Consume(TokenType.NEWLINE);
+            }
+
+            return new ConditionNode(condition, thenBranch, elifBranches, elseBranch, line, column);
         }
 
         /// <summary>
@@ -310,67 +332,81 @@ namespace MookDialogueScript
         /// </summary>
         private DialogueNode ParseDialogue()
         {
-            string speaker = _currentToken.Value;
             int line = _currentToken.Line;
             int column = _currentToken.Column;
 
-            // 消耗当前token，可能是TEXT或IDENTIFIER
-            Consume(_currentToken.Type);
+            // 先检查后面是否有冒号或左括号，如果有则按对话处理，否则按旁白处理
+            bool isDialogue = CheckNext(TokenType.COLON) || CheckNext(TokenType.LEFT_BRACKET);
 
+            string speaker = null;
             string emotion = null;
-            // 记录扫描到的位置，用于防止重复处理同一个LEFT_BRACKET
-            int lastBracketLine = -1;
-            int lastBracketColumn = -1;
 
-            if (_currentToken.Type == TokenType.LEFT_BRACKET)
+            if (isDialogue)
             {
-                // 记录当前LEFT_BRACKET的位置
-                lastBracketLine = _currentToken.Line;
-                lastBracketColumn = _currentToken.Column;
+                // 如果是对话，保存说话者
+                speaker = _currentToken.Value;
 
-                // 直接消耗左括号
-                GetNextToken();
+                // 消耗当前token，可能是TEXT或IDENTIFIER
+                Consume(_currentToken.Type);
 
-                // 防止重复处理同一个LEFT_BRACKET
-                if (_currentToken.Type == TokenType.LEFT_BRACKET &&
-                    _currentToken.Line == lastBracketLine &&
-                    _currentToken.Column == lastBracketColumn)
+                // 记录扫描到的位置，用于防止重复处理同一个LEFT_BRACKET
+                int lastBracketLine = -1;
+                int lastBracketColumn = -1;
+
+                if (_currentToken.Type == TokenType.LEFT_BRACKET)
                 {
-                    // 这是重复的LEFT_BRACKET，跳过它
-                    Debug.LogWarning($"警告: 第{_currentToken.Line}行，第{_currentToken.Column}列，跳过重复的左括号");
+                    // 记录当前LEFT_BRACKET的位置
+                    lastBracketLine = _currentToken.Line;
+                    lastBracketColumn = _currentToken.Column;
+
+                    // 直接消耗左括号
                     GetNextToken();
+
+                    // 防止重复处理同一个LEFT_BRACKET
+                    if (_currentToken.Type == TokenType.LEFT_BRACKET &&
+                        _currentToken.Line == lastBracketLine &&
+                        _currentToken.Column == lastBracketColumn)
+                    {
+                        // 这是重复的LEFT_BRACKET，跳过它
+                        Debug.LogWarning($"警告: 第{_currentToken.Line}行，第{_currentToken.Column}列，跳过重复的左括号");
+                        GetNextToken();
+                    }
+
+                    if (_currentToken.Type == TokenType.IDENTIFIER || _currentToken.Type == TokenType.TEXT)
+                    {
+                        emotion = _currentToken.Value;
+                        GetNextToken();
+                    }
+                    else
+                    {
+                        Debug.LogError($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望表情名称，但得到 {_currentToken.Type}");
+                        throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望表情名称，但得到 {_currentToken.Type}");
+                    }
+
+                    if (_currentToken.Type == TokenType.RIGHT_BRACKET)
+                    {
+                        GetNextToken();
+                    }
+                    else
+                    {
+                        Debug.LogError($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望右括号，但得到 {_currentToken.Type}");
+                        throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望右括号，但得到 {_currentToken.Type}");
+                    }
                 }
 
-                if (_currentToken.Type == TokenType.IDENTIFIER || _currentToken.Type == TokenType.TEXT)
+                if (_currentToken.Type == TokenType.COLON)
                 {
-                    emotion = _currentToken.Value;
                     GetNextToken();
                 }
                 else
                 {
-                    Debug.LogError($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望表情名称，但得到 {_currentToken.Type}");
-                    throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望表情名称，但得到 {_currentToken.Type}");
+                    Debug.LogError($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望冒号，但得到 {_currentToken.Type}");
+                    throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望冒号，但得到 {_currentToken.Type}");
                 }
-
-                if (_currentToken.Type == TokenType.RIGHT_BRACKET)
-                {
-                    GetNextToken();
-                }
-                else
-                {
-                    Debug.LogError($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望右括号，但得到 {_currentToken.Type}");
-                    throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望右括号，但得到 {_currentToken.Type}");
-                }
-            }
-
-            if (_currentToken.Type == TokenType.COLON)
-            {
-                GetNextToken();
             }
             else
             {
-                Debug.LogError($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望冒号，但得到 {_currentToken.Type}");
-                throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望冒号，但得到 {_currentToken.Type}");
+                // 如果是旁白，不消耗token，让token作为文本的一部分被ParseText处理
             }
 
             var text = ParseText();
@@ -397,13 +433,10 @@ namespace MookDialogueScript
                 Consume(TokenType.IDENTIFIER);
             }
 
-            // 处理文件末尾情况
-            if (_currentToken.Type != TokenType.EOF)
-            {
-                Consume(TokenType.NEWLINE);
-            }
+            var content = new List<ContentNode>();
+            ParseIndentedContent(content);
 
-            return new DialogueNode(speaker, emotion, text, labels, line, column);
+            return new DialogueNode(speaker, emotion, text, labels, content, line, column);
         }
 
         /// <summary>
@@ -473,12 +506,20 @@ namespace MookDialogueScript
         /// <summary>
         /// 解析缩进的内容块，直到遇到指定的结束标记
         /// </summary>
-        private List<ContentNode> ParseIndentedContent(params TokenType[] endTokens)
+        /// <param name="content">用于存储解析结果的内容列表</param>
+        /// <param name="endTokens">结束标记</param>
+        private void ParseIndentedContent(List<ContentNode> content, params TokenType[] endTokens)
         {
-            Consume(TokenType.NEWLINE);
-            Consume(TokenType.INDENT);
+            // 检查是否有效的缩进开始
+            bool hasIndent = false;
 
-            var content = new List<ContentNode>();
+            Consume(TokenType.NEWLINE);
+            // 如果下一个是INDENT，则处理缩进
+            if (_currentToken.Type == TokenType.INDENT)
+            {
+                hasIndent = true;
+                Consume(TokenType.INDENT);
+            }
 
             // 检查当前标记是否是任一结束标记
             bool IsEndToken()
@@ -496,32 +537,33 @@ namespace MookDialogueScript
                 return false;
             }
 
-            while (!IsEndToken())
+            // 只有当有缩进时才解析内容
+            if (hasIndent)
             {
-                ContentNode node;
-                if (_currentToken.Type == TokenType.IF)
+                while (!IsEndToken())
                 {
-                    node = ParseCondition();
-                }
-                else
-                {
-                    node = ParseContent();
+                    ContentNode node;
+                    if (_currentToken.Type == TokenType.IF)
+                    {
+                        node = ParseCondition();
+                    }
+                    else
+                    {
+                        node = ParseContent();
+                    }
+
+                    // 跳过空的内容节点
+                    if (!IsEmptyContentNode(node))
+                    {
+                        content.Add(node);
+                    }
                 }
 
-                // 跳过空的内容节点
-                if (!IsEmptyContentNode(node))
+                if (_currentToken.Type == TokenType.DEDENT)
                 {
-                    content.Add(node);
+                    Consume(TokenType.DEDENT);
                 }
             }
-
-            // 只在遇到DEDENT时消耗它，其他结束标记需要留给调用者处理
-            if (_currentToken.Type == TokenType.DEDENT)
-            {
-                Consume(TokenType.DEDENT);
-            }
-
-            return content;
         }
 
         private ChoiceNode ParseChoice()
@@ -549,62 +591,10 @@ namespace MookDialogueScript
                 Consume(TokenType.RIGHT_BRACKET);
             }
 
-            var content = ParseIndentedContent();
+            var content = new List<ContentNode>();
+            ParseIndentedContent(content);
 
             return new ChoiceNode(text, condition, content, line, column);
-        }
-
-        /// <summary>
-        /// 解析条件
-        /// </summary>
-        private ConditionNode ParseCondition()
-        {
-            int line = _currentToken.Line;
-            int column = _currentToken.Column;
-            Consume(TokenType.IF);
-
-            var condition = ParseExpression();
-
-            // 解析then分支
-            var thenBranch = ParseIndentedContent(TokenType.ELIF, TokenType.ELSE, TokenType.ENDIF);
-
-            // 解析elif分支
-            var elifBranches = new List<(ExpressionNode Condition, List<ContentNode> Content)>();
-            while (_currentToken.Type == TokenType.ELIF)
-            {
-                Consume(TokenType.ELIF);
-                var elifCondition = ParseExpression();
-
-                var elifContent = ParseIndentedContent(TokenType.ELIF, TokenType.ELSE, TokenType.ENDIF);
-                elifBranches.Add((elifCondition, elifContent));
-            }
-
-            // 解析else分支
-            List<ContentNode> elseBranch = null;
-            if (_currentToken.Type == TokenType.ELSE)
-            {
-                Consume(TokenType.ELSE);
-                elseBranch = ParseIndentedContent(TokenType.ENDIF);
-            }
-
-            // 验证并消耗结束标记
-            if (_currentToken.Type != TokenType.ENDIF)
-            {
-                Debug.LogError($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望 ENDIF，但得到了 {_currentToken.Type}");
-                // 尝试恢复 - 搜索下一个ENDIF或文件结束
-                while (_currentToken.Type != TokenType.ENDIF && _currentToken.Type != TokenType.EOF)
-                {
-                    GetNextToken();
-                }
-            }
-
-            if (_currentToken.Type == TokenType.ENDIF)
-            {
-                Consume(TokenType.ENDIF);
-                Consume(TokenType.NEWLINE);
-            }
-
-            return new ConditionNode(condition, thenBranch, elifBranches, elseBranch, line, column);
         }
 
         /// <summary>
@@ -751,36 +741,6 @@ namespace MookDialogueScript
             Consume(TokenType.IDENTIFIER);
             ConsumeNewlineOrEOF();
             return new JumpCommandNode(targetNode, line, column);
-        }
-
-        /// <summary>
-        /// 解析旁白
-        /// </summary>
-        private DialogueNode ParseNarration()
-        {
-            int line = _currentToken.Line;
-            int column = _currentToken.Column;
-            var text = ParseText();
-
-            List<string> labels = null;
-            while (Match(TokenType.HASH))
-            {
-                if (labels == null)
-                {
-                    labels = new List<string>();
-                }
-                labels.Add(_currentToken.Value);
-                Consume(TokenType.IDENTIFIER);
-            }
-
-            // 处理文件末尾情况
-            if (_currentToken.Type != TokenType.EOF)
-            {
-                Consume(TokenType.NEWLINE);
-            }
-
-            // 使用DialogueNode的便捷构造函数创建旁白
-            return new DialogueNode(text, labels, line, column);
         }
 
         /// <summary>

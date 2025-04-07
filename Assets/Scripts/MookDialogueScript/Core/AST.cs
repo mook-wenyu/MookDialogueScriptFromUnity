@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text;
 
 namespace MookDialogueScript
 {
@@ -21,6 +22,11 @@ namespace MookDialogueScript
         {
             Line = line;
             Column = column;
+        }
+
+        public override string ToString()
+        {
+            return $"{GetType().Name} (行: {Line}, 列: {Column})";
         }
     }
 
@@ -62,6 +68,18 @@ namespace MookDialogueScript
             NodeName = nodeName;
             Content = content;
         }
+
+        public override string ToString()
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine($"--- {NodeName}");
+            foreach (var content in Content)
+            {
+                sb.AppendLine($"{content}");
+            }
+            sb.AppendLine("===");
+            return sb.ToString();
+        }
     }
 
     /// <summary>
@@ -97,31 +115,54 @@ namespace MookDialogueScript
         /// </summary>
         public List<string> Labels { get; }
 
-        public DialogueNode(string speaker, string emotion, List<TextSegmentNode> text, List<string> labels, int line, int column)
+        /// <summary>
+        /// 内容列表，用于支持嵌套内容
+        /// </summary>
+        public List<ContentNode> Content { get; }
+
+        public DialogueNode(string speaker, string emotion, List<TextSegmentNode> text, List<string> labels, List<ContentNode> content, int line, int column)
             : base(line, column)
         {
             Speaker = speaker;
             Emotion = emotion;
             Text = text;
             Labels = labels;
+            Content = content ?? new List<ContentNode>();
         }
 
         /// <summary>
-        /// 创建旁白节点的便捷构造函数
+        /// 创建旁白节点的便捷构造函数，带嵌套内容
         /// </summary>
-        public DialogueNode(List<TextSegmentNode> text, List<string> labels, int line, int column)
+        public DialogueNode(List<TextSegmentNode> text, List<string> labels, List<ContentNode> content, int line, int column)
             : base(line, column)
         {
             Speaker = null;
             Emotion = null;
             Text = text;
             Labels = labels;
+            Content = content ?? new List<ContentNode>();
         }
 
-        /// <summary>
-        /// 判断节点是否为旁白
-        /// </summary>
-        public bool IsNarration => string.IsNullOrEmpty(Speaker);
+        public override string ToString()
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.Append($"{Speaker} [{Emotion}]: ");
+            sb.Append(string.Join("", Text));
+            if (Labels != null && Labels.Count > 0)
+            {
+                sb.AppendLine(string.Join(", ", Labels));
+            }
+            if (Content != null && Content.Count > 0)
+            {
+                sb.AppendLine("--- 对话内容 ---");
+                foreach (var content in Content)
+                {
+                    sb.AppendLine($"{content}");
+                }
+                sb.AppendLine("--- 对话内容结束 ---");
+            }
+            return sb.ToString();
+        }
     }
 
     /// <summary>
@@ -147,6 +188,11 @@ namespace MookDialogueScript
         {
             Text = text;
         }
+
+        public override string ToString()
+        {
+            return Text;
+        }
     }
 
     /// <summary>
@@ -163,6 +209,11 @@ namespace MookDialogueScript
             : base(line, column)
         {
             Expression = expression;
+        }
+
+        public override string ToString()
+        {
+            return $"{Expression}";
         }
     }
 
@@ -192,6 +243,26 @@ namespace MookDialogueScript
             Text = text;
             Condition = condition;
             Content = content;
+        }
+
+        public override string ToString()
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.Append($"-> {string.Join("", Text)} \n");
+            if (Condition != null)
+            {
+                sb.AppendLine($"[{Condition}]");
+            }
+            if (Content != null && Content.Count > 0)
+            {
+                sb.AppendLine("--- 选项内容 ---");
+                foreach (var content in Content)
+                {
+                    sb.AppendLine($"{content}");
+                }
+                sb.AppendLine("--- 选项内容结束 ---");
+            }
+            return sb.ToString();
         }
     }
 
@@ -233,6 +304,35 @@ namespace MookDialogueScript
             ElifBranches = elifBranches;
             ElseBranch = elseBranch;
         }
+
+        public override string ToString()
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine($"条件节点: {Condition}");
+            sb.AppendLine("--- 然后分支 ---");
+            foreach (var content in ThenBranch)
+            {
+                sb.AppendLine($"内容: {content}");
+            }
+            if (ElifBranches != null && ElifBranches.Count > 0)
+            {
+                sb.AppendLine("--- 否则如果分支 ---");
+                foreach (var (condition, content) in ElifBranches)
+                {
+                    sb.AppendLine($"条件: {condition}");
+                    sb.AppendLine($"内容: {content}");
+                }
+            }
+            if (ElseBranch != null && ElseBranch.Count > 0)
+            {
+                sb.AppendLine("--- 否则分支 ---");
+                foreach (var content in ElseBranch)
+                {
+                    sb.AppendLine($"内容: {content}");
+                }
+            }
+            return sb.ToString();
+        }
     }
 
     /// <summary>
@@ -269,6 +369,11 @@ namespace MookDialogueScript
             Value = value;
             Operation = operation;
         }
+
+        public override string ToString()
+        {
+            return $"{Variable} {Operation} {Value}";
+        }
     }
 
     /// <summary>
@@ -292,6 +397,18 @@ namespace MookDialogueScript
             FunctionName = functionName;
             Parameters = parameters;
         }
+
+        public override string ToString()
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.Append($"调用命令节点: {FunctionName}(");
+            if (Parameters != null && Parameters.Count > 0)
+            {
+                sb.Append(string.Join(", ", Parameters));
+            }
+            sb.Append(")");
+            return sb.ToString();
+        }
     }
 
     /// <summary>
@@ -309,6 +426,11 @@ namespace MookDialogueScript
         {
             Duration = duration;
         }
+
+        public override string ToString()
+        {
+            return $"{Duration}";
+        }
     }
 
     /// <summary>
@@ -325,6 +447,11 @@ namespace MookDialogueScript
             : base(line, column)
         {
             TargetNode = targetNode;
+        }
+
+        public override string ToString()
+        {
+            return TargetNode;
         }
     }
 
@@ -363,6 +490,11 @@ namespace MookDialogueScript
             Operator = op;
             Right = right;
         }
+
+        public override string ToString()
+        {
+            return $"{Left} {Operator} {Right}";
+        }
     }
 
     /// <summary>
@@ -386,6 +518,11 @@ namespace MookDialogueScript
             Operator = op;
             Operand = operand;
         }
+
+        public override string ToString()
+        {
+            return $"{Operator} {Operand}";
+        }
     }
 
     /// <summary>
@@ -402,6 +539,11 @@ namespace MookDialogueScript
             : base(line, column)
         {
             Value = value;
+        }
+
+        public override string ToString()
+        {
+            return $"{Value}";
         }
     }
 
@@ -420,6 +562,11 @@ namespace MookDialogueScript
         {
             Value = value;
         }
+
+        public override string ToString()
+        {
+            return Value;
+        }
     }
 
     /// <summary>
@@ -436,6 +583,11 @@ namespace MookDialogueScript
             : base(line, column)
         {
             Value = value;
+        }
+
+        public override string ToString()
+        {
+            return Value.ToString().ToLower();
         }
     }
 
@@ -454,6 +606,11 @@ namespace MookDialogueScript
         {
             Name = name;
         }
+
+        public override string ToString()
+        {
+            return Name;
+        }
     }
 
     /// <summary>
@@ -470,6 +627,11 @@ namespace MookDialogueScript
             : base(line, column)
         {
             Name = name;
+        }
+
+        public override string ToString()
+        {
+            return Name;
         }
     }
 
@@ -497,7 +659,14 @@ namespace MookDialogueScript
 
         public override string ToString()
         {
-            return $"{Name}({string.Join(", ", Arguments)})";
+            StringBuilder sb = new StringBuilder();
+            sb.Append($"函数调用节点: {Name}(");
+            if (Arguments != null && Arguments.Count > 0)
+            {
+                sb.Append(string.Join(", ", Arguments));
+            }
+            sb.Append(")");
+            return sb.ToString();
         }
     }
 
@@ -516,5 +685,13 @@ namespace MookDialogueScript
         {
             Segments = segments;
         }
+
+        public override string ToString()
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.Append($"{string.Join("", Segments)}");
+            return sb.ToString();
+        }
     }
+
 }

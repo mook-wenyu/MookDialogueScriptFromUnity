@@ -319,6 +319,11 @@ namespace MookDialogueScript
                 // 处理单个内容
                 await ProcessNextContent(currentNode, index);
             }
+            else if (node is DialogueNode dialogueNode)
+            {
+                // 处理对话节点中的嵌套内容
+                await ProcessNextContent(dialogueNode, index);
+            }
             else if (node is ChoiceNode choiceNode)
             {
                 // 处理选项中的单个内容
@@ -353,6 +358,10 @@ namespace MookDialogueScript
             {
                 contents = choice.Content;
             }
+            else if (contentContainer is DialogueNode dialogue)
+            {
+                contents = dialogue.Content;
+            }
             else
             {
                 Debug.LogError($"不支持的内容容器类型: {contentContainer.GetType().Name}");
@@ -371,12 +380,12 @@ namespace MookDialogueScript
             // 检查索引是否有效
             if (index < 0 || index >= contents.Count)
             {
-                // 如果是选项内容结束，回到主节点
-                if (contentContainer is ChoiceNode)
+                // 如果是嵌套内容结束，回到父节点
+                if (contentContainer is ChoiceNode || contentContainer is DialogueNode)
                 {
-                    _executionStack.Pop(); // 弹出选项
+                    _executionStack.Pop(); // 弹出当前容器
 
-                    // 继续执行主节点的下一个内容
+                    // 继续执行父节点的下一个内容
                     await Continue();
                     return;
                 }
@@ -587,14 +596,31 @@ namespace MookDialogueScript
 
                     // 更新执行栈
                     _executionStack.Pop();
-                    _executionStack.Push((contentContainer, index + 1));
 
-                    // 检查下一个内容是否为选项
-                    int nextContentType = await HasNextContent();
-                    if (nextContentType == 2) // 2表示选项内容
+                    // 检查对话节点是否有嵌套内容
+                    if (dialogueNode.Content != null && dialogueNode.Content.Count > 0)
                     {
+                        // 把下一个内容的索引先压入堆栈
+                        _executionStack.Push((contentContainer, index + 1));
+                        // 再把对话节点的内容压入栈，从第一个开始处理
+                        _executionStack.Push((dialogueNode, 0));
+
                         _isExecuting = false;
+                        // 处理对话节点的嵌套内容
                         await Continue();
+                    }
+                    else
+                    {
+                        // 如果没有嵌套内容，继续执行下一个内容
+                        _executionStack.Push((contentContainer, index + 1));
+
+                        // 检查下一个内容是否为选项
+                        int nextContentType = await HasNextContent();
+                        if (nextContentType == 2) // 2表示选项内容
+                        {
+                            _isExecuting = false;
+                            await Continue();
+                        }
                     }
                 }
                 else
@@ -851,6 +877,10 @@ namespace MookDialogueScript
                 else if (currentNode is ChoiceNode choice)
                 {
                     contents = choice.Content;
+                }
+                else if (currentNode is DialogueNode dialogue)
+                {
+                    contents = dialogue.Content;
                 }
                 else if (currentNode is ConditionNode condition)
                 {
