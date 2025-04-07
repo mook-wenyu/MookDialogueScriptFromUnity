@@ -185,21 +185,32 @@ endif
 
 ```mds
 // 定义变量
-var $name "玩家名称"    // 字符串变量
-var $level 1           // 数字变量
-var $has_key false     // 布尔变量
+var $name "玩家名称"
+// 字符串变量
+var $level 1
+// 数字变量
+var $has_key false
+// 布尔变量
 
 // 修改变量
-set $name "新名字"      // 设置变量值
-add $level 1           // 加法运算
-sub $gold 50           // 减法运算
-mul $gold 1.5          // 乘法运算
-div $gold 2            // 除法运算
-mod $count 5           // 取模运算
+set $name "新名字"
+// 设置变量值
+add $level 1
+// 加法运算
+sub $gold 50
+// 减法运算
+mul $gold 1.5
+// 乘法运算
+div $gold 2
+// 除法运算
+mod $count 5
+// 取模运算
 
 // 对象变量访问
-$player__name          // 访问 player 对象的 name 属性
-$player__health        // 访问 player 对象的 health 属性
+$player__name
+// 访问 player 对象的 name 属性
+$player__health
+// 访问 player 对象的 health 属性
 
 // 变量插值
 这是{$player__name}的属性，等级为{$player__level}
@@ -321,16 +332,24 @@ endif
 #### 节点系统
 
 ```mds
---- start              // 使用 --- 定义节点
+// 使用 --- 定义节点
+--- start
 // 节点内容
-===                    // 节点结束标记（可选）
+===
+// 节点结束标记（可选）
 
-:: shop                // 使用 :: 定义节点
+// 使用 :: 定义节点
+:: shop
 // 节点内容
 ===
 
 // 跳转到其他节点
-=> shop                // 跳转到 shop 节点
+// 跳转到 shop 节点
+=> shop
+
+// 跳转到 shop 节点
+jump shop
+
 ```
 
 节点系统说明：
@@ -499,6 +518,8 @@ public class DialogueMgr : MonoBehaviour
     }
 }
 
+```
+
 ## 开源协议
 
 本项目采用 Apache License 2.0 开源协议。详情请参阅 [LICENSE](LICENSE.txt) 文件。
@@ -509,7 +530,3 @@ public class DialogueMgr : MonoBehaviour
 
 - 提交 Issue
 - 发送邮件至 [1317578863@qq.com]
-
-## 致谢
-
-感谢所有为这个项目做出贡献的人！
