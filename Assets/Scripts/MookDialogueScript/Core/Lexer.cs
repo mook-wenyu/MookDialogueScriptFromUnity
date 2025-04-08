@@ -12,7 +12,7 @@ namespace MookDialogueScript
         private int _line;
         private int _column;
         private char _currentChar;
-        private readonly List<int> _indentStack;
+        private readonly Stack<int> _indentStack;
         private int _currentIndent;
 
         private static readonly Dictionary<string, TokenType> Keywords = new Dictionary<string, TokenType>(StringComparer.OrdinalIgnoreCase)
@@ -59,6 +59,9 @@ namespace MookDialogueScript
             {
                 token = GetNextToken();
                 tokens.Add(token);
+#if DEBUG
+                Debug.Log($@"{token}");
+#endif
             } while (token.Type != TokenType.EOF);
 
             return tokens;
@@ -89,7 +92,8 @@ namespace MookDialogueScript
             _line = 1;
             _column = 1;
             _currentChar = GetCharAt(_position);
-            _indentStack = new List<int> { 0 };
+            _indentStack = new Stack<int>();
+            _indentStack.Push(0);
             _currentIndent = 0;
         }
 
@@ -111,36 +115,22 @@ namespace MookDialogueScript
             return GetCharAt(_position + 1);
         }
 
-        /// <summary>
-        /// 查看前方n个字符
-        /// </summary>
-        private char LookAhead(int n)
-        {
-            return GetCharAt(_position + n);
-        }
+
 
         /// <summary>
-        /// 判断字符是否为中文字符
-        /// </summary>
-        private bool IsChineseChar(char c)
-        {
-            return c >= '\u4e00' && c <= '\u9fa5';
-        }
-
-        /// <summary>
-        /// 判断字符是否为标识符起始字符（字母、下划线或中文）
+        /// 判断字符是否为标识符起始字符（字母或下划线）
         /// </summary>
         private bool IsIdentifierStart(char c)
         {
-            return char.IsLetter(c) || c == '_' || IsChineseChar(c);
+            return char.IsLetter(c) || c == '_';
         }
 
         /// <summary>
-        /// 判断字符是否为标识符组成部分（字母、数字、下划线或中文）
+        /// 判断字符是否为标识符组成部分（字母、数字或下划线）
         /// </summary>
         private bool IsIdentifierPart(char c)
         {
-            return char.IsLetterOrDigit(c) || c == '_' || IsChineseChar(c);
+            return char.IsLetterOrDigit(c) || c == '_';
         }
 
         /// <summary>
@@ -170,7 +160,7 @@ namespace MookDialogueScript
         /// </summary>
         private Token HandleIndentIncrease(int indent)
         {
-            _indentStack.Add(indent);
+            _indentStack.Push(indent);
             _currentIndent = indent;
             return new Token(TokenType.INDENT, "", _line, _column);
         }
@@ -181,23 +171,23 @@ namespace MookDialogueScript
         private Token HandleIndentDecrease(int indent)
         {
             // 只删除一个缩进级别
-            if (_indentStack.Count > 1 && _indentStack[_indentStack.Count - 1] > indent)
+            if (_indentStack.Count > 1 && _indentStack.Peek() > indent)
             {
-                _indentStack.RemoveAt(_indentStack.Count - 1);
+                _indentStack.Pop();
                 // 更新当前缩进为栈顶缩进值
-                _currentIndent = _indentStack[_indentStack.Count - 1];
+                _currentIndent = _indentStack.Peek();
 
                 return new Token(TokenType.DEDENT, "", _line, _column);
             }
 
             // 如果缩进不匹配任何已知级别，报错并尝试恢复
-            if (_indentStack.Count == 0 || (_indentStack.Count > 0 && _indentStack[_indentStack.Count - 1] != indent))
+            if (_indentStack.Count == 0 || (_indentStack.Count > 0 && _indentStack.Peek() != indent))
             {
                 Debug.LogError($"词法错误: 第{_line}行，第{_column}列，无效的缩进");
                 // 尝试恢复 - 添加当前缩进到栈中
                 if (_indentStack.Count == 0)
                 {
-                    _indentStack.Add(indent);
+                    _indentStack.Push(indent);
                 }
                 _currentIndent = indent;
             }
@@ -387,7 +377,9 @@ namespace MookDialogueScript
         /// </summary>
         private Token HandleNumber()
         {
-            StringBuilder result = new StringBuilder(16); // 预分配合理容量
+            int startPosition = _position;
+            int startLine = _line;
+            int startColumn = _column;
             bool hasDecimalPoint = false;
 
             while (_currentChar != '\0' &&
@@ -399,11 +391,13 @@ namespace MookDialogueScript
                         break;
                     hasDecimalPoint = true;
                 }
-                result.Append(_currentChar);
                 Advance();
             }
 
-            return new Token(TokenType.NUMBER, result.ToString(), _line, _column);
+            // 直接从源字符串切片，避免创建新字符串
+            int numberLength = _position - startPosition;
+            string result = numberLength > 0 ? _source.Substring(startPosition, numberLength) : string.Empty;
+            return new Token(TokenType.NUMBER, result, startLine, startColumn);
         }
 
         /// <summary>
@@ -423,88 +417,180 @@ namespace MookDialogueScript
                 case '"': closingQuote = '"'; break;           // 英文双引号
             }
 
-            Advance(); // 跳过开引号
-            StringBuilder result = new StringBuilder(32); // 预分配合理容量
+            int startLine = _line;
+            int startColumn = _column;
 
+            Advance(); // 跳过开引号
+            int contentStart = _position; // 记录内容开始位置
+
+            // 快速扫描查找闭合引号
+            bool hasEscapedQuote = false;
             while (_currentChar != '\0' && _currentChar != closingQuote)
             {
                 if (_currentChar == '\\' && Peek() == closingQuote)
                 {
+                    hasEscapedQuote = true;
                     Advance(); // 跳过反斜杠
-                    result.Append(_currentChar);
-                }
-                else
-                {
-                    result.Append(_currentChar);
                 }
                 Advance();
+            }
+
+            string result;
+            if (!hasEscapedQuote) // 如果没有转义字符，可以直接使用Substring
+            {
+                int contentLength = _position - contentStart;
+                result = contentLength > 0 ? _source.Substring(contentStart, contentLength) : string.Empty;
+            }
+            else // 有转义字符，需要处理
+            {
+                // 保存当前位置，回到内容开始位置，重新处理
+                int savedPosition = _position;
+                int savedLine = _line;
+                int savedColumn = _column;
+                char savedCurrentChar = _currentChar;
+
+                // 回到内容开始位置
+                _position = contentStart;
+                _currentChar = GetCharAt(_position);
+
+                StringBuilder sb = new StringBuilder(32);
+                while (_position < savedPosition && _currentChar != closingQuote)
+                {
+                    if (_currentChar == '\\' && Peek() == closingQuote)
+                    {
+                        Advance(); // 跳过反斜杠
+                    }
+                    sb.Append(_currentChar);
+                    Advance();
+                }
+
+                result = sb.ToString();
+
+                // 恢复位置
+                _position = savedPosition;
+                _line = savedLine;
+                _column = savedColumn;
+                _currentChar = savedCurrentChar;
             }
 
             if (_currentChar == closingQuote)
             {
                 Advance(); // 跳过闭引号
-                return new Token(TokenType.STRING, result.ToString(), _line, _column);
+                return new Token(TokenType.STRING, result, startLine, startColumn);
             }
             else
             {
-                Debug.LogError($"词法错误: 第{_line}行，第{_column}列，未闭合的字符串，期望 {closingQuote}");
+                Debug.LogError($"词法错误: 第{startLine}行，第{startColumn}列，未闭合的字符串，期望 {closingQuote}");
                 // 尝试恢复 - 将收集到的字符串内容作为Token返回
-                return new Token(TokenType.STRING, result.ToString(), _line, _column);
+                return new Token(TokenType.STRING, result, startLine, startColumn);
             }
         }
 
-        /// <summary>
-        /// 处理转义字符
-        /// </summary>
-        private bool HandleEscapeChar(StringBuilder result)
-        {
-            char nextChar = Peek();
-            if (nextChar == '#' || nextChar == ':' || nextChar == '：' ||
-                nextChar == '[' || nextChar == ']' || nextChar == '{' ||
-                nextChar == '}' || nextChar == '\\')
-            {
-                // 跳过反斜杠
-                Advance();
-                // 直接添加被转义的字符
-                result.Append(_currentChar);
-                Advance();
-                return true;
-            }
-            return false;
-        }
+
 
         /// <summary>
         /// 处理文本
         /// </summary>
         private Token HandleText()
         {
-            StringBuilder result = new StringBuilder(64); // 预分配合理容量
+            int startPosition = _position;
+            int startLine = _line;
+            int startColumn = _column;
+            bool hasEscapeChars = false;
 
             while (_currentChar != '\0' && _currentChar != '\n' && _currentChar != '\r')
             {
                 // 处理转义字符
                 if (_currentChar == '\\')
                 {
-                    if (HandleEscapeChar(result))
+                    char nextChar = Peek();
+                    if (nextChar == '#' || nextChar == ':' || nextChar == '：' ||
+                        nextChar == '[' || nextChar == ']' || nextChar == '{' ||
+                        nextChar == '}' || nextChar == '\\')
+                    {
+                        hasEscapeChars = true;
+                        Advance(); // 跳过反斜杠
+                        Advance(); // 跳过被转义的字符
                         continue;
+                    }
 
                     // 如果不是特殊字符，保留反斜杠
-                    result.Append(_currentChar);
                     Advance();
                     continue;
                 }
 
                 // 遇到非转义的特殊字符时截断
-                if (_currentChar == '#' || _currentChar == '{' || _currentChar == '[')
+                if (_currentChar == '#' || _currentChar == ':' || _currentChar == '：' ||
+                    _currentChar == '{' || _currentChar == '[')
                 {
                     break;
                 }
 
-                result.Append(_currentChar);
                 Advance();
             }
 
-            return new Token(TokenType.TEXT, result.ToString().Trim(), _line, _column);
+            string result;
+            if (!hasEscapeChars) // 如果没有转义字符，可以直接使用Substring
+            {
+                int textLength = _position - startPosition;
+                if (textLength > 0)
+                {
+                    result = _source.Substring(startPosition, textLength).Trim();
+                }
+                else
+                {
+                    result = string.Empty;
+                }
+            }
+            else // 有转义字符，需要重新处理
+            {
+                // 保存当前位置
+                int savedPosition = _position;
+                int savedLine = _line;
+                int savedColumn = _column;
+                char savedCurrentChar = _currentChar;
+
+                // 回到文本开始位置
+                _position = startPosition;
+                _currentChar = GetCharAt(_position);
+
+                StringBuilder sb = new StringBuilder(64);
+                while (_position < savedPosition)
+                {
+                    // 处理转义字符
+                    if (_currentChar == '\\')
+                    {
+                        char nextChar = Peek();
+                        if (nextChar == '#' || nextChar == ':' || nextChar == '：' ||
+                            nextChar == '[' || nextChar == ']' || nextChar == '{' ||
+                            nextChar == '}' || nextChar == '\\')
+                        {
+                            Advance(); // 跳过反斜杠
+                            sb.Append(_currentChar);
+                            Advance();
+                            continue;
+                        }
+
+                        // 如果不是特殊字符，保留反斜杠
+                        sb.Append(_currentChar);
+                        Advance();
+                        continue;
+                    }
+
+                    sb.Append(_currentChar);
+                    Advance();
+                }
+
+                result = sb.ToString().Trim();
+
+                // 恢复位置
+                _position = savedPosition;
+                _line = savedLine;
+                _column = savedColumn;
+                _currentChar = savedCurrentChar;
+            }
+
+            return new Token(TokenType.TEXT, result, startLine, startColumn);
         }
 
         /// <summary>
@@ -512,22 +598,24 @@ namespace MookDialogueScript
         /// </summary>
         private Token HandleVariable()
         {
+            int startLine = _line;
+            int startColumn = _column;
             Advance(); // 跳过$符号
-            StringBuilder result = new StringBuilder(32); // 预分配合理容量
+            int startPosition = _position;
 
             if (_currentChar != '\0' && IsIdentifierStart(_currentChar))
             {
-                result.Append(_currentChar);
                 Advance();
 
                 while (_currentChar != '\0' && IsIdentifierPart(_currentChar))
                 {
-                    result.Append(_currentChar);
                     Advance();
                 }
             }
 
-            return new Token(TokenType.VARIABLE, result.ToString(), _line, _column - 1);
+            int varLength = _position - startPosition;
+            string result = varLength > 0 ? _source.Substring(startPosition, varLength) : string.Empty;
+            return new Token(TokenType.VARIABLE, result, startLine, startColumn);
         }
 
         /// <summary>
@@ -535,32 +623,38 @@ namespace MookDialogueScript
         /// </summary>
         private Token HandleIdentifierOrKeyword()
         {
-            StringBuilder result = new StringBuilder(32); // 预分配合理容量
+            int startPosition = _position;
+            int startLine = _line;
+            int startColumn = _column;
 
             // 确保第一个字符是有效的标识符起始字符
             if (_currentChar != '\0' && IsIdentifierStart(_currentChar))
             {
-                result.Append(_currentChar);
                 Advance();
 
                 // 收集剩余的标识符字符
                 while (_currentChar != '\0' && IsIdentifierPart(_currentChar))
                 {
-                    result.Append(_currentChar);
                     Advance();
                 }
             }
 
-            string text = result.ToString();
+            int identLength = _position - startPosition;
+            if (identLength == 0)
+            {
+                return new Token(TokenType.IDENTIFIER, string.Empty, startLine, startColumn);
+            }
+
+            string text = _source.Substring(startPosition, identLength);
 
             // 检查是否是关键字（忽略大小写）
             if (Keywords.TryGetValue(text, out TokenType type))
             {
-                return new Token(type, text, _line, _column);
+                return new Token(type, text, startLine, startColumn);
             }
 
             // 所有非关键字的标识符都作为IDENTIFIER处理
-            return new Token(TokenType.IDENTIFIER, text, _line, _column);
+            return new Token(TokenType.IDENTIFIER, text, startLine, startColumn);
         }
 
         /// <summary>

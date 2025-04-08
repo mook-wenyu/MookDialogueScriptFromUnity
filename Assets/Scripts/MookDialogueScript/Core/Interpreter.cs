@@ -297,9 +297,9 @@ namespace MookDialogueScript
                                     }
                                     else
                                     {
-                                        Debug.LogError($"变量 '{varNode.Name}' 的值为null");
-                                        // 变量为null时显示完整原始文本，包括花括号和$符号
-                                        result.Append($"{{${varNode.Name}}}");
+                                        Debug.LogWarning($"变量 '{varNode.Name}' 的值为null");
+                                        // 变量为null时显示null，包括花括号和$符号
+                                        result.Append($"{{null}}");
                                     }
                                 }
                                 else
@@ -329,19 +329,21 @@ namespace MookDialogueScript
                                         }
                                         else
                                         {
-                                            // 函数返回null时显示原始文本，包括花括号
-                                            result.Append($"{{{FormatFunctionCall(funcNode)}}}");
+                                            Debug.LogWarning($"函数 '{funcNode.Name}' 返回null");
+                                            // 函数返回null时显示null，包括花括号
+                                            result.Append($"{{null}}");
                                         }
                                     }
                                     catch (Exception ex)
                                     {
-                                        Debug.LogError($"函数 '{funcNode.Name}' 调用错误: {ex.Message}");
+                                        Debug.LogError($"函数 '{funcNode.Name}' 调用错误: {ex}");
                                         // 函数调用异常时显示原始文本，包括花括号
                                         result.Append($"{{{FormatFunctionCall(funcNode)}}}");
                                     }
                                 }
                                 else
                                 {
+                                    Debug.LogError($"函数 '{funcNode.Name}' 不存在");
                                     // 函数不存在时显示原始文本，包括花括号
                                     result.Append($"{{{FormatFunctionCall(funcNode)}}}");
                                 }
@@ -359,13 +361,13 @@ namespace MookDialogueScript
                                     else
                                     {
                                         Debug.LogWarning($"表达式返回null");
-                                        // 表达式返回null时显示原始文本，包括花括号
-                                        result.Append($"{{{FormatExpressionNode(i.Expression)}}}");
+                                        // 表达式返回null时显示null，包括花括号
+                                        result.Append($"{{null}}");
                                     }
                                 }
                                 catch (Exception ex)
                                 {
-                                    Debug.LogError($"表达式评估错误: {ex.Message}");
+                                    Debug.LogError($"表达式评估错误: {ex}");
                                     // 表达式评估异常时显示原始文本，包括花括号
                                     result.Append($"{{{FormatExpressionNode(i.Expression)}}}");
                                 }
@@ -374,7 +376,7 @@ namespace MookDialogueScript
                         catch (Exception ex)
                         {
                             // 发生异常，记录错误并显示原始表达式，包括花括号
-                            Debug.LogError($"插值表达式错误: {ex.Message}");
+                            Debug.LogError($"插值表达式错误: {ex}");
                             result.Append($"{{{FormatExpressionNode(i.Expression)}}}");
                         }
                         break;
@@ -479,7 +481,7 @@ namespace MookDialogueScript
                             }
                             else
                             {
-                                Debug.LogError($"变量 '{v.Variable}' 已存在");
+                                Debug.LogWarning($"变量 '{v.Variable}' 已存在");
                             }
                             break;
 
