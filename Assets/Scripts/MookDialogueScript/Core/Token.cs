@@ -32,6 +32,10 @@ namespace MookDialogueScript
         /// </summary>
         COLON,
         /// <summary>
+        /// 引号 ' "
+        /// </summary>
+        QUOTE,
+        /// <summary>
         /// 左中括号 [
         /// </summary>
         LEFT_BRACKET,

@@ -14,6 +14,8 @@ namespace MookDialogueScript
         private char _currentChar;
         private readonly Stack<int> _indentStack;
         private int _currentIndent;
+        private bool _isInStringMode;
+        private char _stringQuoteType;
 
         private static readonly Dictionary<string, TokenType> Keywords = new Dictionary<string, TokenType>(StringComparer.OrdinalIgnoreCase)
         {
@@ -47,6 +49,20 @@ namespace MookDialogueScript
             {"xor", TokenType.XOR},
         };
 
+        public Lexer(string source)
+        {
+            _source = source;
+            _position = 0;
+            _line = 1;
+            _column = 1;
+            UpdateCurrentChar();
+            _indentStack = new Stack<int>();
+            _indentStack.Push(0);
+            _currentIndent = 0;
+            _isInStringMode = false;
+            _stringQuoteType = '\0';
+        }
+
         /// <summary>
         /// 获取所有Token
         /// </summary>
@@ -78,23 +94,19 @@ namespace MookDialogueScript
         }
 
         /// <summary>
+        /// 获取指定范围的字符串
+        /// </summary>
+        private string GetRange(int start, int end)
+        {
+            return _source[start..end];
+        }
+
+        /// <summary>
         /// 更新当前字符
         /// </summary>
         private void UpdateCurrentChar()
         {
             _currentChar = GetCharAt(_position);
-        }
-
-        public Lexer(string source)
-        {
-            _source = source;
-            _position = 0;
-            _line = 1;
-            _column = 1;
-            _currentChar = GetCharAt(_position);
-            _indentStack = new Stack<int>();
-            _indentStack.Push(0);
-            _currentIndent = 0;
         }
 
         /// <summary>
@@ -104,7 +116,7 @@ namespace MookDialogueScript
         {
             _position++;
             _column++;
-            _currentChar = GetCharAt(_position);
+            UpdateCurrentChar();
         }
 
         /// <summary>
@@ -115,7 +127,13 @@ namespace MookDialogueScript
             return GetCharAt(_position + 1);
         }
 
-
+        /// <summary>
+        /// 查看上一个字符
+        /// </summary>
+        public char Previous()
+        {
+            return GetCharAt(_position - 1);
+        }
 
         /// <summary>
         /// 判断字符是否为标识符起始字符（字母或下划线）
@@ -162,7 +180,7 @@ namespace MookDialogueScript
         {
             _indentStack.Push(indent);
             _currentIndent = indent;
-            return new Token(TokenType.INDENT, "", _line, _column);
+            return new Token(TokenType.INDENT, string.Empty, _line, _column);
         }
 
         /// <summary>
@@ -177,7 +195,7 @@ namespace MookDialogueScript
                 // 更新当前缩进为栈顶缩进值
                 _currentIndent = _indentStack.Peek();
 
-                return new Token(TokenType.DEDENT, "", _line, _column);
+                return new Token(TokenType.DEDENT, string.Empty, _line, _column);
             }
 
             // 如果缩进不匹配任何已知级别，报错并尝试恢复
@@ -192,7 +210,7 @@ namespace MookDialogueScript
                 _currentIndent = indent;
             }
 
-            return new Token(TokenType.DEDENT, "", _line, _column);
+            return new Token(TokenType.DEDENT, string.Empty, _line, _column);
         }
 
         /// <summary>
@@ -319,7 +337,7 @@ namespace MookDialogueScript
             // 如果处理完换行和注释后到达了文件末尾，直接返回EOF
             if (_currentChar == '\0')
             {
-                return new Token(TokenType.EOF, "", _line, _column);
+                return new Token(TokenType.EOF, string.Empty, _line, _column);
             }
 
             // 返回一个NEWLINE token，无论有几个连续的换行和注释
@@ -346,14 +364,13 @@ namespace MookDialogueScript
             // 保存当前位置
             int savedPosition = _position;
             int savedColumn = _column;
-            char savedCurrentChar = _currentChar;
 
             int indent = CountIndentation();
 
             // 恢复位置
             _position = savedPosition;
             _column = savedColumn;
-            _currentChar = savedCurrentChar;
+            UpdateCurrentChar();
 
             if (ShouldSkipIndentation())
                 return null;
@@ -395,97 +412,8 @@ namespace MookDialogueScript
             }
 
             // 直接从源字符串切片，避免创建新字符串
-            int numberLength = _position - startPosition;
-            string result = numberLength > 0 ? _source.Substring(startPosition, numberLength) : string.Empty;
-            return new Token(TokenType.NUMBER, result, startLine, startColumn);
+            return new Token(TokenType.NUMBER, GetRange(startPosition, _position), startLine, startColumn);
         }
-
-        /// <summary>
-        /// 处理字符串
-        /// </summary>
-        private Token HandleString()
-        {
-            char quoteType = _currentChar;
-            char closingQuote = quoteType;
-
-            // 确定对应的闭合引号
-            switch (quoteType)
-            {
-                case '\u2018': closingQuote = '\u2019'; break; // 中文单引号
-                case '\u201C': closingQuote = '\u201D'; break; // 中文双引号
-                case '\'': closingQuote = '\''; break;         // 英文单引号
-                case '"': closingQuote = '"'; break;           // 英文双引号
-            }
-
-            int startLine = _line;
-            int startColumn = _column;
-
-            Advance(); // 跳过开引号
-            int contentStart = _position; // 记录内容开始位置
-
-            // 快速扫描查找闭合引号
-            bool hasEscapedQuote = false;
-            while (_currentChar != '\0' && _currentChar != closingQuote)
-            {
-                if (_currentChar == '\\' && Peek() == closingQuote)
-                {
-                    hasEscapedQuote = true;
-                    Advance(); // 跳过反斜杠
-                }
-                Advance();
-            }
-
-            string result;
-            if (!hasEscapedQuote) // 如果没有转义字符，可以直接使用Substring
-            {
-                int contentLength = _position - contentStart;
-                result = contentLength > 0 ? _source.Substring(contentStart, contentLength) : string.Empty;
-            }
-            else // 有转义字符，需要处理
-            {
-                // 保存当前位置，回到内容开始位置，重新处理
-                int savedPosition = _position;
-                int savedLine = _line;
-                int savedColumn = _column;
-                char savedCurrentChar = _currentChar;
-
-                // 回到内容开始位置
-                _position = contentStart;
-                _currentChar = GetCharAt(_position);
-
-                StringBuilder sb = new StringBuilder(32);
-                while (_position < savedPosition && _currentChar != closingQuote)
-                {
-                    if (_currentChar == '\\' && Peek() == closingQuote)
-                    {
-                        Advance(); // 跳过反斜杠
-                    }
-                    sb.Append(_currentChar);
-                    Advance();
-                }
-
-                result = sb.ToString();
-
-                // 恢复位置
-                _position = savedPosition;
-                _line = savedLine;
-                _column = savedColumn;
-                _currentChar = savedCurrentChar;
-            }
-
-            if (_currentChar == closingQuote)
-            {
-                Advance(); // 跳过闭引号
-                return new Token(TokenType.STRING, result, startLine, startColumn);
-            }
-            else
-            {
-                Debug.LogError($"词法错误: 第{startLine}行，第{startColumn}列，未闭合的字符串，期望 {closingQuote}");
-                // 尝试恢复 - 将收集到的字符串内容作为Token返回
-                return new Token(TokenType.STRING, result, startLine, startColumn);
-            }
-        }
-
 
 
         /// <summary>
@@ -498,15 +426,36 @@ namespace MookDialogueScript
             int startColumn = _column;
             bool hasEscapeChars = false;
 
+            // 确定截断字符和转义字符
+            char[] truncateChars;
+            char[] escapeChars;
+
+            if (_isInStringMode)
+            {
+                // 在字符串模式下，截断字符为 { 或结束引号
+                char closingQuote = _stringQuoteType;
+                switch (_stringQuoteType)
+                {
+                    case '\u2018': closingQuote = '\u2019'; break; // 中文单引号
+                    case '\u201C': closingQuote = '\u201D'; break; // 中文双引号
+                }
+                truncateChars = new[] { '{', closingQuote };
+                escapeChars = new[] { '{', '}', '\\', closingQuote };
+            }
+            else
+            {
+                // 正常模式下的截断和转义字符
+                truncateChars = new[] { '#', ':', '：', '{', '[' };
+                escapeChars = new[] { '#', ':', '：', '[', ']', '{', '}', '\\' };
+            }
+
             while (_currentChar != '\0' && _currentChar != '\n' && _currentChar != '\r')
             {
                 // 处理转义字符
                 if (_currentChar == '\\')
                 {
                     char nextChar = Peek();
-                    if (nextChar == '#' || nextChar == ':' || nextChar == '：' ||
-                        nextChar == '[' || nextChar == ']' || nextChar == '{' ||
-                        nextChar == '}' || nextChar == '\\')
+                    if (Array.IndexOf(escapeChars, nextChar) >= 0)
                     {
                         hasEscapeChars = true;
                         Advance(); // 跳过反斜杠
@@ -520,9 +469,34 @@ namespace MookDialogueScript
                 }
 
                 // 遇到非转义的特殊字符时截断
-                if (_currentChar == '#' || _currentChar == ':' || _currentChar == '：' ||
-                    _currentChar == '{' || _currentChar == '[')
+                if (Array.IndexOf(truncateChars, _currentChar) >= 0)
                 {
+                    // 如果在字符串模式下遇到结束引号，先返回文本内容
+                    if (_isInStringMode && IsClosingQuote(_currentChar))
+                    {
+                        // 先返回文本内容
+                        string textResult = GetRange(startPosition, _position);
+                        if (textResult.Length > 0) // 如果有文本内容，先返回文本
+                        {
+                            return new Token(TokenType.TEXT, textResult, startLine, startColumn);
+                        }
+                        else // 如果没有文本内容，直接返回引号Token
+                        {
+                            // 创建一个QUOTE类型的Token
+                            char quoteChar = _currentChar;
+                            int quoteStartLine = _line;
+                            int quoteStartColumn = _column;
+
+                            // 消耗掉引号
+                            Advance();
+
+                            // 退出字符串模式
+                            _isInStringMode = false;
+                            _stringQuoteType = '\0';
+
+                            return new Token(TokenType.QUOTE, quoteChar.ToString(), quoteStartLine, quoteStartColumn);
+                        }
+                    }
                     break;
                 }
 
@@ -530,16 +504,13 @@ namespace MookDialogueScript
             }
 
             string result;
-            if (!hasEscapeChars) // 如果没有转义字符，可以直接使用Substring
+            if (!hasEscapeChars) // 如果没有转义字符
             {
-                int textLength = _position - startPosition;
-                if (textLength > 0)
+                result = GetRange(startPosition, _position);
+                // 只有在非字符串模式下才去除前后空格
+                if (!_isInStringMode)
                 {
-                    result = _source.Substring(startPosition, textLength).Trim();
-                }
-                else
-                {
-                    result = string.Empty;
+                    result = result.Trim();
                 }
             }
             else // 有转义字符，需要重新处理
@@ -548,11 +519,10 @@ namespace MookDialogueScript
                 int savedPosition = _position;
                 int savedLine = _line;
                 int savedColumn = _column;
-                char savedCurrentChar = _currentChar;
 
                 // 回到文本开始位置
                 _position = startPosition;
-                _currentChar = GetCharAt(_position);
+                UpdateCurrentChar();
 
                 StringBuilder sb = new StringBuilder(64);
                 while (_position < savedPosition)
@@ -561,9 +531,7 @@ namespace MookDialogueScript
                     if (_currentChar == '\\')
                     {
                         char nextChar = Peek();
-                        if (nextChar == '#' || nextChar == ':' || nextChar == '：' ||
-                            nextChar == '[' || nextChar == ']' || nextChar == '{' ||
-                            nextChar == '}' || nextChar == '\\')
+                        if (Array.IndexOf(escapeChars, nextChar) >= 0)
                         {
                             Advance(); // 跳过反斜杠
                             sb.Append(_currentChar);
@@ -581,16 +549,38 @@ namespace MookDialogueScript
                     Advance();
                 }
 
-                result = sb.ToString().Trim();
+                result = sb.ToString();
+                // 只有在非字符串模式下才去除前后空格
+                if (!_isInStringMode)
+                {
+                    result = result.Trim();
+                }
 
                 // 恢复位置
                 _position = savedPosition;
                 _line = savedLine;
                 _column = savedColumn;
-                _currentChar = savedCurrentChar;
+                UpdateCurrentChar();
             }
 
             return new Token(TokenType.TEXT, result, startLine, startColumn);
+        }
+
+        /// <summary>
+        /// 判断当前字符是否是当前字符串模式的结束引号
+        /// </summary>
+        private bool IsClosingQuote(char c)
+        {
+            if (!_isInStringMode) return false;
+
+            switch (_stringQuoteType)
+            {
+                case '\u2018': return c == '\u2019'; // 中文单引号
+                case '\u201C': return c == '\u201D'; // 中文双引号
+                case '\'': return c == '\'';         // 英文单引号
+                case '"': return c == '"';           // 英文双引号
+                default: return false;
+            }
         }
 
         /// <summary>
@@ -613,9 +603,7 @@ namespace MookDialogueScript
                 }
             }
 
-            int varLength = _position - startPosition;
-            string result = varLength > 0 ? _source.Substring(startPosition, varLength) : string.Empty;
-            return new Token(TokenType.VARIABLE, result, startLine, startColumn);
+            return new Token(TokenType.VARIABLE, GetRange(startPosition, _position), startLine, startColumn);
         }
 
         /// <summary>
@@ -639,13 +627,7 @@ namespace MookDialogueScript
                 }
             }
 
-            int identLength = _position - startPosition;
-            if (identLength == 0)
-            {
-                return new Token(TokenType.IDENTIFIER, string.Empty, startLine, startColumn);
-            }
-
-            string text = _source.Substring(startPosition, identLength);
+            string text = GetRange(startPosition, _position);
 
             // 检查是否是关键字（忽略大小写）
             if (Keywords.TryGetValue(text, out TokenType type))
@@ -691,6 +673,24 @@ namespace MookDialogueScript
         {
             while (_currentChar != '\0')
             {
+
+                // 在字符串模式下，检查前一个字符是否是引号或插值结束符号
+                if (_isInStringMode)
+                {
+                    char prevChar = Previous();
+                    // 确保前一个字符不是被转义的
+                    bool isNotEscaped = _position < 2 || GetCharAt(_position - 2) != '\\';
+
+                    // 如果前一个字符是引号或插值结束符号，且不是被转义的，则处理文本
+                    if (isNotEscaped && prevChar != '\0' &&
+                        (prevChar == '\'' || prevChar == '"' ||
+                         prevChar == '\u2018' || prevChar == '\u201C' ||
+                         prevChar == '}'))
+                    {
+                        return HandleText();
+                    }
+                }
+
                 // 处理行首缩进
                 if (_column == 1)
                 {
@@ -730,7 +730,7 @@ namespace MookDialogueScript
                         {
                             if (_currentChar == '\0')
                             {
-                                return new Token(TokenType.EOF, "", _line, _column);
+                                return new Token(TokenType.EOF, string.Empty, _line, _column);
                             }
                             continue;
                         }
@@ -764,13 +764,44 @@ namespace MookDialogueScript
                     return HandleNumber();
                 }
 
-                // 处理字符串
-                if (_currentChar == '\'' || _currentChar == '"' ||
-                    _currentChar == '\u2018' || _currentChar == '\u201C')
+                // 处理字符串（只有在非字符串状态下才处理开始引号）
+                if (!_isInStringMode && (_currentChar == '\'' || _currentChar == '"' ||
+                    _currentChar == '\u2018' || _currentChar == '\u201C'))
                 {
-                    return HandleString();
+                    // 创建一个QUOTE类型的Token
+                    char quoteChar = _currentChar;
+                    int startLine = _line;
+                    int startColumn = _column;
+
+                    // 进入字符串模式
+                    _isInStringMode = true;
+                    _stringQuoteType = quoteChar;
+
+                    // 消耗掉引号
+                    Advance();
+
+                    return new Token(TokenType.QUOTE, quoteChar.ToString(), startLine, startColumn);
                 }
 
+                // 先检查是否是字符串模式下的结束引号
+                if (_isInStringMode && IsClosingQuote(_currentChar))
+                {
+                    // 创建一个QUOTE类型的Token
+                    char quoteChar = _currentChar;
+                    int startLine = _line;
+                    int startColumn = _column;
+
+                    // 消耗掉引号
+                    Advance();
+
+                    // 退出字符串模式
+                    _isInStringMode = false;
+                    _stringQuoteType = '\0';
+
+                    return new Token(TokenType.QUOTE, quoteChar.ToString(), startLine, startColumn);
+                }
+
+                int startPosition = _position;
                 // 处理操作符和标点符号
                 switch (_currentChar)
                 {
@@ -780,10 +811,10 @@ namespace MookDialogueScript
                         if (_currentChar == ':' || _currentChar == '：')
                         {
                             Advance();
-                            return new Token(TokenType.DOUBLE_COLON, "::", _line, _column - 2);
+                            return new Token(TokenType.DOUBLE_COLON, GetRange(startPosition, _position), _line, _column - 2);
                         }
                         // 不直接处理后面的文本，只返回冒号标记
-                        return new Token(TokenType.COLON, ":", _line, _column - 1);
+                        return new Token(TokenType.COLON, GetRange(startPosition, _position), _line, _column - 1);
 
                     case '-':
                         Advance();
@@ -791,7 +822,7 @@ namespace MookDialogueScript
                         {
                             Advance();
                             // 不直接处理后面的文本，只返回箭头标记
-                            return new Token(TokenType.ARROW, "->", _line, _column - 2);
+                            return new Token(TokenType.ARROW, GetRange(startPosition, _position), _line, _column - 2);
                         }
                         if (_currentChar == '-')
                         {
@@ -799,22 +830,22 @@ namespace MookDialogueScript
                             if (_currentChar == '-')
                             {
                                 Advance();
-                                return new Token(TokenType.NODE_START, "---", _line, _column - 3);
+                                return new Token(TokenType.NODE_START, GetRange(startPosition, _position), _line, _column - 3);
                             }
                             // 双减号作为文本处理
                             _position -= 2; // 回退两个字符，回到第一个减号位置
                             _column -= 2;
-                            _currentChar = '-';
+                            UpdateCurrentChar();
                             return HandleText();
                         }
-                        return new Token(TokenType.MINUS, "-", _line, _column - 1);
+                        return new Token(TokenType.MINUS, GetRange(startPosition, _position), _line, _column - 1);
 
                     case '=':
                         Advance();
                         if (_currentChar == '>' || _currentChar == '》')
                         {
                             Advance();
-                            return new Token(TokenType.JUMP, "=>", _line, _column - 2);
+                            return new Token(TokenType.JUMP, GetRange(startPosition, _position), _line, _column - 2);
                         }
                         if (_currentChar == '=')
                         {
@@ -822,11 +853,11 @@ namespace MookDialogueScript
                             if (_currentChar == '=')
                             {
                                 Advance();
-                                return new Token(TokenType.NODE_END, "===", _line, _column - 3);
+                                return new Token(TokenType.NODE_END, GetRange(startPosition, _position), _line, _column - 3);
                             }
-                            return new Token(TokenType.EQUALS, "==", _line, _column - 2);
+                            return new Token(TokenType.EQUALS, GetRange(startPosition, _position), _line, _column - 2);
                         }
-                        return new Token(TokenType.ASSIGN, "=", _line, _column - 1);
+                        return new Token(TokenType.ASSIGN, GetRange(startPosition, _position), _line, _column - 1);
 
                     case '+': Advance(); return new Token(TokenType.PLUS, "+", _line, _column - 1);
                     case '*': Advance(); return new Token(TokenType.MULTIPLY, "*", _line, _column - 1);
@@ -836,22 +867,22 @@ namespace MookDialogueScript
                     case '(':
                     case '（':
                         Advance();
-                        return new Token(TokenType.LEFT_PAREN, "(", _line, _column - 1);
+                        return new Token(TokenType.LEFT_PAREN, GetRange(startPosition, _position), _line, _column - 1);
 
                     case ')':
                     case '）':
                         Advance();
-                        return new Token(TokenType.RIGHT_PAREN, ")", _line, _column - 1);
+                        return new Token(TokenType.RIGHT_PAREN, GetRange(startPosition, _position), _line, _column - 1);
 
                     case '[':
                     case '【':
                         Advance();
-                        return new Token(TokenType.LEFT_BRACKET, "[", _line, _column - 1);
+                        return new Token(TokenType.LEFT_BRACKET, GetRange(startPosition, _position), _line, _column - 1);
 
                     case ']':
                     case '】':
                         Advance();
-                        return new Token(TokenType.RIGHT_BRACKET, "]", _line, _column - 1);
+                        return new Token(TokenType.RIGHT_BRACKET, GetRange(startPosition, _position), _line, _column - 1);
 
                     case '{':
                         Advance();
@@ -864,7 +895,7 @@ namespace MookDialogueScript
                     case ',':
                     case '，':
                         Advance();
-                        return new Token(TokenType.COMMA, ",", _line, _column - 1);
+                        return new Token(TokenType.COMMA, GetRange(startPosition, _position), _line, _column - 1);
                     case '#': Advance(); return new Token(TokenType.HASH, "#", _line, _column - 1);
 
                     case '!':
@@ -873,9 +904,9 @@ namespace MookDialogueScript
                         if (_currentChar == '=')
                         {
                             Advance();
-                            return new Token(TokenType.NOT_EQUALS, "!=", _line, _column - 2);
+                            return new Token(TokenType.NOT_EQUALS, GetRange(startPosition, _position), _line, _column - 2);
                         }
-                        return new Token(TokenType.NOT, "!", _line, _column - 1);
+                        return new Token(TokenType.NOT, GetRange(startPosition, _position), _line, _column - 1);
 
                     case '>':
                     case '》':
@@ -883,9 +914,9 @@ namespace MookDialogueScript
                         if (_currentChar == '=')
                         {
                             Advance();
-                            return new Token(TokenType.GREATER_EQUALS, ">=", _line, _column - 2);
+                            return new Token(TokenType.GREATER_EQUALS, GetRange(startPosition, _position), _line, _column - 2);
                         }
-                        return new Token(TokenType.GREATER, ">", _line, _column - 1);
+                        return new Token(TokenType.GREATER, GetRange(startPosition, _position), _line, _column - 1);
 
                     case '<':
                     case '《':
@@ -893,9 +924,9 @@ namespace MookDialogueScript
                         if (_currentChar == '=')
                         {
                             Advance();
-                            return new Token(TokenType.LESS_EQUALS, "<=", _line, _column - 2);
+                            return new Token(TokenType.LESS_EQUALS, GetRange(startPosition, _position), _line, _column - 2);
                         }
-                        return new Token(TokenType.LESS, "<", _line, _column - 1);
+                        return new Token(TokenType.LESS, GetRange(startPosition, _position), _line, _column - 1);
 
                     case '&':
                         Advance();
@@ -904,9 +935,11 @@ namespace MookDialogueScript
                             Advance();
                             return new Token(TokenType.AND, "&&", _line, _column - 2);
                         }
-                        Debug.LogError($"词法错误: 第{_line}行，第{_column - 1}列，无效的字符序列 '&'，期望 '&&'");
-                        // 尝试恢复 - 返回单个&的Token
-                        return new Token(TokenType.TEXT, "&", _line, _column - 1);
+                        // 作为文本处理
+                        _position -= 1; // 回退一个字符
+                        _column -= 1;
+                        UpdateCurrentChar();
+                        return HandleText();
 
                     case '|':
                         Advance();
@@ -915,9 +948,11 @@ namespace MookDialogueScript
                             Advance();
                             return new Token(TokenType.OR, "||", _line, _column - 2);
                         }
-                        Debug.LogError($"词法错误: 第{_line}行，第{_column - 1}列，无效的字符序列 '|'，期望 '||'");
-                        // 尝试恢复 - 返回单个|的Token
-                        return new Token(TokenType.TEXT, "|", _line, _column - 1);
+                        // 作为文本处理
+                        _position -= 1; // 回退一个字符
+                        _column -= 1;
+                        UpdateCurrentChar();
+                        return HandleText();
 
                     case '^':
                         Advance();
@@ -930,7 +965,7 @@ namespace MookDialogueScript
             }
 
             // 处理文件结束
-            return new Token(TokenType.EOF, "", _line, _column);
+            return new Token(TokenType.EOF, string.Empty, _line, _column);
         }
     }
 }
