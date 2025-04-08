@@ -8,18 +8,16 @@ namespace MookDialogueScript
 {
 
     /// <summary>
-    /// 定义操作符信息，包含优先级、相关的TokenType和操作符描述
+    /// 定义操作符信息，包含优先级和相关的TokenType
     /// </summary>
     public class OperatorInfo
     {
         public int Precedence { get; }
         public TokenType[] TokenTypes { get; }
-        public string Description { get; }
 
-        public OperatorInfo(int precedence, string description, params TokenType[] tokenTypes)
+        public OperatorInfo(int precedence, params TokenType[] tokenTypes)
         {
             Precedence = precedence;
-            Description = description;
             TokenTypes = tokenTypes;
         }
     }
@@ -34,7 +32,6 @@ namespace MookDialogueScript
         {
             if (tokens == null || tokens.Count == 0)
             {
-                Debug.LogError("Token列表不能为空");
                 throw new ArgumentException("Token列表不能为空");
             }
 
@@ -59,8 +56,7 @@ namespace MookDialogueScript
             }
             else
             {
-                Debug.LogError($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望 {type}，但得到 {_currentToken.Type}");
-                // 不再抛出异常，尝试继续解析
+                throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望 {type}，但得到 {_currentToken.Type}");
             }
         }
 
@@ -139,9 +135,7 @@ namespace MookDialogueScript
                 }
                 else
                 {
-                    Debug.LogError($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，意外的Token {_currentToken.Type}");
-                    // 尝试跳过有问题的token
-                    GetNextToken();
+                    throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，意外的Token {_currentToken.Type}");
                 }
             }
 
@@ -160,12 +154,6 @@ namespace MookDialogueScript
             else if (_currentToken.Type == TokenType.DOUBLE_COLON)
             {
                 Consume(TokenType.DOUBLE_COLON);
-            }
-
-            if (_currentToken.Type != TokenType.IDENTIFIER)
-            {
-                Debug.LogError($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望节点名称，但得到 {_currentToken.Type}");
-                return null;
             }
 
             string nodeName = _currentToken.Value;
@@ -251,7 +239,6 @@ namespace MookDialogueScript
                 case TokenType.IF:
                     return ParseCondition();
                 case TokenType.ENDIF:
-                    Debug.LogError($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，意外的ENDIF");
                     throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，意外的ENDIF");
                 case TokenType.COMMAND:
                 case TokenType.SET:
@@ -309,12 +296,7 @@ namespace MookDialogueScript
             // 验证并消耗结束标记
             if (_currentToken.Type != TokenType.ENDIF)
             {
-                Debug.LogError($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望 ENDIF，但得到了 {_currentToken.Type}");
-                // 尝试恢复 - 搜索下一个ENDIF或文件结束
-                while (_currentToken.Type != TokenType.ENDIF && _currentToken.Type != TokenType.EOF)
-                {
-                    GetNextToken();
-                }
+                throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望 ENDIF，但得到了 {_currentToken.Type}");
             }
 
             if (_currentToken.Type == TokenType.ENDIF)
@@ -348,64 +330,40 @@ namespace MookDialogueScript
                 // 消耗当前token，可能是TEXT或IDENTIFIER
                 Consume(_currentToken.Type);
 
-                // 记录扫描到的位置，用于防止重复处理同一个LEFT_BRACKET
-                int lastBracketLine = -1;
-                int lastBracketColumn = -1;
-
                 if (_currentToken.Type == TokenType.LEFT_BRACKET)
                 {
-                    // 记录当前LEFT_BRACKET的位置
-                    lastBracketLine = _currentToken.Line;
-                    lastBracketColumn = _currentToken.Column;
-
-                    // 直接消耗左括号
-                    GetNextToken();
-
-                    // 防止重复处理同一个LEFT_BRACKET
-                    if (_currentToken.Type == TokenType.LEFT_BRACKET &&
-                        _currentToken.Line == lastBracketLine &&
-                        _currentToken.Column == lastBracketColumn)
-                    {
-                        // 这是重复的LEFT_BRACKET，跳过它
-                        Debug.LogWarning($"警告: 第{_currentToken.Line}行，第{_currentToken.Column}列，跳过重复的左括号");
-                        GetNextToken();
-                    }
+                    // 消耗左括号
+                    Consume(TokenType.LEFT_BRACKET);
 
                     if (_currentToken.Type == TokenType.IDENTIFIER || _currentToken.Type == TokenType.TEXT)
                     {
                         emotion = _currentToken.Value;
-                        GetNextToken();
+                        // 消耗表情名称
+                        Consume(_currentToken.Type);
                     }
                     else
                     {
-                        Debug.LogError($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望表情名称，但得到 {_currentToken.Type}");
                         throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望表情名称，但得到 {_currentToken.Type}");
                     }
 
                     if (_currentToken.Type == TokenType.RIGHT_BRACKET)
                     {
-                        GetNextToken();
+                        Consume(TokenType.RIGHT_BRACKET);
                     }
                     else
                     {
-                        Debug.LogError($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望右括号，但得到 {_currentToken.Type}");
                         throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望右括号，但得到 {_currentToken.Type}");
                     }
                 }
 
                 if (_currentToken.Type == TokenType.COLON)
                 {
-                    GetNextToken();
+                    Consume(TokenType.COLON);
                 }
                 else
                 {
-                    Debug.LogError($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望冒号，但得到 {_currentToken.Type}");
                     throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望冒号，但得到 {_currentToken.Type}");
                 }
-            }
-            else
-            {
-                // 如果是旁白，不消耗token，让token作为文本的一部分被ParseText处理
             }
 
             var text = ParseText();
@@ -424,7 +382,6 @@ namespace MookDialogueScript
                 // 获取标签名称（应该是IDENTIFIER）
                 if (_currentToken.Type != TokenType.IDENTIFIER)
                 {
-                    Debug.LogError($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望标签名称，但得到 {_currentToken.Type}");
                     throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望标签名称，但得到 {_currentToken.Type}");
                 }
 
@@ -444,7 +401,7 @@ namespace MookDialogueScript
         private List<TextSegmentNode> ParseText()
         {
             var segments = new List<TextSegmentNode>();
-            StringBuilder textBuilder = new StringBuilder(64); // 预分配更大的初始容量
+            StringBuilder textBuilder = new StringBuilder(64);
 
             while (_currentToken.Type != TokenType.NEWLINE &&
                    _currentToken.Type != TokenType.HASH &&
@@ -583,8 +540,7 @@ namespace MookDialogueScript
                 }
                 else
                 {
-                    // 如果没有IF关键字，回退并将内容视为选项文本的一部分
-                    Debug.LogError($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，在条件表达式中期望IF关键字");
+                    throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，在条件表达式中期望IF关键字");
                 }
 
                 Consume(TokenType.RIGHT_BRACKET);
@@ -631,12 +587,10 @@ namespace MookDialogueScript
                     return ParseJumpCommand(line, column);
 
                 case TokenType.COMMAND:
-                    Debug.LogError($"未知命令 {commandValue}");
-                    return null; // 不会执行到这里
+                    throw new InvalidOperationException($"未知命令 {commandValue}");
 
                 default:
-                    Debug.LogError($"未知命令类型 {commandType}");
-                    return null; // 不会执行到这里
+                    throw new InvalidOperationException($"未知命令类型 {commandType}");
             }
         }
 
@@ -713,7 +667,7 @@ namespace MookDialogueScript
         {
             if (_currentToken.Type != TokenType.VARIABLE)
             {
-                Debug.LogError($"期望变量名，但得到了 {_currentToken.Type}");
+                throw new InvalidOperationException($"期望变量名，但得到了 {_currentToken.Type}");
             }
 
             string varName = _currentToken.Value;
@@ -754,102 +708,31 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 解析字符串插值
-        /// </summary>
-        private ExpressionNode ParseStringInterpolation(Token token)
-        {
-            var segments = new List<TextSegmentNode>();
-            string text = token.Value;
-            int startIndex = 0;
-            int exprLine = token.Line;
-            int exprColumn = token.Column;
-
-            while (true)
-            {
-                int leftBrace = text.IndexOf('{', startIndex);
-                if (leftBrace == -1)
-                {
-                    if (startIndex < text.Length)
-                    {
-                        segments.Add(new TextNode(text.Substring(startIndex), exprLine, exprColumn + startIndex));
-                    }
-                    break;
-                }
-
-                if (leftBrace > startIndex)
-                {
-                    segments.Add(new TextNode(text.Substring(startIndex, leftBrace - startIndex), exprLine, exprColumn + startIndex));
-                }
-
-                int rightBrace = text.IndexOf('}', leftBrace);
-                if (rightBrace == -1)
-                {
-                    Debug.LogError($"语法错误: 第{exprLine}行，第{exprColumn + leftBrace}列，未闭合的插值表达式");
-                    // 如果错误，返回已解析的部分作为普通文本
-                    if (segments.Count == 0)
-                    {
-                        return new StringNode(text, exprLine, exprColumn);
-                    }
-                    else if (segments.Count == 1 && segments[0] is TextNode firstTextNode)
-                    {
-                        return new StringNode(firstTextNode.Text, exprLine, exprColumn);
-                    }
-                    return new InterpolationExpressionNode(segments, exprLine, exprColumn);
-                }
-
-                string varName = text.Substring(leftBrace + 1, rightBrace - leftBrace - 1).Trim();
-                if (varName.StartsWith("$"))
-                {
-                    segments.Add(new InterpolationNode(
-                        new VariableNode(varName.Substring(1), exprLine, exprColumn + leftBrace),
-                        exprLine, exprColumn + leftBrace));
-                }
-                else
-                {
-                    Debug.LogError($"语法错误: 第{exprLine}行，第{exprColumn + leftBrace}列，插值表达式中的变量名必须以$开头");
-                    // 尝试作为普通文本处理
-                    segments.Add(new TextNode($"{{{varName}}}", exprLine, exprColumn + leftBrace));
-                }
-
-                startIndex = rightBrace + 1;
-            }
-
-            // 如果只有一个文本段，直接返回StringNode
-            if (segments.Count == 1 && segments[0] is TextNode singleTextNode)
-            {
-                return new StringNode(singleTextNode.Text, exprLine, exprColumn);
-            }
-
-            // 否则创建一个插值表达式
-            return new InterpolationExpressionNode(segments, exprLine, exprColumn);
-        }
-
-        /// <summary>
         /// 定义所有二元操作符的优先级(数字越大优先级越高)
         /// </summary>
         private static readonly Dictionary<TokenType, OperatorInfo> BinaryOperators = new Dictionary<TokenType, OperatorInfo>
         {
             // 逻辑运算符 (优先级 1-2)
-            { TokenType.OR, new OperatorInfo(1, "逻辑或", TokenType.OR) },
-            { TokenType.AND, new OperatorInfo(2, "逻辑与", TokenType.AND) },
-            { TokenType.XOR, new OperatorInfo(2, "异或", TokenType.XOR) },
-            
+            { TokenType.OR, new OperatorInfo(1, TokenType.OR) },
+            { TokenType.AND, new OperatorInfo(2, TokenType.AND) },
+            { TokenType.XOR, new OperatorInfo(2, TokenType.XOR) },
+
             // 比较运算符 (优先级 3)
-            { TokenType.EQUALS, new OperatorInfo(3, "等于", TokenType.EQUALS) },
-            { TokenType.NOT_EQUALS, new OperatorInfo(3, "不等于", TokenType.NOT_EQUALS) },
-            { TokenType.GREATER, new OperatorInfo(3, "大于", TokenType.GREATER) },
-            { TokenType.LESS, new OperatorInfo(3, "小于", TokenType.LESS) },
-            { TokenType.GREATER_EQUALS, new OperatorInfo(3, "大于等于", TokenType.GREATER_EQUALS) },
-            { TokenType.LESS_EQUALS, new OperatorInfo(3, "小于等于", TokenType.LESS_EQUALS) },
-            
+            { TokenType.EQUALS, new OperatorInfo(3, TokenType.EQUALS) },
+            { TokenType.NOT_EQUALS, new OperatorInfo(3, TokenType.NOT_EQUALS) },
+            { TokenType.GREATER, new OperatorInfo(3, TokenType.GREATER) },
+            { TokenType.LESS, new OperatorInfo(3, TokenType.LESS) },
+            { TokenType.GREATER_EQUALS, new OperatorInfo(3, TokenType.GREATER_EQUALS) },
+            { TokenType.LESS_EQUALS, new OperatorInfo(3, TokenType.LESS_EQUALS) },
+
             // 加减运算符 (优先级 4)
-            { TokenType.PLUS, new OperatorInfo(4, "加法", TokenType.PLUS) },
-            { TokenType.MINUS, new OperatorInfo(4, "减法", TokenType.MINUS) },
-            
+            { TokenType.PLUS, new OperatorInfo(4, TokenType.PLUS) },
+            { TokenType.MINUS, new OperatorInfo(4, TokenType.MINUS) },
+
             // 乘除模运算符 (优先级 5)
-            { TokenType.MULTIPLY, new OperatorInfo(5, "乘法", TokenType.MULTIPLY) },
-            { TokenType.DIVIDE, new OperatorInfo(5, "除法", TokenType.DIVIDE) },
-            { TokenType.MODULO, new OperatorInfo(5, "取模", TokenType.MODULO) }
+            { TokenType.MULTIPLY, new OperatorInfo(5, TokenType.MULTIPLY) },
+            { TokenType.DIVIDE, new OperatorInfo(5, TokenType.DIVIDE) },
+            { TokenType.MODULO, new OperatorInfo(5, TokenType.MODULO) }
         };
 
         /// <summary>
@@ -948,11 +831,6 @@ namespace MookDialogueScript
 
                 case TokenType.STRING:
                     Consume(TokenType.STRING);
-                    // 检查字符串中是否包含插值表达式
-                    if (token.Value.Contains("{") && token.Value.Contains("}"))
-                    {
-                        return ParseStringInterpolation(token);
-                    }
                     return new StringNode(token.Value, token.Line, token.Column);
 
                 case TokenType.TRUE:
@@ -994,12 +872,10 @@ namespace MookDialogueScript
                     return expr;
 
                 default:
-                    Debug.LogError($"语法错误: 第{token.Line}行，第{token.Column}列，意外的符号 {token.Type}");
-                    // 返回一个默认值
-                    GetNextToken(); // 跳过当前token
-                    return new StringNode("", token.Line, token.Column);
+                    throw new InvalidOperationException($"语法错误: 第{token.Line}行，第{token.Column}列，意外的符号 {token.Type}");
             }
         }
 
     }
 }
+

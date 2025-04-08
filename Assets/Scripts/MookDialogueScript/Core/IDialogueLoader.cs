@@ -58,18 +58,10 @@ namespace MookDialogueScript
 
             foreach (var asset in assets)
             {
-                try
+                var textAsset = asset as TextAsset;
+                if (textAsset != null)
                 {
-                    var textAsset = asset as TextAsset;
-                    if (textAsset != null)
-                    {
-                        LoadScriptContent(textAsset.text, runner, asset.name);
-                        Debug.Log($"加载脚本文件 {asset.name} 成功");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogError($"加载脚本文件 {asset.name} 时出错: {ex.Message}");
+                    LoadScriptContent(textAsset.text, runner, asset.name);
                 }
             }
         }
@@ -95,8 +87,7 @@ namespace MookDialogueScript
             catch (Exception ex)
             {
                 string fileInfo = string.IsNullOrEmpty(filePath) ? "" : $" (文件: {filePath})";
-                Debug.LogError($"解析脚本内容时出错{fileInfo}: {ex.Message}");
-                Debug.LogError(ex.StackTrace);
+                Debug.LogError($"解析脚本内容时出错{fileInfo}: {ex}");
             }
         }
     }
