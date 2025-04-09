@@ -1,6 +1,6 @@
 {
     "name": "MookDialogueScript",
-    "rootNamespace": "MookDialogueScript",
+    "rootNamespace": "",
     "references": [],
     "includePlatforms": [],
     "excludePlatforms": [],
@@ -11,4 +11,4 @@
     "defineConstraints": [],
     "versionDefines": [],
     "noEngineReferences": false
-} 
+}

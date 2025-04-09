@@ -1,6 +1,6 @@
 {
     "name": "MookDialogueScript.Editor",
-    "rootNamespace": "MookDialogueScript.Editor",
+    "rootNamespace": "",
     "references": [],
     "includePlatforms": [
         "Editor"
