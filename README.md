@@ -16,6 +16,20 @@ MookDialogueScript 是一个轻量级的对话脚本系统，专为 Unity 游戏
 
 ### 安装
 
+#### 方法一：通过 Unity 包管理器从 Git URL 安装
+
+1. 打开 Unity 编辑器
+2. 选择菜单：Window > Package Manager
+3. 点击左上角的"+"按钮
+4. 选择"Add package from git URL..."
+5. 输入以下 URL：
+   ```
+   https://github.com/mook-wenyu/MookDialogueScriptFromUnity.git?path=Assets/Scripts/MookDialogueScript
+   ```
+6. 点击"Add"按钮
+
+#### 方法二：手动安装
+
 1. 克隆或下载本项目
 2. 将 `Assets/Scripts/MookDialogueScript` 文件夹复制到你的 Unity 项目中
 3. 在 Unity 中导入必要的依赖项
@@ -143,6 +157,9 @@ public static class GameSystem
 ### 基本语法
 
 ```mds
+// 定义节点
+--- start
+
 // 定义变量
 var $player_name "冒险者"
 var $player_level 1
@@ -164,6 +181,9 @@ endif
         商人: 这是我们的武器清单。
     -> 离开
         商人: 再见，欢迎下次光临。
+
+// 节点结束
+===
 ```
 
 ### 完整语法规则
@@ -338,7 +358,7 @@ endif
 ===
 // 节点结束标记（可选）
 
-// 使用 :: 定义节点
+// 使用 :: 定义节点（不推荐）
 :: shop
 // 节点内容
 ===
@@ -491,8 +511,7 @@ public class CustomDialogueLoader : IDialogueLoader
         catch (Exception ex)
         {
             string fileInfo = string.IsNullOrEmpty(filePath) ? "" : $" (文件: {filePath})";
-            Debug.LogError($"解析脚本内容时出错{fileInfo}: {ex.Message}");
-            Debug.LogError(ex.StackTrace);
+            Debug.LogError($"解析脚本内容时出错{fileInfo}: {ex}");
         }
     }
 }

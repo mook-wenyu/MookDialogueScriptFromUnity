@@ -1,0 +1,17 @@
+{
+  "name": "com.wenyu.dialoguescript",
+  "displayName": "Mook Dialogue Script",
+  "author": {
+    "name": "WenYu",
+    "url": "https://github.com/mook-wenyu"
+  },
+  "version": "0.1.0",
+  "unity": "2021.4",
+  "description": "一个简单易用的对话脚本系统",
+  "keywords": [
+    "dialogue",
+    "script"
+  ],
+  "license":"Apache-2.0",
+  "dependencies": {}
+} 
