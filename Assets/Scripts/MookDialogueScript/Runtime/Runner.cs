@@ -1044,6 +1044,78 @@ namespace MookDialogueScript
             }
         }
 
+        /// <summary>
+        /// 获取节点的元数据值
+        /// </summary>
+        /// <param name="nodeName">节点名称，为null则使用当前节点</param>
+        /// <param name="key">元数据键</param>
+        /// <returns>元数据值，节点不存在或键不存在时返回null</returns>
+        public string GetMetadata(string nodeName, string key)
+        {
+            try
+            {
+                if (nodeName != null)
+                {
+                    // 使用DialogueContext获取指定节点的元数据
+                    return _context.GetMetadata(nodeName, key);
+                }
+                else
+                {
+                    // 获取当前节点的元数据
+                    if (_executionStack.Count == 0 || !(_executionStack.Peek().node is NodeDefinitionNode currentNode))
+                    {
+                        Debug.LogWarning("当前没有活动节点");
+                        return null;
+                    }
+                    
+                    // 如果元数据中不包含指定键，返回null
+                    if (!currentNode.Metadata.TryGetValue(key, out string value))
+                    {
+                        return null;
+                    }
 
+                    return value;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"获取元数据时出错: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 获取节点的所有元数据
+        /// </summary>
+        /// <param name="nodeName">节点名称，为null则使用当前节点</param>
+        /// <returns>节点的所有元数据，如果节点不存在则返回null</returns>
+        public Dictionary<string, string> GetAllMetadata(string nodeName = null)
+        {
+            try
+            {
+                if (nodeName != null)
+                {
+                    // 使用DialogueContext获取指定节点的元数据
+                    return _context.GetAllMetadata(nodeName);
+                }
+                else
+                {
+                    // 获取当前节点的元数据
+                    if (_executionStack.Count == 0 || !(_executionStack.Peek().node is NodeDefinitionNode currentNode))
+                    {
+                        Debug.LogWarning("当前没有活动节点");
+                        return null;
+                    }
+                    
+                    // 返回当前节点的所有元数据的副本
+                    return currentNode.Metadata;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"获取元数据时出错: {ex.Message}");
+                return null;
+            }
+        }
     }
 }

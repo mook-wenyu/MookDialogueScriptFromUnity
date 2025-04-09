@@ -257,5 +257,62 @@ namespace MookDialogueScript
         {
             return _functionManager.HasFunction(name);
         }
+
+        /// <summary>
+        /// 获取节点的元数据
+        /// </summary>
+        /// <param name="nodeName">节点名称</param>
+        /// <param name="key">元数据键，为null则返回所有元数据</param>
+        /// <returns>元数据值，节点不存在或键不存在时返回null</returns>
+        public string GetMetadata(string nodeName, string key)
+        {
+            try
+            {
+                // 获取指定节点
+                if (!_nodes.TryGetValue(nodeName, out NodeDefinitionNode node))
+                {
+                    Debug.LogWarning($"节点 {nodeName} 不存在");
+                    return null;
+                }
+
+                // 如果元数据中不包含指定键，返回null
+                if (!node.Metadata.TryGetValue(key, out string value))
+                {
+                    return null;
+                }
+
+                return value;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"获取元数据时出错: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 获取节点的所有元数据
+        /// </summary>
+        /// <param name="nodeName">节点名称</param>
+        /// <returns>节点的所有元数据，如果节点不存在则返回null</returns>
+        public Dictionary<string, string> GetAllMetadata(string nodeName)
+        {
+            try
+            {
+                // 获取指定节点
+                if (!_nodes.TryGetValue(nodeName, out NodeDefinitionNode node))
+                {
+                    Debug.LogWarning($"节点 {nodeName} 不存在");
+                    return null;
+                }
+
+                return node.Metadata;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"获取元数据时出错: {ex.Message}");
+                return null;
+            }
+        }
     }
 }

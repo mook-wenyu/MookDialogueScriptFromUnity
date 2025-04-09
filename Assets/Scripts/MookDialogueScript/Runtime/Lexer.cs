@@ -32,7 +32,6 @@ namespace MookDialogueScript
         private readonly List<Token> _tokens;
         private bool _isInStringMode;   // 是否在字符串模式中
         private char _stringQuoteType;  // 当前字符串模式的引号类型
-        private bool _isInTextMode;     // 是否在普通文本模式中（冒号后）
         private bool _isInOptionTextMode; // 是否在选项文本模式中（->后）
 
 
@@ -80,7 +79,6 @@ namespace MookDialogueScript
             _currentIndent = 0;
             _isInStringMode = false;
             _stringQuoteType = '\0';
-            _isInTextMode = false;
             _isInOptionTextMode = false;
         }
 
@@ -254,8 +252,7 @@ namespace MookDialogueScript
             // 记录当前行号用于生成Token
             int currentLine = _line;
 
-            // 如果遇到换行，退出文本和选项文本模式
-            _isInTextMode = false;
+            // 如果遇到换行，退出选项文本模式
             _isInOptionTextMode = false;
             // 如果在字符串模式下遇到换行，这通常是一个错误，但我们仍然退出该模式
             if (_isInStringMode)
@@ -482,22 +479,12 @@ namespace MookDialogueScript
                         return FinalizeTextOrQuoteToken(resultBuilder, hasContent, startLine, startColumn);
                     }
 
-                    // 处理文本模式下遇到井号需要退出
-
-                    if (_isInTextMode && _currentChar == '#')
-                    {
-                        _isInTextMode = false;
-                        break;
-                    }
-
                     // 处理选项文本模式下遇到左括号需要退出
-
                     if (_isInOptionTextMode && (_currentChar == '[' || _currentChar == '【'))
                     {
                         _isInOptionTextMode = false;
                         break;
                     }
-
 
                     break;
                 }
@@ -508,13 +495,9 @@ namespace MookDialogueScript
                 hasContent = true;
             }
 
-            // 如果遇到换行，检查是否需要退出特定模式
+            // 如果遇到换行，检查是否需要退出选项文本模式
             if (_currentChar is '\n' or '\r')
             {
-                if (_isInTextMode)
-                {
-                    _isInTextMode = false;
-                }
                 if (_isInOptionTextMode)
                 {
                     _isInOptionTextMode = false;
@@ -593,15 +576,6 @@ namespace MookDialogueScript
                 return new TextProcessingRules(
                     truncateChars: new[] { '{', '[', '【' },
                     escapeChars: new[] { '[', ']', '{', '}', '\\', '【', '】' }
-                );
-            }
-
-            if (_isInTextMode)
-            {
-                // 文本模式下的处理规则，包含井号作为截断符
-                return new TextProcessingRules(
-                    truncateChars: new[] { '#', '{' },
-                    escapeChars: new[] { '#', '{', '}', '\\' }
                 );
             }
 
@@ -822,8 +796,6 @@ namespace MookDialogueScript
                             Advance();
                             return new Token(TokenType.DOUBLE_COLON, GetRange(startPosition, _position), _line, _column - 2);
                         }
-                        // 遇到单冒号，进入文本模式
-                        _isInTextMode = true;
                         // 不直接处理后面的文本，只返回冒号标记
                         return new Token(TokenType.COLON, GetRange(startPosition, _position), _line, _column - 1);
 
@@ -915,14 +887,7 @@ namespace MookDialogueScript
                         Advance();
                         return new Token(TokenType.COMMA, GetRange(startPosition, _position), _line, _column - 1);
                     case '#':
-                        // 如果在文本模式下遇到井号，退出文本模式
-
-                        if (_isInTextMode)
-                        {
-                            _isInTextMode = false;
-                        }
                         Advance();
-
                         return new Token(TokenType.HASH, "#", _line, _column - 1);
 
                     case '!':
@@ -1004,39 +969,23 @@ namespace MookDialogueScript
             Token lastToken = GetLastToken();
 
             // 如果没有前一个Token，或者当前位置在行首，不处理文本
-
             if (lastToken == null || _column == 1)
                 return false;
 
             // 处理特定的模式和Token组合
-
             // 1. 字符串模式: 上一个Token是引号或右大括号
-
             if (_isInStringMode)
             {
                 return lastToken.Type == TokenType.QUOTE ||
-
                        lastToken.Type == TokenType.RIGHT_BRACE;
             }
 
-            // 2. 文本模式: 上一个Token是冒号或右大括号
-
-            if (_isInTextMode)
-            {
-                return lastToken.Type == TokenType.COLON ||
-
-                       lastToken.Type == TokenType.RIGHT_BRACE;
-            }
-
-            // 3. 选项文本模式: 上一个Token是箭头或右大括号
-
+            // 2. 选项文本模式: 上一个Token是箭头或右大括号
             if (_isInOptionTextMode)
             {
                 return lastToken.Type == TokenType.ARROW ||
-
                        lastToken.Type == TokenType.RIGHT_BRACE;
             }
-
 
             return false;
         }

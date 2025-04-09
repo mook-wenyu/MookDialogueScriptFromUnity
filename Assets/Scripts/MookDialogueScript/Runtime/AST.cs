@@ -58,6 +58,11 @@ namespace MookDialogueScript
         public string NodeName { get; }
 
         /// <summary>
+        /// 节点元数据，存储节点定义时的键值对信息
+        /// </summary>
+        public Dictionary<string, string> Metadata { get; }
+
+        /// <summary>
         /// 内容列表
         /// </summary>
         public List<ContentNode> Content { get; }
@@ -67,12 +72,31 @@ namespace MookDialogueScript
         {
             NodeName = nodeName;
             Content = content;
+            Metadata = new Dictionary<string, string>();
+        }
+        
+        public NodeDefinitionNode(string nodeName, Dictionary<string, string> metadata, List<ContentNode> content, int line, int column)
+            : base(line, column)
+        {
+            NodeName = nodeName;
+            Content = content;
+            Metadata = metadata ?? new Dictionary<string, string>();
         }
 
         public override string ToString()
         {
             StringBuilder sb = new StringBuilder();
             sb.AppendLine($"--- {NodeName}");
+            
+            // 添加元数据到输出
+            if (Metadata != null && Metadata.Count > 0)
+            {
+                foreach (var meta in Metadata)
+                {
+                    sb.AppendLine($"[{meta.Key}:{meta.Value}]");
+                }
+            }
+            
             foreach (var content in Content)
             {
                 sb.AppendLine($"{content}");

@@ -48,18 +48,18 @@ public class DialogueMgr : MonoBehaviour
 {
     public static DialogueMgr Instance { get; private set; }
     public Runner RunMgrs { get; private set; }
-    
+
     void Awake()
     {
         Instance = this;
         Initialize();
     }
-    
+
     public void Initialize()
     {
         Debug.Log("开始初始化对话系统");
         RunMgrs = new Runner();
-        
+
         // 注册玩家对象
         var player = new Player("二狗");
         RunMgrs.RegisterObject("player", player);
@@ -70,7 +70,7 @@ public class DialogueMgr : MonoBehaviour
         RunMgrs.RegisterVariable("has_key", new RuntimeValue(false));
 
         // 注册C#变量
-        RunMgrs.RegisterBuiltinVariable("game_difficulty", 
+        RunMgrs.RegisterBuiltinVariable("game_difficulty",
             () => GameSystem.Difficulty,
             (value) => GameSystem.Difficulty = (int)value
         );
@@ -159,6 +159,7 @@ public static class GameSystem
 ```mds
 // 定义节点
 --- start
+[title:start]
 
 // 定义变量
 var $player_name "冒险者"
@@ -200,6 +201,72 @@ endif
 - 注释以 `//` 开头
 - 注释可以放在任何位置
 - 注释不会影响脚本执行
+
+#### 节点系统
+
+```mds
+// 使用 --- 定义节点
+--- start
+// 节点内容
+===
+// 节点结束标记
+
+// 使用 :: 定义节点（不推荐）
+:: shop
+// 节点内容
+===
+
+// 方法二：使用元数据定义节点名称
+---
+[title: 节点名]
+// 节点内容
+===
+```
+
+节点系统说明：
+
+- 节点名称设置有两种方式，必须至少使用其中一种：
+  1. 直接在 `---` 后面指定节点名，如：`--- start`
+  2. 使用元数据方式：先写 `---`，然后在下一行用 `[title: 节点名]` 指定
+- 节点结束标记 `===` 是可选的，但建议写完整
+- 节点内容可以包含变量定义、对话、条件、选项等元素
+
+#### 节点元数据
+
+```mds
+--- 节点名
+[title:节点名]
+[custom_key:自定义值]
+
+// 节点内容
+===
+```
+
+元数据说明：
+
+- 使用 `[key:value]` 格式定义
+- 必须紧跟在节点定义之后一行或连续多行
+- 用于存储节点的附加信息
+- 可以在运行时通过 API 访问这些元数据值
+- 系统会特殊处理某些元数据，例如：
+  - `title`: 会覆盖节点名称
+
+#### 节点跳转
+
+```mds
+// 跳转到其他节点
+// 跳转到 shop 节点
+=> shop
+
+// 跳转到 shop 节点
+jump shop
+```
+
+节点跳转说明：
+
+- 使用 `=>` 或 `jump` 关键字可以跳转到其他节点
+- 跳转后，当前节点的执行会立即停止，开始执行目标节点
+- 跳转可以在任何位置使用，包括条件语句和选项分支内
 
 #### 变量系统
 
@@ -349,41 +416,12 @@ endif
 - 条件语句内容必须缩进，表示属于该条件
 - 支持嵌套条件语句
 
-#### 节点系统
-
-```mds
-// 使用 --- 定义节点
---- start
-// 节点内容
-===
-// 节点结束标记（可选）
-
-// 使用 :: 定义节点（不推荐）
-:: shop
-// 节点内容
-===
-
-// 跳转到其他节点
-// 跳转到 shop 节点
-=> shop
-
-// 跳转到 shop 节点
-jump shop
-
-```
-
-节点系统说明：
-- 节点定义方式有两种：`--- 节点名` 或 `:: 节点名`
-- 节点结束标记 `===` 是可选的，但建议写完整
-- 使用 `=>` 或 `jump` 跳转到其他节点
-- 节点内容可以包含变量定义、对话、条件、选项等元素
-
 ### 关键字
 
 1. 条件控制：`if`, `elif`, `else`, `endif`
 2. 布尔值：`true`, `false`
 3. 变量操作：`var`, `set`, `add`, `sub`, `mul`, `div`, `mod`
-4. 跳转控制：`=>`, `jump`
+4. 跳转控制：`jump`
 5. 函数调用：`call`
 6. 等待控制：`wait 数字`（单位：秒，可精确到毫秒，如 `wait 0.01`）
 7. 比较运算：
@@ -416,7 +454,7 @@ RunMgrs.RegisterObject("player", player);
 RunMgrs.RegisterVariable("gold", new RuntimeValue(100));
 
 // 4. 注册C#变量
-RunMgrs.RegisterBuiltinVariable("game_difficulty", 
+RunMgrs.RegisterBuiltinVariable("game_difficulty",
     () => GameSystem.Difficulty,
     (value) => GameSystem.Difficulty = (int)value
 );
@@ -463,7 +501,7 @@ public class CustomDialogueLoader : IDialogueLoader
     {
         // 自定义加载逻辑
         // 例如：从网络加载、从本地文件加载、从数据库加载等
-        
+
         // 示例：从 StreamingAssets 加载
         string scriptPath = Path.Combine(Application.streamingAssetsPath, _rootDir);
         if (Directory.Exists(scriptPath))
@@ -521,17 +559,17 @@ public class DialogueMgr : MonoBehaviour
 {
     public static DialogueMgr Instance { get; private set; }
     public Runner RunMgrs { get; private set; }
-    
+
     void Awake()
     {
         Instance = this;
         Initialize();
     }
-    
+
     public void Initialize()
     {
         Debug.Log("开始初始化对话系统");
-        
+
         // 使用自定义加载器，从 StreamingAssets 加载脚本
         RunMgrs = new Runner(new CustomDialogueLoader());
     }

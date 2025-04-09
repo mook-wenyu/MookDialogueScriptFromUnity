@@ -155,12 +155,37 @@ namespace MookDialogueScript
                 Consume(TokenType.DOUBLE_COLON);
             }
 
-            string nodeName = _currentToken.Value;
+            string nodeName = string.Empty;
             int line = _currentToken.Line;
             int column = _currentToken.Column;
 
-            Consume(TokenType.IDENTIFIER);
+            // 检查是否有节点名称
+            if (_currentToken.Type == TokenType.IDENTIFIER)
+            {
+                nodeName = _currentToken.Value;
+                Consume(TokenType.IDENTIFIER);
+            }
             Consume(TokenType.NEWLINE);
+
+            // 解析元数据（如果有）
+            Dictionary<string, string> metadata = new Dictionary<string, string>();
+            while (_currentToken.Type == TokenType.LEFT_BRACKET)
+            {
+                ParseMetadata(metadata);
+
+                // 如果下一个是换行符，消耗掉
+
+                if (_currentToken.Type == TokenType.NEWLINE)
+                {
+                    Consume(TokenType.NEWLINE);
+                }
+            }
+
+            // 检查元数据中是否有title键，有则用其值更新nodeName
+            if (metadata.TryGetValue("title", out string titleValue) && !string.IsNullOrEmpty(titleValue))
+            {
+                nodeName = titleValue;
+            }
 
             var content = new List<ContentNode>();
             while (_currentToken.Type != TokenType.EOF &&
@@ -187,7 +212,73 @@ namespace MookDialogueScript
                 }
             }
 
-            return new NodeDefinitionNode(nodeName, content, line, column);
+            return new NodeDefinitionNode(nodeName, metadata, content, line, column);
+        }
+
+        /// <summary>
+        /// 解析元数据
+        /// </summary>
+        private void ParseMetadata(Dictionary<string, string> metadata)
+        {
+            // 解析一组元数据 [key:value]
+            Consume(TokenType.LEFT_BRACKET);
+
+            string key = _currentToken.Value;
+            Consume(TokenType.IDENTIFIER);
+
+            Consume(TokenType.COLON);
+
+            // 解析值 - 只支持简单类型
+            string valueStr = string.Empty;
+            if (_currentToken.Type == TokenType.QUOTE)
+            {
+                // 字符串值 - 不支持插值
+                Consume(TokenType.QUOTE);
+
+                if (_currentToken.Type == TokenType.TEXT)
+                {
+                    valueStr = _currentToken.Value;
+                    Consume(TokenType.TEXT);
+                }
+
+                Consume(TokenType.QUOTE);
+            }
+            else if (_currentToken.Type == TokenType.NUMBER)
+            {
+                // 数字值
+                valueStr = _currentToken.Value;
+                Consume(TokenType.NUMBER);
+            }
+            else if (_currentToken.Type == TokenType.MINUS && CheckNext(TokenType.NUMBER))
+            {
+                // 负数值
+                Consume(TokenType.MINUS);
+                valueStr = "-" + _currentToken.Value;
+                Consume(TokenType.NUMBER);
+            }
+            else if (_currentToken.Type == TokenType.TRUE)
+            {
+                // 布尔值true
+                valueStr = "true";
+                Consume(TokenType.TRUE);
+            }
+            else if (_currentToken.Type == TokenType.FALSE)
+            {
+                // 布尔值false
+                valueStr = "false";
+                Consume(TokenType.FALSE);
+            }
+            else if (_currentToken.Type == TokenType.IDENTIFIER)
+            {
+                // 标识符
+                valueStr = _currentToken.Value;
+                Consume(TokenType.IDENTIFIER);
+            }
+            
+            Consume(TokenType.RIGHT_BRACKET);
+
+            // 添加到元数据字典
+            metadata[key] = valueStr;
         }
 
         /// <summary>
@@ -308,20 +399,13 @@ namespace MookDialogueScript
             int line = _currentToken.Line;
             int column = _currentToken.Column;
 
-            // 检查是否是单独的冒号（作为旁白处理）
-            bool isColonOnly = _currentToken.Type == TokenType.COLON;
             // 检查是否是对话（有说话者+冒号）
             bool isDialogue = CheckNext(TokenType.COLON) || CheckNext(TokenType.LEFT_BRACKET);
 
             string speaker = null;
             string emotion = null;
 
-            if (isColonOnly)
-            {
-                // 消耗冒号Token
-                Consume(TokenType.COLON);
-            }
-            else if (isDialogue)
+            if (isDialogue)
             {
                 // 如果是对话，保存说话者
                 speaker = _currentToken.Value;
@@ -365,7 +449,17 @@ namespace MookDialogueScript
                 }
             }
 
+            if (_currentToken.Type == TokenType.QUOTE)
+            {
+                Consume(TokenType.QUOTE);
+            }
+
             var text = ParseText();
+            
+            if (_currentToken.Type == TokenType.QUOTE)
+            {
+                Consume(TokenType.QUOTE);
+            }
 
             List<string> labels = new List<string>();
             while (_currentToken.Type == TokenType.HASH)
@@ -374,7 +468,7 @@ namespace MookDialogueScript
                 Consume(TokenType.HASH);
 
                 // 获取标签名称
-                if (_currentToken.Type == TokenType.IDENTIFIER || _currentToken.Type == TokenType.TEXT)
+                if (_currentToken.Type is TokenType.IDENTIFIER or TokenType.TEXT)
                 {
                     labels.Add(_currentToken.Value);
                     Consume(_currentToken.Type);
@@ -402,6 +496,7 @@ namespace MookDialogueScript
 
             while (_currentToken.Type != TokenType.NEWLINE &&
                    _currentToken.Type != TokenType.HASH &&
+                   _currentToken.Type != TokenType.QUOTE &&
                    _currentToken.Type != TokenType.LEFT_BRACKET)
             {
                 if (_currentToken.Type == TokenType.LEFT_BRACE)
@@ -500,7 +595,7 @@ namespace MookDialogueScript
             // 检查当前标记是否是任一结束标记
             bool IsEndToken()
             {
-                if (_currentToken.Type is TokenType.DEDENT or TokenType.EOF or 
+                if (_currentToken.Type is TokenType.DEDENT or TokenType.EOF or
                     TokenType.DOUBLE_COLON or TokenType.NODE_START or TokenType.NODE_END)
                     return true;
 
