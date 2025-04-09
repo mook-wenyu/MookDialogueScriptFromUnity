@@ -30,9 +30,9 @@ namespace MookDialogueScript
         private readonly Stack<int> _indentStack;
         private int _currentIndent;
         private readonly List<Token> _tokens;
-        private bool _isInStringMode;
-        private char _stringQuoteType;
-        private bool _isInTextMode;       // 是否在普通文本模式中（冒号后）
+        private bool _isInStringMode;   // 是否在字符串模式中
+        private char _stringQuoteType;  // 当前字符串模式的引号类型
+        private bool _isInTextMode;     // 是否在普通文本模式中（冒号后）
         private bool _isInOptionTextMode; // 是否在选项文本模式中（->后）
 
 
@@ -51,7 +51,6 @@ namespace MookDialogueScript
             {"mul", TokenType.MUL},
             {"div", TokenType.DIV},
             {"mod", TokenType.MOD},
-            {"=>", TokenType.JUMP},
             {"jump", TokenType.JUMP},
             {"call", TokenType.CALL},
             {"wait", TokenType.WAIT},
@@ -510,7 +509,7 @@ namespace MookDialogueScript
             }
 
             // 如果遇到换行，检查是否需要退出特定模式
-            if (_currentChar == '\n' || _currentChar == '\r')
+            if (_currentChar is '\n' or '\r')
             {
                 if (_isInTextMode)
                 {

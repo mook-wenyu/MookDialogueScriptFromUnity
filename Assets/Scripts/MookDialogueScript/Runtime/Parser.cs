@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Linq;
-using UnityEngine;
 
 namespace MookDialogueScript
 {
@@ -209,7 +208,7 @@ namespace MookDialogueScript
             {
                 // 首先检查选择文本是否为空
                 bool emptyText = choice.Text.Count == 0 ||
-                                choice.Text.All(segment => segment is TextNode textNode && string.IsNullOrWhiteSpace(textNode.Text));
+                                 choice.Text.All(segment => segment is TextNode textNode && string.IsNullOrWhiteSpace(textNode.Text));
 
                 // 如果选择文本和内容都是空的，则认为此节点为空
                 return emptyText && (choice.Content == null || choice.Content.Count == 0);
@@ -233,6 +232,7 @@ namespace MookDialogueScript
             {
                 case TokenType.TEXT:
                 case TokenType.IDENTIFIER:
+                case TokenType.COLON:
                     return ParseDialogue();
                 case TokenType.ARROW:
                     return ParseChoice();
@@ -308,13 +308,20 @@ namespace MookDialogueScript
             int line = _currentToken.Line;
             int column = _currentToken.Column;
 
-            // 先检查后面是否有冒号或左括号，如果有则按对话处理，否则按旁白处理
+            // 检查是否是单独的冒号（作为旁白处理）
+            bool isColonOnly = _currentToken.Type == TokenType.COLON;
+            // 检查是否是对话（有说话者+冒号）
             bool isDialogue = CheckNext(TokenType.COLON) || CheckNext(TokenType.LEFT_BRACKET);
 
             string speaker = null;
             string emotion = null;
 
-            if (isDialogue)
+            if (isColonOnly)
+            {
+                // 消耗冒号Token
+                Consume(TokenType.COLON);
+            }
+            else if (isDialogue)
             {
                 // 如果是对话，保存说话者
                 speaker = _currentToken.Value;
@@ -463,12 +470,38 @@ namespace MookDialogueScript
                 Consume(TokenType.INDENT);
             }
 
+            // 只有当有缩进时才解析内容
+            if (!hasIndent) return;
+            while (!IsEndToken())
+            {
+                ContentNode node;
+                if (_currentToken.Type == TokenType.IF)
+                {
+                    node = ParseCondition();
+                }
+                else
+                {
+                    node = ParseContent();
+                }
+
+                // 跳过空的内容节点
+                if (!IsEmptyContentNode(node))
+                {
+                    content.Add(node);
+                }
+            }
+
+            if (_currentToken.Type == TokenType.DEDENT)
+            {
+                Consume(TokenType.DEDENT);
+            }
+            return;
+
             // 检查当前标记是否是任一结束标记
             bool IsEndToken()
             {
-                if (_currentToken.Type == TokenType.DEDENT || _currentToken.Type == TokenType.EOF ||
-                    _currentToken.Type == TokenType.DOUBLE_COLON || _currentToken.Type == TokenType.NODE_START ||
-                    _currentToken.Type == TokenType.NODE_END)
+                if (_currentToken.Type is TokenType.DEDENT or TokenType.EOF or 
+                    TokenType.DOUBLE_COLON or TokenType.NODE_START or TokenType.NODE_END)
                     return true;
 
                 foreach (var endToken in endTokens)
@@ -477,34 +510,6 @@ namespace MookDialogueScript
                         return true;
                 }
                 return false;
-            }
-
-            // 只有当有缩进时才解析内容
-            if (hasIndent)
-            {
-                while (!IsEndToken())
-                {
-                    ContentNode node;
-                    if (_currentToken.Type == TokenType.IF)
-                    {
-                        node = ParseCondition();
-                    }
-                    else
-                    {
-                        node = ParseContent();
-                    }
-
-                    // 跳过空的内容节点
-                    if (!IsEmptyContentNode(node))
-                    {
-                        content.Add(node);
-                    }
-                }
-
-                if (_currentToken.Type == TokenType.DEDENT)
-                {
-                    Consume(TokenType.DEDENT);
-                }
             }
         }
 
@@ -738,26 +743,26 @@ namespace MookDialogueScript
         private static readonly Dictionary<TokenType, OperatorInfo> _binaryOperators = new Dictionary<TokenType, OperatorInfo>
         {
             // 逻辑运算符 (优先级 1-2)
-            { TokenType.OR, new OperatorInfo(1, TokenType.OR) },
-            { TokenType.AND, new OperatorInfo(2, TokenType.AND) },
-            { TokenType.XOR, new OperatorInfo(2, TokenType.XOR) },
+            {TokenType.OR, new OperatorInfo(1, TokenType.OR)},
+            {TokenType.AND, new OperatorInfo(2, TokenType.AND)},
+            {TokenType.XOR, new OperatorInfo(2, TokenType.XOR)},
 
             // 比较运算符 (优先级 3)
-            { TokenType.EQUALS, new OperatorInfo(3, TokenType.EQUALS) },
-            { TokenType.NOT_EQUALS, new OperatorInfo(3, TokenType.NOT_EQUALS) },
-            { TokenType.GREATER, new OperatorInfo(3, TokenType.GREATER) },
-            { TokenType.LESS, new OperatorInfo(3, TokenType.LESS) },
-            { TokenType.GREATER_EQUALS, new OperatorInfo(3, TokenType.GREATER_EQUALS) },
-            { TokenType.LESS_EQUALS, new OperatorInfo(3, TokenType.LESS_EQUALS) },
+            {TokenType.EQUALS, new OperatorInfo(3, TokenType.EQUALS)},
+            {TokenType.NOT_EQUALS, new OperatorInfo(3, TokenType.NOT_EQUALS)},
+            {TokenType.GREATER, new OperatorInfo(3, TokenType.GREATER)},
+            {TokenType.LESS, new OperatorInfo(3, TokenType.LESS)},
+            {TokenType.GREATER_EQUALS, new OperatorInfo(3, TokenType.GREATER_EQUALS)},
+            {TokenType.LESS_EQUALS, new OperatorInfo(3, TokenType.LESS_EQUALS)},
 
             // 加减运算符 (优先级 4)
-            { TokenType.PLUS, new OperatorInfo(4, TokenType.PLUS) },
-            { TokenType.MINUS, new OperatorInfo(4, TokenType.MINUS) },
+            {TokenType.PLUS, new OperatorInfo(4, TokenType.PLUS)},
+            {TokenType.MINUS, new OperatorInfo(4, TokenType.MINUS)},
 
             // 乘除模运算符 (优先级 5)
-            { TokenType.MULTIPLY, new OperatorInfo(5, TokenType.MULTIPLY) },
-            { TokenType.DIVIDE, new OperatorInfo(5, TokenType.DIVIDE) },
-            { TokenType.MODULO, new OperatorInfo(5, TokenType.MODULO) }
+            {TokenType.MULTIPLY, new OperatorInfo(5, TokenType.MULTIPLY)},
+            {TokenType.DIVIDE, new OperatorInfo(5, TokenType.DIVIDE)},
+            {TokenType.MODULO, new OperatorInfo(5, TokenType.MODULO)}
         };
 
         /// <summary>
@@ -902,4 +907,3 @@ namespace MookDialogueScript
 
     }
 }
-
