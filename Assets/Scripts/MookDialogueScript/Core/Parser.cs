@@ -729,13 +729,13 @@ namespace MookDialogueScript
 
             Consume(TokenType.QUOTE);
 
-            return new InterpolationExpressionNode(segments, exprLine, exprColumn);
+            return new StringInterpolationExpressionNode(segments, exprLine, exprColumn);
         }
 
         /// <summary>
         /// 定义所有二元操作符的优先级(数字越大优先级越高)
         /// </summary>
-        private static readonly Dictionary<TokenType, OperatorInfo> BinaryOperators = new Dictionary<TokenType, OperatorInfo>
+        private static readonly Dictionary<TokenType, OperatorInfo> _binaryOperators = new Dictionary<TokenType, OperatorInfo>
         {
             // 逻辑运算符 (优先级 1-2)
             { TokenType.OR, new OperatorInfo(1, TokenType.OR) },
@@ -763,7 +763,7 @@ namespace MookDialogueScript
         /// <summary>
         /// 定义一元运算符
         /// </summary>
-        private static readonly HashSet<TokenType> UnaryOperators = new HashSet<TokenType>
+        private static readonly HashSet<TokenType> _unaryOperators = new HashSet<TokenType>
         {
             TokenType.NOT,
             TokenType.MINUS
@@ -817,7 +817,7 @@ namespace MookDialogueScript
         /// </summary>
         private bool IsTokenBinaryOperator(TokenType type, out OperatorInfo operatorInfo)
         {
-            return BinaryOperators.TryGetValue(type, out operatorInfo);
+            return _binaryOperators.TryGetValue(type, out operatorInfo);
         }
 
         /// <summary>
@@ -826,7 +826,7 @@ namespace MookDialogueScript
         private ExpressionNode ParseExpressionTerm()
         {
             // 检查是否是一元运算符
-            if (UnaryOperators.Contains(_currentToken.Type))
+            if (_unaryOperators.Contains(_currentToken.Type))
             {
                 string op = _currentToken.Value;
                 int line = _currentToken.Line;

@@ -58,8 +58,24 @@ namespace MookDialogueScript
                 case NumberNode n:
                     return new RuntimeValue(n.Value);
 
-                case StringNode s:
-                    return new RuntimeValue(s.Value);
+                case StringInterpolationExpressionNode i:
+                    var result = new System.Text.StringBuilder();
+                    foreach (var segment in i.Segments)
+                    {
+                        switch (segment)
+                        {
+                            case TextNode t:
+                                result.Append(t.Text);
+                                break;
+
+                            case InterpolationNode interpolation:
+                                // 简化插值表达式处理，只评估表达式
+                                var interpolationValue = await EvaluateExpression(interpolation.Expression);
+                                result.Append(interpolationValue.ToString());
+                                break;
+                        }
+                    }
+                    return new RuntimeValue(result.ToString());
 
                 case BooleanNode b:
                     return new RuntimeValue(b.Value);
@@ -191,25 +207,6 @@ namespace MookDialogueScript
                         args.Add(await EvaluateExpression(arg));
                     }
                     return await _context.CallFunction(f.Name, args);
-
-                case InterpolationExpressionNode i:
-                    var result = new System.Text.StringBuilder();
-                    foreach (var segment in i.Segments)
-                    {
-                        switch (segment)
-                        {
-                            case TextNode t:
-                                result.Append(t.Text);
-                                break;
-
-                            case InterpolationNode interpolation:
-                                // 简化插值表达式处理，只评估表达式
-                                var interpolationValue = await EvaluateExpression(interpolation.Expression);
-                                result.Append(interpolationValue.ToString());
-                                break;
-                        }
-                    }
-                    return new RuntimeValue(result.ToString());
 
                 default:
                     Debug.LogError($"未知的表达式类型 {node.GetType().Name}");
@@ -394,8 +391,24 @@ namespace MookDialogueScript
         {
             if (node is NumberNode numNode)
                 return numNode.Value.ToString();
-            else if (node is StringNode strNode)
-                return $"\"{strNode.Value}\"";
+            else if (node is StringInterpolationExpressionNode strNode)
+            {
+                var result = new System.Text.StringBuilder();
+                foreach (var segment in strNode.Segments)
+                {
+                    switch (segment)
+                    {
+                        case TextNode t:
+                            result.Append(t.Text);
+                            break;
+
+                        case InterpolationNode interpolation:
+                            result.Append($"{FormatExpressionNode(interpolation.Expression)}");
+                            break;
+                    }
+                }
+                return result.ToString();
+            }
             else if (node is BooleanNode boolNode)
                 return boolNode.Value ? "true" : "false";
             else if (node is VariableNode varNode)

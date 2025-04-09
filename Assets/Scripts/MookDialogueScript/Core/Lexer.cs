@@ -5,6 +5,21 @@ using UnityEngine;
 
 namespace MookDialogueScript
 {
+    /// <summary>
+    /// 定义文本处理规则，包括截断字符和转义字符
+    /// </summary>
+    public readonly struct TextProcessingRules
+    {
+        public char[] TruncateChars { get; }
+        public char[] EscapeChars { get; }
+
+        public TextProcessingRules(char[] truncateChars, char[] escapeChars)
+        {
+            TruncateChars = truncateChars;
+            EscapeChars = escapeChars;
+        }
+    }
+
     public class Lexer
     {
         private readonly string _source;
@@ -14,10 +29,14 @@ namespace MookDialogueScript
         private char _currentChar;
         private readonly Stack<int> _indentStack;
         private int _currentIndent;
+        private readonly List<Token> _tokens;
         private bool _isInStringMode;
         private char _stringQuoteType;
+        private bool _isInTextMode;       // 是否在普通文本模式中（冒号后）
+        private bool _isInOptionTextMode; // 是否在选项文本模式中（->后）
 
-        private static readonly Dictionary<string, TokenType> Keywords = new Dictionary<string, TokenType>(StringComparer.OrdinalIgnoreCase)
+
+        private static readonly Dictionary<string, TokenType> _keywords = new(StringComparer.OrdinalIgnoreCase)
         {
             {"if", TokenType.IF},
             {"elif", TokenType.ELIF},
@@ -58,9 +77,12 @@ namespace MookDialogueScript
             UpdateCurrentChar();
             _indentStack = new Stack<int>();
             _indentStack.Push(0);
+            _tokens = new List<Token>();
             _currentIndent = 0;
             _isInStringMode = false;
             _stringQuoteType = '\0';
+            _isInTextMode = false;
+            _isInOptionTextMode = false;
         }
 
         /// <summary>
@@ -69,18 +91,26 @@ namespace MookDialogueScript
         /// <returns>所有Token</returns>
         public List<Token> Tokenize()
         {
-            List<Token> tokens = new List<Token>();
             Token token;
             do
             {
                 token = GetNextToken();
-                tokens.Add(token);
+                _tokens.Add(token);
 #if DEBUG
-                Debug.Log($@"{token}");
+                Debug.Log($"{token}");
 #endif
             } while (token.Type != TokenType.EOF);
 
-            return tokens;
+            return _tokens;
+        }
+
+        /// <summary>
+        /// 获取最后一个生成的Token
+        /// </summary>
+        /// <returns>最后一个Token，如果没有则返回null</returns>
+        private Token GetLastToken()
+        {
+            return _tokens.Count > 0 ? _tokens[_tokens.Count - 1] : null;
         }
 
         /// <summary>
@@ -128,14 +158,6 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 查看上一个字符
-        /// </summary>
-        public char Previous()
-        {
-            return GetCharAt(_position - 1);
-        }
-
-        /// <summary>
         /// 判断字符是否为标识符起始字符（字母或下划线）
         /// </summary>
         private bool IsIdentifierStart(char c)
@@ -156,7 +178,7 @@ namespace MookDialogueScript
         /// </summary>
         private bool ShouldSkipIndentation()
         {
-            return _currentChar == '\0' || _currentChar == '\n' || _currentChar == '\r' || _currentChar == '/';
+            return _currentChar is '\0' or '\n' or '\r' or '/';
         }
 
         /// <summary>
@@ -165,7 +187,7 @@ namespace MookDialogueScript
         private int CountIndentation()
         {
             int indent = 0;
-            while (_currentChar == ' ' || _currentChar == '\t')
+            while (_currentChar is ' ' or '\t')
             {
                 indent++;
                 Advance();
@@ -232,6 +254,17 @@ namespace MookDialogueScript
         {
             // 记录当前行号用于生成Token
             int currentLine = _line;
+
+            // 如果遇到换行，退出文本和选项文本模式
+            _isInTextMode = false;
+            _isInOptionTextMode = false;
+            // 如果在字符串模式下遇到换行，这通常是一个错误，但我们仍然退出该模式
+            if (_isInStringMode)
+            {
+                Debug.LogWarning($"词法警告: 第{_line}行，第{_column}列，字符串未闭合就遇到了换行");
+                _isInStringMode = false;
+                _stringQuoteType = '\0';
+            }
 
             // 处理当前换行
             if (_currentChar == '\r' && Peek() == '\n')
@@ -415,155 +448,169 @@ namespace MookDialogueScript
             return new Token(TokenType.NUMBER, GetRange(startPosition, _position), startLine, startColumn);
         }
 
-
         /// <summary>
         /// 处理文本
         /// </summary>
         private Token HandleText()
         {
-            int startPosition = _position;
             int startLine = _line;
             int startColumn = _column;
-            bool hasEscapeChars = false;
 
-            // 确定截断字符和转义字符
-            char[] truncateChars;
-            char[] escapeChars;
+            // 根据当前模式确定处理规则
+            TextProcessingRules rules = GetTextProcessingRules();
 
+            // 使用StringBuilder直接构建最终结果，避免二次处理
+            StringBuilder resultBuilder = new StringBuilder(64);
+            bool hasContent = false;
+
+            // 文本处理主循环
+            while (_currentChar != '\0' && _currentChar != '\n' && _currentChar != '\r')
+            {
+                // 1. 处理转义字符
+                if (_currentChar == '\\')
+                {
+                    ProcessEscapeSequence(resultBuilder, rules);
+                    hasContent = true;
+                    continue;
+                }
+
+                // 2. 检查是否遇到截断字符
+                if (Array.IndexOf(rules.TruncateChars, _currentChar) >= 0)
+                {
+                    // 特殊处理字符串模式下的结束引号
+                    if (_isInStringMode && IsClosingQuote(_currentChar))
+                    {
+                        return FinalizeTextOrQuoteToken(resultBuilder, hasContent, startLine, startColumn);
+                    }
+
+                    // 处理文本模式下遇到井号需要退出
+
+                    if (_isInTextMode && _currentChar == '#')
+                    {
+                        _isInTextMode = false;
+                        break;
+                    }
+
+                    // 处理选项文本模式下遇到左括号需要退出
+
+                    if (_isInOptionTextMode && (_currentChar == '[' || _currentChar == '【'))
+                    {
+                        _isInOptionTextMode = false;
+                        break;
+                    }
+
+
+                    break;
+                }
+
+                // 3. 正常字符处理
+                resultBuilder.Append(_currentChar);
+                Advance();
+                hasContent = true;
+            }
+
+            // 如果遇到换行，检查是否需要退出特定模式
+            if (_currentChar == '\n' || _currentChar == '\r')
+            {
+                if (_isInTextMode)
+                {
+                    _isInTextMode = false;
+                }
+                if (_isInOptionTextMode)
+                {
+                    _isInOptionTextMode = false;
+                }
+            }
+
+            // 4. 生成最终文本Token
+            string result = resultBuilder.ToString();
+
+            return new Token(TokenType.TEXT, result, startLine, startColumn);
+        }
+
+        /// <summary>
+        /// 处理转义序列
+        /// </summary>
+        private void ProcessEscapeSequence(StringBuilder builder, TextProcessingRules rules)
+        {
+            char nextChar = Peek();
+            if (Array.IndexOf(rules.EscapeChars, nextChar) >= 0)
+            {
+                Advance(); // 跳过反斜杠
+                builder.Append(nextChar);
+                Advance();
+            }
+            else
+            {
+                // 非特殊转义字符，保留反斜杠
+                builder.Append(_currentChar);
+                Advance();
+            }
+        }
+
+        /// <summary>
+        /// 根据内容返回文本Token或引号Token
+        /// </summary>
+        private Token FinalizeTextOrQuoteToken(StringBuilder builder, bool hasContent, int startLine, int startColumn)
+        {
+            if (hasContent)
+            {
+                // 如果已经有内容，先返回文本
+                return new Token(TokenType.TEXT, builder.ToString(), startLine, startColumn);
+            }
+            else
+            {
+                // 没有内容，直接返回引号Token
+                char quoteChar = _currentChar;
+                Advance();
+                _isInStringMode = false;
+                _stringQuoteType = '\0';
+                return new Token(TokenType.QUOTE, quoteChar.ToString(), startLine, startColumn);
+            }
+        }
+
+        /// <summary>
+        /// 根据当前模式获取处理规则
+        /// </summary>
+        private TextProcessingRules GetTextProcessingRules()
+        {
             if (_isInStringMode)
             {
-                // 在字符串模式下，截断字符为 { 或结束引号
                 char closingQuote = _stringQuoteType;
                 switch (_stringQuoteType)
                 {
                     case '\u2018': closingQuote = '\u2019'; break; // 中文单引号
                     case '\u201C': closingQuote = '\u201D'; break; // 中文双引号
                 }
-                truncateChars = new[] { '{', closingQuote };
-                escapeChars = new[] { '{', '}', '\\', closingQuote };
+                return new TextProcessingRules(
+                    truncateChars: new[] { '{', closingQuote },
+                    escapeChars: new[] { '{', '}', '\\', closingQuote }
+                );
             }
-            else
+
+            if (_isInOptionTextMode)
             {
-                // 正常模式下的截断和转义字符
-                truncateChars = new[] { '#', ':', '：', '{', '[' };
-                escapeChars = new[] { '#', ':', '：', '[', ']', '{', '}', '\\' };
+                // 选项文本模式下的截断字符包括左方括号，转义字符不变
+                return new TextProcessingRules(
+                    truncateChars: new[] { '{', '[', '【' },
+                    escapeChars: new[] { '[', ']', '{', '}', '\\', '【', '】' }
+                );
             }
 
-            while (_currentChar != '\0' && _currentChar != '\n' && _currentChar != '\r')
+            if (_isInTextMode)
             {
-                // 处理转义字符
-                if (_currentChar == '\\')
-                {
-                    char nextChar = Peek();
-                    if (Array.IndexOf(escapeChars, nextChar) >= 0)
-                    {
-                        hasEscapeChars = true;
-                        Advance(); // 跳过反斜杠
-                        Advance(); // 跳过被转义的字符
-                        continue;
-                    }
-
-                    // 如果不是特殊字符，保留反斜杠
-                    Advance();
-                    continue;
-                }
-
-                // 遇到非转义的特殊字符时截断
-                if (Array.IndexOf(truncateChars, _currentChar) >= 0)
-                {
-                    // 如果在字符串模式下遇到结束引号，先返回文本内容
-                    if (_isInStringMode && IsClosingQuote(_currentChar))
-                    {
-                        // 先返回文本内容
-                        string textResult = GetRange(startPosition, _position);
-                        if (textResult.Length > 0) // 如果有文本内容，先返回文本
-                        {
-                            return new Token(TokenType.TEXT, textResult, startLine, startColumn);
-                        }
-                        else // 如果没有文本内容，直接返回引号Token
-                        {
-                            // 创建一个QUOTE类型的Token
-                            char quoteChar = _currentChar;
-                            int quoteStartLine = _line;
-                            int quoteStartColumn = _column;
-
-                            // 消耗掉引号
-                            Advance();
-
-                            // 退出字符串模式
-                            _isInStringMode = false;
-                            _stringQuoteType = '\0';
-
-                            return new Token(TokenType.QUOTE, quoteChar.ToString(), quoteStartLine, quoteStartColumn);
-                        }
-                    }
-                    break;
-                }
-
-                Advance();
+                // 文本模式下的处理规则，包含井号作为截断符
+                return new TextProcessingRules(
+                    truncateChars: new[] { '#', '{' },
+                    escapeChars: new[] { '#', '{', '}', '\\' }
+                );
             }
 
-            string result;
-            if (!hasEscapeChars) // 如果没有转义字符
-            {
-                result = GetRange(startPosition, _position);
-                // 只有在非字符串模式下才去除前后空格
-                if (!_isInStringMode)
-                {
-                    result = result.Trim();
-                }
-            }
-            else // 有转义字符，需要重新处理
-            {
-                // 保存当前位置
-                int savedPosition = _position;
-                int savedLine = _line;
-                int savedColumn = _column;
-
-                // 回到文本开始位置
-                _position = startPosition;
-                UpdateCurrentChar();
-
-                StringBuilder sb = new StringBuilder(64);
-                while (_position < savedPosition)
-                {
-                    // 处理转义字符
-                    if (_currentChar == '\\')
-                    {
-                        char nextChar = Peek();
-                        if (Array.IndexOf(escapeChars, nextChar) >= 0)
-                        {
-                            Advance(); // 跳过反斜杠
-                            sb.Append(_currentChar);
-                            Advance();
-                            continue;
-                        }
-
-                        // 如果不是特殊字符，保留反斜杠
-                        sb.Append(_currentChar);
-                        Advance();
-                        continue;
-                    }
-
-                    sb.Append(_currentChar);
-                    Advance();
-                }
-
-                result = sb.ToString();
-                // 只有在非字符串模式下才去除前后空格
-                if (!_isInStringMode)
-                {
-                    result = result.Trim();
-                }
-
-                // 恢复位置
-                _position = savedPosition;
-                _line = savedLine;
-                _column = savedColumn;
-                UpdateCurrentChar();
-            }
-
-            return new Token(TokenType.TEXT, result, startLine, startColumn);
+            // 默认模式
+            return new TextProcessingRules(
+                truncateChars: new[] { '#', ':', '：', '{' },
+                escapeChars: new[] { '#', ':', '：', '{', '}', '\\' }
+            );
         }
 
         /// <summary>
@@ -630,7 +677,7 @@ namespace MookDialogueScript
             string text = GetRange(startPosition, _position);
 
             // 检查是否是关键字（忽略大小写）
-            if (Keywords.TryGetValue(text, out TokenType type))
+            if (_keywords.TryGetValue(text, out TokenType type))
             {
                 return new Token(type, text, startLine, startColumn);
             }
@@ -640,56 +687,13 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 预览下一个Token而不消耗它
-        /// </summary>
-        /// <returns>下一个Token</returns>
-        public Token PeekNextToken()
-        {
-            // 保存当前状态
-            int savedPosition = _position;
-            int savedLine = _line;
-            int savedColumn = _column;
-            char savedCurrentChar = _currentChar;
-            int savedCurrentIndent = _currentIndent;
-
-            // 获取下一个Token
-            var nextToken = GetNextToken();
-
-            // 恢复状态
-            _position = savedPosition;
-            _line = savedLine;
-            _column = savedColumn;
-            _currentChar = savedCurrentChar;
-            _currentIndent = savedCurrentIndent;
-
-            return nextToken;
-        }
-
-        /// <summary>
         /// 获取下一个Token并消耗它
         /// </summary>
         /// <returns>下一个Token</returns>
-        public Token GetNextToken()
+        private Token GetNextToken()
         {
             while (_currentChar != '\0')
             {
-
-                // 在字符串模式下，检查前一个字符是否是引号或插值结束符号
-                if (_isInStringMode)
-                {
-                    char prevChar = Previous();
-                    // 确保前一个字符不是被转义的
-                    bool isNotEscaped = _position < 2 || GetCharAt(_position - 2) != '\\';
-
-                    // 如果前一个字符是引号或插值结束符号，且不是被转义的，则处理文本
-                    if (isNotEscaped && prevChar != '\0' &&
-                        (prevChar == '\'' || prevChar == '"' ||
-                         prevChar == '\u2018' || prevChar == '\u201C' ||
-                         prevChar == '}'))
-                    {
-                        return HandleText();
-                    }
-                }
 
                 // 处理行首缩进
                 if (_column == 1)
@@ -708,6 +712,12 @@ namespace MookDialogueScript
                             return indentToken;
                         }
                     }
+                }
+
+                // 检查是否应该基于当前模式和上一个Token处理文本
+                if (ShouldProcessText())
+                {
+                    return HandleText();
                 }
 
                 // 跳过空白字符
@@ -808,19 +818,23 @@ namespace MookDialogueScript
                     case ':':
                     case '：':
                         Advance();
-                        if (_currentChar == ':' || _currentChar == '：')
+                        if (_currentChar is ':' or '：')
                         {
                             Advance();
                             return new Token(TokenType.DOUBLE_COLON, GetRange(startPosition, _position), _line, _column - 2);
                         }
+                        // 遇到单冒号，进入文本模式
+                        _isInTextMode = true;
                         // 不直接处理后面的文本，只返回冒号标记
                         return new Token(TokenType.COLON, GetRange(startPosition, _position), _line, _column - 1);
 
                     case '-':
                         Advance();
-                        if (_currentChar == '>' || _currentChar == '》')
+                        if (_currentChar is '>' or '》')
                         {
                             Advance();
+                            // 遇到箭头，进入选项文本模式
+                            _isInOptionTextMode = true;
                             // 不直接处理后面的文本，只返回箭头标记
                             return new Token(TokenType.ARROW, GetRange(startPosition, _position), _line, _column - 2);
                         }
@@ -842,7 +856,7 @@ namespace MookDialogueScript
 
                     case '=':
                         Advance();
-                        if (_currentChar == '>' || _currentChar == '》')
+                        if (_currentChar is '>' or '》')
                         {
                             Advance();
                             return new Token(TokenType.JUMP, GetRange(startPosition, _position), _line, _column - 2);
@@ -876,6 +890,11 @@ namespace MookDialogueScript
 
                     case '[':
                     case '【':
+                        // 如果在选项文本模式下，退出该模式
+                        if (_isInOptionTextMode)
+                        {
+                            _isInOptionTextMode = false;
+                        }
                         Advance();
                         return new Token(TokenType.LEFT_BRACKET, GetRange(startPosition, _position), _line, _column - 1);
 
@@ -896,7 +915,16 @@ namespace MookDialogueScript
                     case '，':
                         Advance();
                         return new Token(TokenType.COMMA, GetRange(startPosition, _position), _line, _column - 1);
-                    case '#': Advance(); return new Token(TokenType.HASH, "#", _line, _column - 1);
+                    case '#':
+                        // 如果在文本模式下遇到井号，退出文本模式
+
+                        if (_isInTextMode)
+                        {
+                            _isInTextMode = false;
+                        }
+                        Advance();
+
+                        return new Token(TokenType.HASH, "#", _line, _column - 1);
 
                     case '!':
                     case '！':
@@ -966,6 +994,52 @@ namespace MookDialogueScript
 
             // 处理文件结束
             return new Token(TokenType.EOF, string.Empty, _line, _column);
+        }
+
+        /// <summary>
+        /// 检查当前是否应该处理文本，根据不同的模式与上一个Token类型
+        /// </summary>
+        private bool ShouldProcessText()
+        {
+            // 获取上一个Token
+            Token lastToken = GetLastToken();
+
+            // 如果没有前一个Token，或者当前位置在行首，不处理文本
+
+            if (lastToken == null || _column == 1)
+                return false;
+
+            // 处理特定的模式和Token组合
+
+            // 1. 字符串模式: 上一个Token是引号或右大括号
+
+            if (_isInStringMode)
+            {
+                return lastToken.Type == TokenType.QUOTE ||
+
+                       lastToken.Type == TokenType.RIGHT_BRACE;
+            }
+
+            // 2. 文本模式: 上一个Token是冒号或右大括号
+
+            if (_isInTextMode)
+            {
+                return lastToken.Type == TokenType.COLON ||
+
+                       lastToken.Type == TokenType.RIGHT_BRACE;
+            }
+
+            // 3. 选项文本模式: 上一个Token是箭头或右大括号
+
+            if (_isInOptionTextMode)
+            {
+                return lastToken.Type == TokenType.ARROW ||
+
+                       lastToken.Type == TokenType.RIGHT_BRACE;
+            }
+
+
+            return false;
         }
     }
 }

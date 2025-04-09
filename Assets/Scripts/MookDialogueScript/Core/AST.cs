@@ -548,24 +548,26 @@ namespace MookDialogueScript
     }
 
     /// <summary>
-    /// 字符串节点
+    /// 字符串和字符串插值表达式节点
     /// </summary>
-    public class StringNode : ExpressionNode
+    public class StringInterpolationExpressionNode : ExpressionNode
     {
         /// <summary>
-        /// 值
+        /// 文本段列表
         /// </summary>
-        public string Value { get; }
+        public List<TextSegmentNode> Segments { get; }
 
-        public StringNode(string value, int line, int column)
+        public StringInterpolationExpressionNode(List<TextSegmentNode> segments, int line, int column)
             : base(line, column)
         {
-            Value = value;
+            Segments = segments;
         }
 
         public override string ToString()
         {
-            return Value;
+            StringBuilder sb = new StringBuilder();
+            sb.Append($"{string.Join("", Segments)}");
+            return sb.ToString();
         }
     }
 
@@ -666,30 +668,6 @@ namespace MookDialogueScript
                 sb.Append(string.Join(", ", Arguments));
             }
             sb.Append(")");
-            return sb.ToString();
-        }
-    }
-
-    /// <summary>
-    /// 字符串插值表达式节点
-    /// </summary>
-    public class InterpolationExpressionNode : ExpressionNode
-    {
-        /// <summary>
-        /// 文本段列表
-        /// </summary>
-        public List<TextSegmentNode> Segments { get; }
-
-        public InterpolationExpressionNode(List<TextSegmentNode> segments, int line, int column)
-            : base(line, column)
-        {
-            Segments = segments;
-        }
-
-        public override string ToString()
-        {
-            StringBuilder sb = new StringBuilder();
-            sb.Append($"{string.Join("", Segments)}");
             return sb.ToString();
         }
     }
