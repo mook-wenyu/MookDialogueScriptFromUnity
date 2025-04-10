@@ -23,7 +23,7 @@ MookDialogueScript 是一个轻量级的对话脚本系统，专为 Unity 游戏
 - 支持中英文符号混用
 
 使用方法：
-1. 在 VSCode 扩展市场中搜索 "MookDialogueScript"
+1. 在 VSCode 扩展市场中搜索 "MookDialogueScript Lang"
 2. 安装插件
 3. 创建 `.mds` 文件即可享受语法高亮支持
 
