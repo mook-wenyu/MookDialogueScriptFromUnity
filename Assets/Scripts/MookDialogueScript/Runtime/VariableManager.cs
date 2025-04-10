@@ -101,7 +101,7 @@ namespace MookDialogueScript
                             }
                             catch (Exception ex)
                             {
-                                Debug.LogError($"扫描属性 {property.Name} 时出错: {ex.Message}");
+                                MLogger.Error($"扫描属性 {property.Name} 时出错: {ex}");
                                 // 继续处理其他属性
                             }
                         }
@@ -119,21 +119,21 @@ namespace MookDialogueScript
                             }
                             catch (Exception ex)
                             {
-                                Debug.LogError($"扫描字段 {field.Name} 时出错: {ex.Message}");
+                                MLogger.Error($"扫描字段 {field.Name} 时出错: {ex}");
                                 // 继续处理其他字段
                             }
                         }
                     }
                     catch (Exception ex)
                     {
-                        Debug.LogError($"扫描类型 {type.FullName} 时出错: {ex.Message}");
+                        MLogger.Error($"扫描类型 {type.FullName} 时出错: {ex}");
                         // 继续处理其他类型
                     }
                 }
             }
             catch (Exception ex)
             {
-                Debug.LogError($"扫描程序集 {assembly.FullName} 时出错: {ex.Message}");
+                MLogger.Error($"扫描程序集 {assembly.FullName} 时出错: {ex}");
                 // 继续处理其他程序集
             }
         }
@@ -148,7 +148,7 @@ namespace MookDialogueScript
 
             // 创建setter
             Action<object> setter = !property.CanWrite
-                ? (obj) => { Debug.LogError($"变量 '{varName}' 是只读的"); }
+                ? (obj) => { MLogger.Error($"变量 '{varName}' 是只读的"); }
             : (obj) => property.SetValue(null, obj);
 
             _builtinVariables[varName] = (getter, setter);
@@ -164,7 +164,7 @@ namespace MookDialogueScript
 
             // 创建setter
             Action<object> setter = isReadOnly
-                ? (obj) => { Debug.LogError($"变量 '{varName}' 是只读的"); throw new InvalidOperationException($"变量 '{varName}' 是只读的"); }
+                ? (obj) => { MLogger.Error($"变量 '{varName}' 是只读的"); }
             : (obj) => field.SetValue(null, obj);
 
             // 注册变量
@@ -180,7 +180,7 @@ namespace MookDialogueScript
         {
             if (instance == null)
             {
-                Debug.LogError("注册对象实例的成员时，对象实例不能为null");
+                MLogger.Error("注册对象实例的成员时，对象实例不能为null");
                 return;
             }
 
@@ -211,7 +211,7 @@ namespace MookDialogueScript
 
             // 创建setter
             Action<object> setter = field.IsInitOnly
-                ? (obj) => { Debug.LogError($"字段 '{varName}' 是只读的"); }
+                ? (obj) => { MLogger.Error($"字段 '{varName}' 是只读的"); }
                 : (obj) => field.SetValue(instance, obj);
 
             // 注册变量
@@ -228,7 +228,7 @@ namespace MookDialogueScript
 
             // 创建setter
             Action<object> setter = !property.CanWrite
-                ? (obj) => { Debug.LogError($"属性 '{varName}' 是只读的"); }
+                ? (obj) => { MLogger.Error($"属性 '{varName}' 是只读的"); }
             : (obj) => property.SetValue(instance, obj);
 
             // 注册变量
@@ -328,7 +328,7 @@ namespace MookDialogueScript
                 return value;
             }
 
-            Debug.LogError($"变量 '{name}' 未找到");
+            MLogger.Error($"变量 '{name}' 未找到");
             // 返回空值而不是抛出异常
             return RuntimeValue.Null;
         }
@@ -367,7 +367,7 @@ namespace MookDialogueScript
                     return null;
 
                 default:
-                    Debug.LogError($"不支持的运行时值类型: {value.Type}");
+                    MLogger.Error($"不支持的运行时值类型: {value.Type}");
                     return null; // 返回空值而不是抛出异常
             }
         }
@@ -407,7 +407,7 @@ namespace MookDialogueScript
                 case bool boolValue:
                     return new RuntimeValue(boolValue);
                 default:
-                    Debug.LogError($"不支持的内置变量类型: {value.GetType().Name}");
+                    MLogger.Error($"不支持的内置变量类型: {value.GetType().Name}");
                     return RuntimeValue.Null; // 返回空值而不是抛出异常
             }
 

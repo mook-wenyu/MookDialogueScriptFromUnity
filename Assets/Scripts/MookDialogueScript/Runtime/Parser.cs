@@ -686,7 +686,7 @@ namespace MookDialogueScript
             }
 
             var value = ParseExpression();
-            ConsumeNewlineOrEOF();
+            ConsumeNewlineOrEof();
 
             return new VarCommandNode(variable, value, operation, line, column);
         }
@@ -703,7 +703,7 @@ namespace MookDialogueScript
             var parameters = ParseParameterList();
 
             Consume(TokenType.RIGHT_PAREN);
-            ConsumeNewlineOrEOF();
+            ConsumeNewlineOrEof();
 
             return new CallCommandNode(functionName, parameters, line, column);
         }
@@ -733,7 +733,7 @@ namespace MookDialogueScript
         private WaitCommandNode ParseWaitCommand(int line, int column)
         {
             var duration = ParseExpression();
-            ConsumeNewlineOrEOF();
+            ConsumeNewlineOrEof();
             return new WaitCommandNode(duration, line, column);
         }
 
@@ -752,7 +752,7 @@ namespace MookDialogueScript
             }
 
             var initialValue = ParseExpression();
-            ConsumeNewlineOrEOF();
+            ConsumeNewlineOrEof();
 
             return new VarCommandNode(varName, initialValue, "var", line, column);
         }
@@ -764,14 +764,14 @@ namespace MookDialogueScript
         {
             string targetNode = _currentToken.Value;
             Consume(TokenType.IDENTIFIER);
-            ConsumeNewlineOrEOF();
+            ConsumeNewlineOrEof();
             return new JumpCommandNode(targetNode, line, column);
         }
 
         /// <summary>
         /// 处理换行符（包括文件末尾情况）
         /// </summary>
-        private void ConsumeNewlineOrEOF()
+        private void ConsumeNewlineOrEof()
         {
             if (_currentToken.Type != TokenType.EOF)
             {

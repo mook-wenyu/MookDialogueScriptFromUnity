@@ -11,29 +11,28 @@ namespace MookDialogueScript
         /// <summary>
         /// 加载脚本
         /// </summary>
-        /// <param name="dialogueManager">对话管理器</param>
-        /// <returns>异步任务</returns>
-        public void LoadScripts(Runner dialogueManager);
+        /// <param name="runner">对话引擎运行器</param>
+        public void LoadScripts(Runner runner);
     }
 
     /// <summary>
-    /// 默认对话脚本加载器
+    /// Unity对话脚本加载器
     /// </summary>
-    public class DefaultDialogueLoader : IDialogueLoader
+    public class UnityDialogueLoader : IDialogueLoader
     {
         private readonly string _rootDir;
         private readonly string[] _extensions;
 
-        public DefaultDialogueLoader() : this(string.Empty)
+        public UnityDialogueLoader() : this(string.Empty)
         {
         }
 
         /// <summary>
-        /// 创建一个默认对话脚本加载器
+        /// 创建一个Unity对话脚本加载器
         /// </summary>
         /// <param name="rootDir">脚本文件根目录</param>
         /// <param name="extensions">脚本文件扩展名数组（包含点号，如 .txt, .mds）</param>
-        public DefaultDialogueLoader(string rootDir, string[] extensions = null)
+        public UnityDialogueLoader(string rootDir, string[] extensions = null)
         {
             _rootDir = string.IsNullOrEmpty(rootDir) ? "DialogueScripts" : rootDir;
             _extensions = extensions ?? new[] {".txt", ".mds"};

@@ -30,8 +30,8 @@ namespace MookDialogueScript
         private readonly Stack<int> _indentStack;
         private int _currentIndent;
         private readonly List<Token> _tokens;
-        private bool _isInStringMode;   // 是否在字符串模式中
-        private char _stringQuoteType;  // 当前字符串模式的引号类型
+        private bool _isInStringMode;     // 是否在字符串模式中
+        private char _stringQuoteType;    // 当前字符串模式的引号类型
         private bool _isInOptionTextMode; // 是否在选项文本模式中（->后）
 
         // 关键字
@@ -93,9 +93,7 @@ namespace MookDialogueScript
             {
                 token = GetNextToken();
                 _tokens.Add(token);
-#if DEBUG
-                Debug.Log($"{token}");
-#endif
+                MLogger.Debug($"{token}");
             } while (token.Type != TokenType.EOF);
 
             return _tokens;
@@ -220,7 +218,7 @@ namespace MookDialogueScript
             // 如果缩进不匹配任何已知级别，报错并尝试恢复
             if (_indentStack.Count == 0 || (_indentStack.Count > 0 && _indentStack.Peek() != indent))
             {
-                Debug.LogError($"词法错误: 第{_line}行，第{_column}列，无效的缩进");
+                MLogger.Error($"词法错误: 第{_line}行，第{_column}列，无效的缩进");
                 // 尝试恢复 - 添加当前缩进到栈中
                 if (_indentStack.Count == 0)
                 {
@@ -257,7 +255,7 @@ namespace MookDialogueScript
             // 如果在字符串模式下遇到换行，这通常是一个错误，但我们仍然退出该模式
             if (_isInStringMode)
             {
-                Debug.LogWarning($"词法警告: 第{_line}行，第{_column}列，字符串未闭合就遇到了换行");
+                MLogger.Error($"词法警告: 第{_line}行，第{_column}列，字符串未闭合就遇到了换行");
                 _isInStringMode = false;
                 _stringQuoteType = '\0';
             }
@@ -410,7 +408,7 @@ namespace MookDialogueScript
                 return HandleIndentDecrease(indent);
             else if (indent != _currentIndent)
             {
-                Debug.LogError($"词法错误: 第{_line}行，第{_column}列，不一致的缩进");
+                MLogger.Error($"词法错误: 第{_line}行，第{_column}列，不一致的缩进");
                 // 尝试恢复 - 使用当前缩进
                 _currentIndent = indent;
             }
@@ -429,7 +427,7 @@ namespace MookDialogueScript
             bool hasDecimalPoint = false;
 
             while (_currentChar != '\0' &&
-                (char.IsDigit(_currentChar) || _currentChar == '.'))
+                   (char.IsDigit(_currentChar) || _currentChar == '.'))
             {
                 if (_currentChar == '.')
                 {
@@ -565,8 +563,8 @@ namespace MookDialogueScript
                     case '\u201C': closingQuote = '\u201D'; break; // 中文双引号
                 }
                 return new TextProcessingRules(
-                    truncateChars: new[] { '{', closingQuote },
-                    escapeChars: new[] { '{', '}', '\\', closingQuote }
+                    truncateChars: new[] {'{', closingQuote},
+                    escapeChars: new[] {'{', '}', '\\', closingQuote}
                 );
             }
 
@@ -574,15 +572,15 @@ namespace MookDialogueScript
             {
                 // 选项文本模式下的截断字符包括左方括号，转义字符不变
                 return new TextProcessingRules(
-                    truncateChars: new[] { '{', '[', '【' },
-                    escapeChars: new[] { '[', ']', '{', '}', '\\', '【', '】' }
+                    truncateChars: new[] {'{', '[', '【'},
+                    escapeChars: new[] {'[', ']', '{', '}', '\\', '【', '】'}
                 );
             }
 
             // 默认模式
             return new TextProcessingRules(
-                truncateChars: new[] { '#', ':', '：', '{' },
-                escapeChars: new[] { '#', ':', '：', '{', '}', '\\' }
+                truncateChars: new[] {'#', ':', '：', '{'},
+                escapeChars: new[] {'#', ':', '：', '{', '}', '\\'}
             );
         }
 
@@ -749,7 +747,7 @@ namespace MookDialogueScript
 
                 // 处理字符串（只有在非字符串状态下才处理开始引号）
                 if (!_isInStringMode && (_currentChar == '\'' || _currentChar == '"' ||
-                    _currentChar == '\u2018' || _currentChar == '\u201C'))
+                                         _currentChar == '\u2018' || _currentChar == '\u201C'))
                 {
                     // 创建一个QUOTE类型的Token
                     char quoteChar = _currentChar;
@@ -844,10 +842,18 @@ namespace MookDialogueScript
                         }
                         return new Token(TokenType.ASSIGN, GetRange(startPosition, _position), _line, _column - 1);
 
-                    case '+': Advance(); return new Token(TokenType.PLUS, "+", _line, _column - 1);
-                    case '*': Advance(); return new Token(TokenType.MULTIPLY, "*", _line, _column - 1);
-                    case '/': Advance(); return new Token(TokenType.DIVIDE, "/", _line, _column - 1);
-                    case '%': Advance(); return new Token(TokenType.MODULO, "%", _line, _column - 1);
+                    case '+':
+                        Advance();
+                        return new Token(TokenType.PLUS, "+", _line, _column - 1);
+                    case '*':
+                        Advance();
+                        return new Token(TokenType.MULTIPLY, "*", _line, _column - 1);
+                    case '/':
+                        Advance();
+                        return new Token(TokenType.DIVIDE, "/", _line, _column - 1);
+                    case '%':
+                        Advance();
+                        return new Token(TokenType.MODULO, "%", _line, _column - 1);
 
                     case '(':
                     case '（':

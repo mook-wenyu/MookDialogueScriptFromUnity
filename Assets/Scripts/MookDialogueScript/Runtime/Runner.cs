@@ -13,7 +13,6 @@ namespace MookDialogueScript
     {
         private readonly DialogueContext _context;
         private readonly Interpreter _interpreter;
-        private readonly IDialogueLoader _loader;
 
         private string _currentSectionId = "";
         /// <summary>
@@ -74,19 +73,23 @@ namespace MookDialogueScript
         /// </summary>
         public event Action OnDialogueCompleted;
 
-        public Runner() : this(new DefaultDialogueLoader())
+        public Runner() : this(new UnityDialogueLoader())
         {
         }
 
-        public Runner(string rootDir) : this(new DefaultDialogueLoader(rootDir))
+        public Runner(string rootDir) : this(new UnityDialogueLoader(rootDir))
         {
         }
 
         public Runner(IDialogueLoader loader)
         {
+            // 初始化日志系统
+            MLogger.Initialize();
+            // 初始化对话上下文
             _context = new DialogueContext();
+            // 初始化表达式解释器
             _interpreter = new Interpreter(_context);
-            _loader = loader;
+            // 初始化对话脚本加载器
 
             // 重置状态
             _conditionStates.Clear();
@@ -96,7 +99,7 @@ namespace MookDialogueScript
             _executionStack.Clear();
 
             // 加载脚本
-            _loader.LoadScripts(this);
+            loader.LoadScripts(this);
         }
 
         /// <summary>
@@ -242,8 +245,8 @@ namespace MookDialogueScript
             // 如果当前有对话在进行，不允许开始新对话
             if (!force && !string.IsNullOrEmpty(_currentSectionId))
             {
-                Debug.LogError("当前对话尚未结束，无法开始新的对话");
-                return; // 直接返回而不是抛出异常
+                MLogger.Warning("当前对话尚未结束，无法开始新的对话");
+                return;
             }
 
             NodeDefinitionNode startNode;
@@ -253,7 +256,7 @@ namespace MookDialogueScript
             }
             catch (Exception ex)
             {
-                Debug.LogError($"找不到起始节点 '{startNodeName}': {ex.Message}");
+                MLogger.Error($"找不到起始节点 '{startNodeName}': {ex}");
                 return; // 直接返回而不是抛出异常
             }
 
@@ -272,7 +275,7 @@ namespace MookDialogueScript
 
             if (startContentIndex < 0 || startContentIndex >= startNode.Content.Count)
             {
-                Debug.LogError($"起始内容索引无效: {startContentIndex}");
+                MLogger.Error($"起始内容索引无效: {startContentIndex}");
                 startContentIndex = 0; // 使用默认值0而不是抛出异常
             }
             // 将当前节点压入栈
@@ -293,21 +296,21 @@ namespace MookDialogueScript
         {
             if (_isExecuting)
             {
-                Debug.LogWarning("当前正在执行中，请等待执行完成");
+                MLogger.Warning("当前正在执行中，请等待执行完成");
                 return; // 直接返回而不是抛出异常
             }
 
             // 如果执行栈为空，无法继续执行
             if (_executionStack.Count == 0)
             {
-                Debug.LogError("没有当前执行上下文");
+                MLogger.Error("没有当前执行上下文");
                 return; // 直接返回而不是抛出异常
             }
 
             // 如果正在收集选项，并且已经有选项，则处理选项
             if (_isCollectingChoices && _currentChoices.Count > 0)
             {
-                Debug.LogWarning("当前正在等待选择选项");
+                MLogger.Warning("当前正在等待选择选项");
                 return; // 直接返回而不是抛出异常
             }
 
@@ -337,7 +340,7 @@ namespace MookDialogueScript
             }
             else
             {
-                Debug.LogError($"未知的节点类型: {node.GetType().Name}");
+                MLogger.Error($"未知的节点类型: {node.GetType().Name}");
                 await EndDialogue(true); // 结束对话而不是抛出异常
             }
         }
@@ -365,7 +368,7 @@ namespace MookDialogueScript
             }
             else
             {
-                Debug.LogError($"不支持的内容容器类型: {contentContainer.GetType().Name}");
+                MLogger.Error($"不支持的内容容器类型: {contentContainer.GetType().Name}");
                 _executionStack.Pop(); // 弹出当前节点
                 if (_executionStack.Count > 0)
                 {
@@ -417,7 +420,7 @@ namespace MookDialogueScript
                 var condition = await _interpreter.EvaluateExpression(conditionNode.Condition);
                 if (condition.Type != RuntimeValue.ValueType.Boolean)
                 {
-                    Debug.LogError("条件必须计算为布尔类型");
+                    MLogger.Error("条件必须计算为布尔类型");
                     // 默认假设条件为假，继续处理
                     condition = new RuntimeValue(false);
                 }
@@ -436,7 +439,7 @@ namespace MookDialogueScript
                         condition = await _interpreter.EvaluateExpression(elifCondition);
                         if (condition.Type != RuntimeValue.ValueType.Boolean)
                         {
-                            Debug.LogError("Elif 条件必须计算为布尔类型");
+                            MLogger.Error("Elif 条件必须计算为布尔类型");
                             // 默认假设条件为假，继续处理
                             condition = new RuntimeValue(false);
                         }
@@ -583,7 +586,7 @@ namespace MookDialogueScript
                     // 更新执行栈
                     _executionStack.Pop();
                     _executionStack.Push((contentContainer, index + 1)); // 更新容器索引
-                    _executionStack.Push((conditionNode, 0)); // 压入条件节点
+                    _executionStack.Push((conditionNode, 0));            // 压入条件节点
 
                     _isExecuting = false;
                     // 处理条件内容
@@ -599,7 +602,7 @@ namespace MookDialogueScript
                     _executionStack.Pop();
 
                     // 检查对话节点是否有嵌套内容
-                    if (dialogueNode.Content != null && dialogueNode.Content.Count > 0)
+                    if (dialogueNode.Content is {Count: > 0})
                     {
                         // 把下一个内容的索引先压入堆栈
                         _executionStack.Push((contentContainer, index + 1));
@@ -630,7 +633,7 @@ namespace MookDialogueScript
                 }
                 else
                 {
-                    Debug.LogError($"未知的内容类型 {content.GetType().Name}");
+                    MLogger.Error($"未知的内容类型 {content.GetType().Name}");
                 }
             }
             finally
@@ -652,7 +655,7 @@ namespace MookDialogueScript
                 var condition = await _interpreter.EvaluateExpression(node.Condition);
                 if (condition.Type != RuntimeValue.ValueType.Boolean)
                 {
-                    Debug.LogError("选项条件必须计算为布尔类型");
+                    MLogger.Error("选项条件必须计算为布尔类型");
                     return false; // 返回false而不是抛出异常
                 }
                 return (bool)condition.Value;
@@ -669,19 +672,19 @@ namespace MookDialogueScript
         {
             if (_isExecuting)
             {
-                Debug.LogWarning("当前正在执行中，请等待执行完成");
+                MLogger.Warning("当前正在执行中，请等待执行完成");
                 return; // 直接返回而不是抛出异常
             }
 
             if (!_isCollectingChoices || _currentChoices.Count == 0)
             {
-                Debug.LogError("当前没有可选择的选项");
+                MLogger.Error("当前没有可选择的选项");
                 return; // 直接返回而不是抛出异常
             }
 
             if (index < 0 || index >= _currentChoices.Count)
             {
-                Debug.LogError($"选项索引无效: {index}");
+                MLogger.Error($"选项索引无效: {index}");
                 if (_currentChoices.Count > 0)
                 {
                     index = 0; // 使用第一个选项而不是抛出异常
@@ -700,7 +703,7 @@ namespace MookDialogueScript
                 bool conditionMet = await EvaluateChoiceCondition(selectedChoice);
                 if (!conditionMet)
                 {
-                    Debug.LogError($"选项条件不满足，无法选择: {index}");
+                    MLogger.Error($"选项条件不满足，无法选择: {index}");
                     return; // 条件不满足，不执行该选项
                 }
             }
@@ -756,7 +759,7 @@ namespace MookDialogueScript
             }
             catch (Exception ex)
             {
-                Debug.LogError($"跳转到节点 {nodeName} 失败: {ex.Message}");
+                MLogger.Error($"跳转到节点 {nodeName} 失败: {ex.Message}");
                 // 尝试恢复执行
                 if (_executionStack.Count > 0)
                 {
@@ -775,13 +778,9 @@ namespace MookDialogueScript
         /// <returns>内容节点列表</returns>
         public List<ContentNode> GetCurrentNodeContents()
         {
-            if (_executionStack.Count == 0 || !(_executionStack.Peek().node is NodeDefinitionNode node))
-            {
-                Debug.LogError("没有当前节点");
-                return new List<ContentNode>(); // 返回空列表而不是抛出异常
-            }
-
-            return node.Content;
+            if (_executionStack.Count != 0 && _executionStack.Peek().node is NodeDefinitionNode node) return node.Content;
+            MLogger.Error("没有当前节点");
+            return null;
         }
 
         /// <summary>
@@ -802,7 +801,7 @@ namespace MookDialogueScript
         {
             if (!force && _isExecuting)
             {
-                Debug.LogWarning("当前正在执行中，请等待执行完成");
+                MLogger.Warning("当前正在执行中，请等待执行完成");
                 return; // 直接返回而不是抛出异常
             }
 
@@ -872,7 +871,7 @@ namespace MookDialogueScript
             while (stackCopy.Count > 0)
             {
                 (var currentNode, int currentIndex) = stackCopy.Pop();
-                List<ContentNode> contents = new List<ContentNode>();
+                List<ContentNode> contents;
 
                 // 根据节点类型获取内容列表
                 if (currentNode is NodeDefinitionNode nodeDef)
@@ -930,8 +929,8 @@ namespace MookDialogueScript
             var result = await _interpreter.EvaluateExpression(condition.Condition);
             if (result.Type != RuntimeValue.ValueType.Boolean)
             {
-                Debug.LogError("条件必须计算为布尔类型");
-                return condition.ElseBranch ?? new List<ContentNode>(); // 默认使用else分支或空列表
+                MLogger.Error("条件必须计算为布尔类型");
+                return condition.ElseBranch ?? new List<ContentNode>();
             }
 
             if ((bool)result.Value)
@@ -945,8 +944,8 @@ namespace MookDialogueScript
                 var elifResult = await _interpreter.EvaluateExpression(elifCondition);
                 if (elifResult.Type != RuntimeValue.ValueType.Boolean)
                 {
-                    Debug.LogError("Elif条件必须计算为布尔类型");
-                    continue; // 跳过当前循环而不是抛出异常
+                    MLogger.Error("Elif条件必须计算为布尔类型");
+                    continue;
                 }
 
                 if ((bool)elifResult.Value)
@@ -956,12 +955,7 @@ namespace MookDialogueScript
             }
 
             // 如果有else分支则返回else分支内容
-            if (condition.ElseBranch != null)
-            {
-                return condition.ElseBranch;
-            }
-
-            return null; // 没有匹配的条件分支
+            return condition.ElseBranch is {Count: > 0} ? condition.ElseBranch : null;
         }
 
         /// <summary>
@@ -1006,36 +1000,6 @@ namespace MookDialogueScript
             return 0; // 继续检查下一个内容
         }
 
-        private void PrintCommand(CommandNode commandNode)
-        {
-            switch (commandNode)
-            {
-                case VarCommandNode varCommandNode:
-                    switch (varCommandNode.Operation.ToLower())
-                    {
-                        case "var":
-                            Debug.Log("声明变量: " + varCommandNode.Variable);
-                            break;
-                        default:
-                            Debug.Log("操作变量: " + varCommandNode.Variable);
-                            break;
-                    }
-                    break;
-                case CallCommandNode callCommandNode:
-                    Debug.Log("调用函数: " + callCommandNode.FunctionName);
-                    break;
-                case JumpCommandNode jumpCommandNode:
-                    Debug.Log("跳转节点: " + jumpCommandNode.TargetNode);
-                    break;
-                case WaitCommandNode waitCommandNode:
-                    Debug.Log("等待时间: " + ((NumberNode)waitCommandNode.Duration).Value + "秒");
-                    break;
-                default:
-                    Debug.Log("执行命令: " + commandNode.GetType().Name);
-                    break;
-            }
-        }
-
         /// <summary>
         /// 获取节点的元数据值
         /// </summary>
@@ -1054,24 +1018,14 @@ namespace MookDialogueScript
                 else
                 {
                     // 获取当前节点的元数据
-                    if (_executionStack.Count == 0 || !(_executionStack.Peek().node is NodeDefinitionNode currentNode))
-                    {
-                        Debug.LogWarning("当前没有活动节点");
-                        return null;
-                    }
-                    
-                    // 如果元数据中不包含指定键，返回null
-                    if (!currentNode.Metadata.TryGetValue(key, out string value))
-                    {
-                        return null;
-                    }
-
-                    return value;
+                    if (_executionStack.Count != 0 && _executionStack.Peek().node is NodeDefinitionNode currentNode) return currentNode.Metadata.GetValueOrDefault(key, null);
+                    MLogger.Warning("当前没有活动节点");
+                    return null;
                 }
             }
             catch (Exception ex)
             {
-                Debug.LogError($"获取元数据时出错: {ex.Message}");
+                MLogger.Error($"获取元数据时出错: {ex}");
                 return null;
             }
         }
@@ -1093,19 +1047,14 @@ namespace MookDialogueScript
                 else
                 {
                     // 获取当前节点的元数据
-                    if (_executionStack.Count == 0 || !(_executionStack.Peek().node is NodeDefinitionNode currentNode))
-                    {
-                        Debug.LogWarning("当前没有活动节点");
-                        return null;
-                    }
-                    
-                    // 返回当前节点的所有元数据的副本
-                    return currentNode.Metadata;
+                    if (_executionStack.Count != 0 && _executionStack.Peek().node is NodeDefinitionNode currentNode) return currentNode.Metadata;
+                    MLogger.Warning("当前没有活动节点");
+                    return null;
                 }
             }
             catch (Exception ex)
             {
-                Debug.LogError($"获取元数据时出错: {ex.Message}");
+                MLogger.Error($"获取元数据时出错: {ex}");
                 return null;
             }
         }

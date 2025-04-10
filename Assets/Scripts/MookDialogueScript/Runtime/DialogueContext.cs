@@ -264,14 +264,14 @@ namespace MookDialogueScript
             {
                 // 获取指定节点
                 if (_nodes.TryGetValue(nodeName, out var node)) return node.Metadata.GetValueOrDefault(key, null);
-                Debug.LogWarning($"节点 {nodeName} 不存在");
+                MLogger.Warning($"节点 {nodeName} 不存在");
                 return null;
 
                 // 如果元数据中不包含指定键，返回null
             }
             catch (Exception ex)
             {
-                Debug.LogError($"获取元数据时出错: {ex.Message}");
+                MLogger.Error($"获取元数据时出错: {ex}");
                 return null;
             }
         }
@@ -287,13 +287,13 @@ namespace MookDialogueScript
             {
                 // 获取指定节点
                 if (_nodes.TryGetValue(nodeName, out var node)) return node.Metadata;
-                Debug.LogWarning($"节点 {nodeName} 不存在");
+                MLogger.Warning($"节点 {nodeName} 不存在");
                 return null;
 
             }
             catch (Exception ex)
             {
-                Debug.LogError($"获取元数据时出错: {ex.Message}");
+                MLogger.Error($"获取元数据时出错: {ex}");
                 return null;
             }
         }

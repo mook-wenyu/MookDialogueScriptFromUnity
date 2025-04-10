@@ -86,7 +86,7 @@ namespace MookDialogueScript
 
                 case UnaryOpNode u:
                     if (_operators.TryGetValue(u.Operator, out var @operator)) return await @operator(u.Operand);
-                    Debug.LogError($"未知的一元运算符 '{u.Operator}'");
+                    MLogger.Error($"未知的一元运算符 '{u.Operator}'");
                     return RuntimeValue.Null;
 
                 case BinaryOpNode b:
@@ -101,12 +101,12 @@ namespace MookDialogueScript
                     {
                         if (left.Type != RuntimeValue.ValueType.Number)
                         {
-                            Debug.LogError($"运算符 '{op}' 的左操作数必须是数值类型");
+                            MLogger.Error($"运算符 '{op}' 的左操作数必须是数值类型");
                             return RuntimeValue.Null;
                         }
                         if (right.Type != RuntimeValue.ValueType.Number)
                         {
-                            Debug.LogError($"运算符 '{op}' 的右操作数必须是数值类型");
+                            MLogger.Error($"运算符 '{op}' 的右操作数必须是数值类型");
                             return RuntimeValue.Null;
                         }
                     }
@@ -114,12 +114,12 @@ namespace MookDialogueScript
                     {
                         if (left.Type != RuntimeValue.ValueType.Boolean)
                         {
-                            Debug.LogError($"运算符 '{op}' 的左操作数必须是布尔类型");
+                            MLogger.Error($"运算符 '{op}' 的左操作数必须是布尔类型");
                             return RuntimeValue.Null;
                         }
                         if (right.Type != RuntimeValue.ValueType.Boolean)
                         {
-                            Debug.LogError($"运算符 '{op}' 的右操作数必须是布尔类型");
+                            MLogger.Error($"运算符 '{op}' 的右操作数必须是布尔类型");
                             return RuntimeValue.Null;
                         }
                     }
@@ -139,12 +139,12 @@ namespace MookDialogueScript
 
                         case "/":
                             if ((double)right.Value != 0) return new RuntimeValue((double)left.Value / (double)right.Value);
-                            Debug.LogError("除数不能为零");
+                            MLogger.Error("除数不能为零");
                             return new RuntimeValue(0);
 
                         case "%":
                             if ((double)right.Value != 0) return new RuntimeValue((double)left.Value % (double)right.Value);
-                            Debug.LogError("取模运算的除数不能为零");
+                            MLogger.Error("取模运算的除数不能为零");
                             return new RuntimeValue(0);
 
                         case "==":
@@ -187,7 +187,7 @@ namespace MookDialogueScript
                             return new RuntimeValue((bool)left.Value ^ (bool)right.Value);
 
                         default:
-                            Debug.LogError($"未知的二元运算符 '{op}'");
+                            MLogger.Error($"未知的二元运算符 '{op}'");
                             return RuntimeValue.Null;
                     }
 
@@ -201,7 +201,7 @@ namespace MookDialogueScript
                     return await _context.CallFunction(f.Name, args);
 
                 default:
-                    Debug.LogError($"未知的表达式类型 {node.GetType().Name}");
+                    MLogger.Error($"未知的表达式类型 {node.GetType().Name}");
                     return RuntimeValue.Null;
             }
         }
@@ -215,7 +215,7 @@ namespace MookDialogueScript
         {
             var value = await EvaluateExpression(expression);
             if (value.Type == RuntimeValue.ValueType.Number) return (double)value.Value;
-            Debug.LogError("表达式必须计算为数值类型");
+            MLogger.Error("表达式必须计算为数值类型");
             return 0;
         }
 
@@ -228,7 +228,7 @@ namespace MookDialogueScript
         {
             var value = await EvaluateExpression(node);
             if (value.Type == RuntimeValue.ValueType.Boolean) return (bool)value.Value;
-            Debug.LogError("表达式必须计算为布尔类型");
+            MLogger.Error("表达式必须计算为布尔类型");
             return false;
         }
 
@@ -241,7 +241,7 @@ namespace MookDialogueScript
         {
             var value = await EvaluateExpression(node);
             if (value.Type == RuntimeValue.ValueType.String) return (string)value.Value;
-            Debug.LogError("表达式必须计算为字符串类型");
+            MLogger.Error("表达式必须计算为字符串类型");
             return string.Empty;
         }
 
@@ -277,14 +277,14 @@ namespace MookDialogueScript
                                     }
                                     else
                                     {
-                                        Debug.LogWarning($"变量 '{varNode.Name}' 的值为null");
+                                        MLogger.Warning($"变量 '{varNode.Name}' 的值为null");
                                         // 变量为null时显示null，包括花括号和$符号
                                         result.Append("{null}");
                                     }
                                 }
                                 else
                                 {
-                                    Debug.LogError($"变量 '{varNode.Name}' 不存在");
+                                    MLogger.Error($"变量 '{varNode.Name}' 不存在");
                                     // 变量不存在时显示完整原始文本，包括花括号和$符号
                                     result.Append($"{{${varNode.Name}}}");
                                 }
@@ -309,21 +309,21 @@ namespace MookDialogueScript
                                         }
                                         else
                                         {
-                                            Debug.LogWarning($"函数 '{funcNode.Name}' 返回null");
+                                            MLogger.Warning($"函数 '{funcNode.Name}' 返回null");
                                             // 函数返回null时显示null，包括花括号
                                             result.Append("{null}");
                                         }
                                     }
                                     catch (Exception ex)
                                     {
-                                        Debug.LogError($"函数 '{funcNode.Name}' 调用错误: {ex}");
+                                        MLogger.Error($"函数 '{funcNode.Name}' 调用错误: {ex}");
                                         // 函数调用异常时显示原始文本，包括花括号
                                         result.Append($"{{{FormatFunctionCall(funcNode)}}}");
                                     }
                                 }
                                 else
                                 {
-                                    Debug.LogError($"函数 '{funcNode.Name}' 不存在");
+                                    MLogger.Error($"函数 '{funcNode.Name}' 不存在");
                                     // 函数不存在时显示原始文本，包括花括号
                                     result.Append($"{{{FormatFunctionCall(funcNode)}}}");
                                 }
@@ -340,14 +340,14 @@ namespace MookDialogueScript
                                     }
                                     else
                                     {
-                                        Debug.LogWarning("表达式返回null");
+                                        MLogger.Warning("表达式返回null");
                                         // 表达式返回null时显示null，包括花括号
                                         result.Append("{null}");
                                     }
                                 }
                                 catch (Exception ex)
                                 {
-                                    Debug.LogError($"表达式评估错误: {ex}");
+                                    MLogger.Error($"表达式评估错误: {ex}");
                                     // 表达式评估异常时显示原始文本，包括花括号
                                     result.Append($"{{{FormatExpressionNode(i.Expression)}}}");
                                 }
@@ -356,7 +356,7 @@ namespace MookDialogueScript
                         catch (Exception ex)
                         {
                             // 发生异常，记录错误并显示原始表达式，包括花括号
-                            Debug.LogError($"插值表达式错误: {ex}");
+                            MLogger.Error($"插值表达式错误: {ex}");
                             result.Append($"{{{FormatExpressionNode(i.Expression)}}}");
                         }
                         break;
@@ -480,7 +480,7 @@ namespace MookDialogueScript
                             }
                             else
                             {
-                                Debug.LogWarning($"变量 '{v.Variable}' 已存在");
+                                MLogger.Warning($"变量 '{v.Variable}' 已存在");
                             }
                             break;
 
@@ -492,7 +492,7 @@ namespace MookDialogueScript
                             var current = _context.GetVariable(v.Variable);
                             if (current.Type != RuntimeValue.ValueType.Number || value.Type != RuntimeValue.ValueType.Number)
                             {
-                                Debug.LogError("Add操作需要数值类型");
+                                MLogger.Error("Add操作需要数值类型");
                                 return string.Empty;
                             }
                             _context.SetVariable(v.Variable, new RuntimeValue((double)current.Value + (double)value.Value));
@@ -502,7 +502,7 @@ namespace MookDialogueScript
                             current = _context.GetVariable(v.Variable);
                             if (current.Type != RuntimeValue.ValueType.Number || value.Type != RuntimeValue.ValueType.Number)
                             {
-                                Debug.LogError("Sub操作需要数值类型");
+                                MLogger.Error("Sub操作需要数值类型");
                                 return string.Empty;
                             }
                             _context.SetVariable(v.Variable, new RuntimeValue((double)current.Value - (double)value.Value));
@@ -512,7 +512,7 @@ namespace MookDialogueScript
                             current = _context.GetVariable(v.Variable);
                             if (current.Type != RuntimeValue.ValueType.Number || value.Type != RuntimeValue.ValueType.Number)
                             {
-                                Debug.LogError("Mul操作需要数值类型");
+                                MLogger.Error("Mul操作需要数值类型");
                                 return string.Empty;
                             }
                             _context.SetVariable(v.Variable, new RuntimeValue((double)current.Value * (double)value.Value));
@@ -522,12 +522,12 @@ namespace MookDialogueScript
                             current = _context.GetVariable(v.Variable);
                             if (current.Type != RuntimeValue.ValueType.Number || value.Type != RuntimeValue.ValueType.Number)
                             {
-                                Debug.LogError("Div操作需要数值类型");
+                                MLogger.Error("Div操作需要数值类型");
                                 return string.Empty;
                             }
                             if ((double)value.Value == 0)
                             {
-                                Debug.LogError("Div操作的除数不能为零");
+                                MLogger.Error("Div操作的除数不能为零");
                                 return string.Empty;
                             }
                             _context.SetVariable(v.Variable, new RuntimeValue((double)current.Value / (double)value.Value));
@@ -537,19 +537,19 @@ namespace MookDialogueScript
                             current = _context.GetVariable(v.Variable);
                             if (current.Type != RuntimeValue.ValueType.Number || value.Type != RuntimeValue.ValueType.Number)
                             {
-                                Debug.LogError("Mod操作需要数值类型");
+                                MLogger.Error("Mod操作需要数值类型");
                                 return string.Empty;
                             }
                             if ((double)value.Value == 0)
                             {
-                                Debug.LogError("Mod操作的除数不能为零");
+                                MLogger.Error("Mod操作的除数不能为零");
                                 return string.Empty;
                             }
                             _context.SetVariable(v.Variable, new RuntimeValue((double)current.Value % (double)value.Value));
                             break;
 
                         default:
-                            Debug.LogError($"未知的变量操作 '{v.Operation}'");
+                            MLogger.Error($"未知的变量操作 '{v.Operation}'");
                             return string.Empty;
                     }
                     return string.Empty;
@@ -572,7 +572,7 @@ namespace MookDialogueScript
                     return j.TargetNode;
 
                 default:
-                    Debug.LogError($"未知的命令类型 {command.GetType().Name}");
+                    MLogger.Error($"未知的命令类型 {command.GetType().Name}");
                     return string.Empty;
             }
         }
