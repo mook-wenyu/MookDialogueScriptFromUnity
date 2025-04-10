@@ -20,8 +20,11 @@ namespace MookDialogueScript
     public class UnityDialogueLoader : IDialogueLoader
     {
         private readonly string _rootDir;
-        private readonly string[] _extensions;
-
+        private readonly string[] _extensions = new[] {".txt", ".mds"};
+        
+        /// <summary>
+        /// 创建一个Unity对话脚本加载器，使用默认根目录和扩展名
+        /// </summary>
         public UnityDialogueLoader() : this(string.Empty)
         {
         }
@@ -30,11 +33,9 @@ namespace MookDialogueScript
         /// 创建一个Unity对话脚本加载器
         /// </summary>
         /// <param name="rootDir">脚本文件根目录</param>
-        /// <param name="extensions">脚本文件扩展名数组（包含点号，如 .txt, .mds）</param>
-        public UnityDialogueLoader(string rootDir, string[] extensions = null)
+        public UnityDialogueLoader(string rootDir)
         {
-            _rootDir = string.IsNullOrEmpty(rootDir) ? "DialogueScripts" : rootDir;
-            _extensions = extensions ?? new[] {".txt", ".mds"};
+            _rootDir = rootDir;
         }
 
         /// <summary>

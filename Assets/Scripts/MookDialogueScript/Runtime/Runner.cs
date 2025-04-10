@@ -124,16 +124,6 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 注册变量
-        /// </summary>
-        /// <param name="name">变量名</param>
-        /// <param name="value">变量值</param>
-        public void RegisterVariable(string name, RuntimeValue value)
-        {
-            _context.SetVariable(name, value);
-        }
-
-        /// <summary>
         /// 获取变量值
         /// </summary>
         /// <param name="name">变量名</param>
@@ -144,12 +134,22 @@ namespace MookDialogueScript
         }
 
         /// <summary>
+        /// 注册脚本变量
+        /// </summary>
+        /// <param name="name">变量名</param>
+        /// <param name="value">变量值</param>
+        public void RegisterVariable(string name, RuntimeValue value)
+        {
+            _context.RegisterScriptVariable(name, value);
+        }
+
+        /// <summary>
         /// 注册内置变量
         /// </summary>
         /// <param name="name">变量名</param>
         /// <param name="getter">获取变量值的委托</param>
         /// <param name="setter">设置变量值的委托</param>
-        public void RegisterBuiltinVariable(string name, Func<object> getter, Action<object> setter)
+        public void RegisterVariable(string name, Func<object> getter, Action<object> setter)
         {
             _context.RegisterBuiltinVariable(name, getter, setter);
         }

@@ -45,17 +45,6 @@ namespace MookDialogueScript
         #region 变量注册
 
         /// <summary>
-        /// 注册内置变量
-        /// </summary>
-        /// <param name="name">变量名</param>
-        /// <param name="getter">获取变量值的委托</param>
-        /// <param name="setter">设置变量值的委托</param>
-        public void RegisterBuiltinVariable(string name, Func<object> getter, Action<object> setter)
-        {
-            _builtinVariables[name] = (getter, setter);
-        }
-
-        /// <summary>
         /// 扫描并注册所有标记了ScriptVar特性的静态属性和字段
         /// </summary>
         public void ScanAndRegisterScriptVariables()
@@ -291,6 +280,27 @@ namespace MookDialogueScript
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// 注册内置变量
+        /// </summary>
+        /// <param name="name">变量名</param>
+        /// <param name="getter">获取变量值的委托</param>
+        /// <param name="setter">设置变量值的委托</param>
+        public void RegisterBuiltinVariable(string name, Func<object> getter, Action<object> setter)
+        {
+            _builtinVariables[name] = (getter, setter);
+        }
+        
+        /// <summary>
+        /// 注册脚本变量
+        /// </summary>
+        /// <param name="name">变量名</param>
+        /// <param name="value">变量值</param>
+        public void RegisterScriptVariable(string name, RuntimeValue value)
+        {
+            _scriptVariables[name] = value;
         }
 
         /// <summary>

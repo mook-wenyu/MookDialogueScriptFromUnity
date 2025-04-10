@@ -83,8 +83,8 @@ public class DialogueMgr : MonoBehaviour
         RunMgrs.RegisterVariable("gold", new RuntimeValue(100));
         RunMgrs.RegisterVariable("has_key", new RuntimeValue(false));
 
-        // 注册C#变量
-        RunMgrs.RegisterBuiltinVariable("game_difficulty",
+        // 注册C#(内置)变量
+        RunMgrs.RegisterVariable("game_difficulty",
             () => GameSystem.Difficulty,
             (value) => GameSystem.Difficulty = (int)value
         );
@@ -471,7 +471,7 @@ RunMgrs.RegisterVariable("gold", new RuntimeValue(100));
 
 // 3. 注册C#变量
 // 这种方式可以将C#变量与脚本变量双向绑定，支持getter和setter
-RunMgrs.RegisterBuiltinVariable("game_difficulty",
+RunMgrs.RegisterVariable("game_difficulty",
     () => GameSystem.Difficulty,    // getter：从C#读取值
     (value) => GameSystem.Difficulty = (int)value    // setter：将值写回C#
 );
@@ -558,19 +558,18 @@ call player__take_damage(10)
 
 ### 创建自定义加载器
 
-MookDialogueScript 提供了 `IDialogueLoader` 接口，允许你创建自定义的脚本加载器。默认的加载器会从 Resources 文件夹加载脚本，但你可以根据需要实现自己的加载逻辑。
+MookDialogueScript 提供了 `IDialogueLoader` 接口，允许你创建自定义的脚本加载器。默认的Unity加载器会从 Resources 文件夹加载脚本，但你可以根据需要实现自己的加载逻辑。
 
 ```csharp
 // 1. 实现 IDialogueLoader 接口
 public class CustomDialogueLoader : IDialogueLoader
 {
     private readonly string _rootDir;
-    private readonly string[] _extensions;
+    private readonly string[] _extensions = new[] {".txt", ".mds"};
 
-    public CustomDialogueLoader(string rootDir = "", string[] extensions = null)
+    public CustomDialogueLoader(string rootDir = "DialogueScripts")
     {
-        _rootDir = string.IsNullOrEmpty(rootDir) ? "DialogueScripts" : rootDir;
-        _extensions = extensions ?? new[] { ".txt", ".mds" };
+        _rootDir = rootDir;
     }
 
     public void LoadScripts(Runner runner)
@@ -592,11 +591,10 @@ public class CustomDialogueLoader : IDialogueLoader
                         string scriptContent = File.ReadAllText(file);
                         string scriptName = Path.GetFileNameWithoutExtension(file);
                         LoadScriptContent(scriptContent, runner, scriptName);
-                        Debug.Log($"从 StreamingAssets 加载脚本文件 {scriptName} 成功");
                     }
                     catch (Exception ex)
                     {
-                        Debug.LogError($"加载脚本文件 {file} 时出错: {ex.Message}");
+                        Debug.LogError($"加载脚本文件 {file} 时出错: {ex}");
                     }
                 }
             }
@@ -608,7 +606,7 @@ public class CustomDialogueLoader : IDialogueLoader
         }
     }
 
-    private void LoadScriptContent(string scriptContent, Runner runner, string filePath = "")
+    private void LoadScriptContent(string scriptContent, Runner runner, string filePath)
     {
         try
         {
@@ -624,8 +622,7 @@ public class CustomDialogueLoader : IDialogueLoader
         }
         catch (Exception ex)
         {
-            string fileInfo = string.IsNullOrEmpty(filePath) ? "" : $" (文件: {filePath})";
-            Debug.LogError($"解析脚本内容时出错{fileInfo}: {ex}");
+            Debug.LogError($"解析脚本内容时出错 (文件: {filePath}): {ex}");
         }
     }
 }

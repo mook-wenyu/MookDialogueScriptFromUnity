@@ -136,6 +136,16 @@ namespace MookDialogueScript
         }
 
         /// <summary>
+        /// 注册脚本变量
+        /// </summary>
+        /// <param name="name">变量名</param>
+        /// <param name="value">变量值</param>
+        public void RegisterScriptVariable(string name, RuntimeValue value)
+        {
+            _variableManager.RegisterScriptVariable(name, value);
+        }
+
+        /// <summary>
         /// 获取所有内置变量
         /// </summary>
         /// <returns>内置变量字典</returns>
