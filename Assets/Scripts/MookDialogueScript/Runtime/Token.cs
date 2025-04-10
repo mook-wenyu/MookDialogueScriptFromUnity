@@ -102,7 +102,7 @@ namespace MookDialogueScript
         /// </summary>
         GREATER,
         /// <summary>
-        /// 小于 < 或 lt
+        /// 小于 ＜ 或 lt
         /// </summary>
         LESS,
         /// <summary>
@@ -110,7 +110,7 @@ namespace MookDialogueScript
         /// </summary>
         GREATER_EQUALS,
         /// <summary>
-        /// 小于等于 <= 或 lte
+        /// 小于等于 ＜= 或 lte
         /// </summary>
         LESS_EQUALS,
         /// <summary>
@@ -221,7 +221,7 @@ namespace MookDialogueScript
         /// </summary>
         STRING,
         /// <summary>
-        /// 文本 对话内容和选项内容，不需要引号的字符串
+        /// 文本 字符串
         /// </summary>
         TEXT,
         /// <summary>

@@ -147,20 +147,11 @@ namespace MookDialogueScript
         /// 注册内置变量
         /// </summary>
         /// <param name="name">变量名</param>
-        /// <param name="value">变量值</param>
+        /// <param name="getter">获取变量值的委托</param>
+        /// <param name="setter">设置变量值的委托</param>
         public void RegisterBuiltinVariable(string name, Func<object> getter, Action<object> setter)
         {
             _context.RegisterBuiltinVariable(name, getter, setter);
-        }
-
-        /// <summary>
-        /// 注册对象
-        /// </summary>
-        /// <param name="name">对象名</param>
-        /// <param name="instance">对象实例</param>
-        public void RegisterObject(string name, object instance)
-        {
-            _context.RegisterObjectProperties(name, instance);
         }
 
         /// <summary>
@@ -171,6 +162,17 @@ namespace MookDialogueScript
         public void SetVariable(string name, RuntimeValue value)
         {
             _context.SetVariable(name, value);
+        }
+
+        /// <summary>
+        /// 注册对象实例，将其属性和字段注册为变量，方法注册为函数
+        /// </summary>
+        /// <param name="name">对象名</param>
+        /// <param name="instance">对象实例</param>
+        public void RegisterObject(string name, object instance)
+        {
+            _context.RegisterObjectPropertiesAndFields(name, instance);
+            _context.RegisterObjectFunctions(name, instance);
         }
 
         /// <summary>
@@ -190,16 +192,6 @@ namespace MookDialogueScript
         public Dictionary<string, string> GetRegisteredFunctions()
         {
             return _context.GetRegisteredFunctions();
-        }
-
-        /// <summary>
-        /// 注册对象函数
-        /// </summary>
-        /// <param name="objectName">对象名</param>
-        /// <param name="instance">对象实例</param>
-        public void RegisterObjectFunction(string objectName, object instance)
-        {
-            _context.RegisterObjectFunctions(objectName, instance);
         }
 
         /// <summary>

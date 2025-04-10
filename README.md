@@ -12,6 +12,21 @@ MookDialogueScript 是一个轻量级的对话脚本系统，专为 Unity 游戏
 - 支持与 C# 代码的深度集成
 - 支持中文和英文混合使用
 
+## VSCode 语法高亮支持
+
+为了提供更好的编辑体验，我们提供了 VSCode 语法高亮插件：[MookDialogueScript Language](https://github.com/mook-wenyu/mookdialoguescript-lang)
+
+插件特性：
+- 完整的语法高亮支持（节点、元数据、条件语句、系统命令等）
+- 智能代码片段（快速插入常用语法结构）
+- 便捷的编辑功能（自动缩进、代码折叠、括号匹配）
+- 支持中英文符号混用
+
+使用方法：
+1. 在 VSCode 扩展市场中搜索 "MookDialogueScript"
+2. 安装插件
+3. 创建 `.mds` 文件即可享受语法高亮支持
+
 ## 快速开始
 
 ### 安装
@@ -60,10 +75,9 @@ public class DialogueMgr : MonoBehaviour
         Debug.Log("开始初始化对话系统");
         RunMgrs = new Runner();
 
-        // 注册玩家对象
+        // 注册玩家对象（同时注册其属性、字段和方法，使它们在脚本中可访问）
         var player = new Player("二狗");
-        RunMgrs.RegisterObject("player", player);
-        RunMgrs.RegisterObjectFunction("player", player);
+        RunMgrs.RegisterObject("player", player);  // 会自动注册所有公共属性、字段和方法
 
         // 注册游戏变量
         RunMgrs.RegisterVariable("gold", new RuntimeValue(100));
@@ -293,11 +307,13 @@ div $gold 2
 mod $count 5
 // 取模运算
 
-// 对象变量访问
+// 对象变量访问（属性和字段）
 $player__name
 // 访问 player 对象的 name 属性
 $player__health
-// 访问 player 对象的 health 属性
+// 访问 player 对象的 health 字段
+$player__level
+// 访问 player 对象的 level 属性或字段
 
 // 变量插值
 这是{$player__name}的属性，等级为{$player__level}
@@ -305,7 +321,7 @@ $player__health
 
 变量访问说明：
 - 变量以 `$` 开头
-- 对象变量使用 `$objectName__propertyName` 格式访问
+- 对象变量使用 `$objectName__propertyName` 或 `$objectName__fieldName` 格式访问
 - 在文本中可以使用 `{$variable}` 进行插值
 
 #### 函数系统
@@ -441,43 +457,103 @@ endif
 
 ### 注册变量
 
+变量注册提供了多种方式，可以注册静态变量、脚本变量和C#变量，使它们在脚本中可用。所有注册的变量都支持在脚本中读取和修改。
+
 ```csharp
 // 1. 使用 ScriptVar 特性标记静态变量
+// 这种方式适用于全局静态变量，会自动注册到对话系统中
 [ScriptVar("game_version")]
 public static string GameVersion { get; } = "1.0.0";
 
-// 2. 注册对象变量
-var player = new Player("二狗");
-RunMgrs.RegisterObject("player", player);
-
-// 3. 注册脚本变量
+// 2. 注册脚本变量
+// 这种方式用于注册简单的值类型变量
 RunMgrs.RegisterVariable("gold", new RuntimeValue(100));
 
-// 4. 注册C#变量
+// 3. 注册C#变量
+// 这种方式可以将C#变量与脚本变量双向绑定，支持getter和setter
 RunMgrs.RegisterBuiltinVariable("game_difficulty",
-    () => GameSystem.Difficulty,
-    (value) => GameSystem.Difficulty = (int)value
+    () => GameSystem.Difficulty,    // getter：从C#读取值
+    (value) => GameSystem.Difficulty = (int)value    // setter：将值写回C#
 );
+```
+
+在脚本中使用变量：
+```mds
+// 访问变量
+商人: 你有{$gold}金币。
+商人: 游戏版本：{$game_version}
+商人: 当前难度：{$game_difficulty}
+
+// 修改变量（包括C#变量）
+set $gold 200
+set $game_difficulty 2  // 这会通过setter修改C#中的 GameSystem.Difficulty
+add $gold 50
+sub $gold 30
 ```
 
 ### 注册函数
 
+函数注册支持多种方式，可以注册静态函数、委托函数，使它们在脚本中可调用。
+
 ```csharp
 // 1. 使用 ScriptFunc 特性标记静态函数
+// 这种方式适用于全局静态函数，会自动注册到对话系统中
 [ScriptFunc]
 public static void ShowNotification(string title, string content)
 {
     Debug.Log($"[{title}] {content}");
 }
 
-// 2. 注册对象函数
-var player = new Player("二狗");
-RunMgrs.RegisterObjectFunction("player", player);
-
-// 3. 注册委托函数
+// 2. 注册委托函数
+// 这种方式可以直接注册lambda表达式或委托
 RunMgrs.RegisterFunction("calculate_damage", (int base_damage, float multiplier) => {
     return (int)(base_damage * multiplier);
 });
+```
+
+在脚本中调用函数：
+```mds
+// 直接调用函数
+call ShowNotification("提示", "这是一条通知")
+
+// 在表达式中使用函数
+var $damage calculate_damage(10, 1.5)
+
+// 在插值中使用函数
+商人: 计算伤害：{calculate_damage(10, 1.5)}
+```
+
+### 注册对象
+
+对象注册会同时注册对象的属性、字段和方法，使它们在脚本中可用。属性和字段会以 `objectName__propertyName` 或 `objectName__fieldName` 的形式注册。注册的对象属性和字段都支持双向绑定，可以在脚本中修改C#对象的值。
+
+```csharp
+// 创建对象实例
+var player = new Player("二狗");
+
+// 注册对象（同时注册其属性、字段和方法）
+RunMgrs.RegisterObject("player", player);
+
+// 在脚本中访问对象成员
+// 属性访问：$player__name, $player__level
+// 字段访问：$player__health, $player__isAlive
+// 方法调用：player__get_status(), player__take_damage(10)
+```
+
+示例：
+```mds
+// 访问对象属性和字段
+商人: 欢迎你，{$player__name}！你的生命值是{$player__health}。
+
+// 修改对象属性或字段（会直接修改C#对象的值）
+set $player__name "张三"
+set $player__health 100
+
+// 调用对象方法
+商人: 让我看看你的状态... {player__get_status()}
+
+// 在命令中调用方法
+call player__take_damage(10)
 ```
 
 ### 创建自定义加载器

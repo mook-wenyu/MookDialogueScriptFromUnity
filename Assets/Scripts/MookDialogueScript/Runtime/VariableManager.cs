@@ -9,7 +9,7 @@ namespace MookDialogueScript
     /// <summary>
     /// 标记可在脚本中访问的变量
     /// </summary>
-    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]
+    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field)]
     public class ScriptVarAttribute : Attribute
     {
         /// <summary>
@@ -84,91 +84,57 @@ namespace MookDialogueScript
         {
             try
             {
-                // 获取程序集中的所有类型
-                var types = assembly.GetTypes();
-
-                foreach (var type in types)
+                // 获取程序集中的所有类型并扫描它们的静态成员
+                foreach (var type in assembly.GetTypes())
                 {
-                    ScanTypeForScriptVariables(type);
+                    try
+                    {
+                        // 扫描静态属性
+                        foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Static))
+                        {
+                            try
+                            {
+                                var attribute = property.GetCustomAttribute<ScriptVarAttribute>();
+                                if (attribute == null) continue;
+                                string varName = attribute.Name ?? property.Name;
+                                RegisterPropertyAsVariable(property, varName);
+                            }
+                            catch (Exception ex)
+                            {
+                                Debug.LogError($"扫描属性 {property.Name} 时出错: {ex.Message}");
+                                // 继续处理其他属性
+                            }
+                        }
+
+                        // 扫描静态字段
+                        foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.Static))
+                        {
+                            try
+                            {
+                                var attribute = field.GetCustomAttribute<ScriptVarAttribute>();
+                                if (attribute == null) continue;
+                                string varName = attribute.Name ?? field.Name;
+                                bool isReadOnly = field.IsInitOnly;
+                                RegisterFieldAsVariable(field, varName, isReadOnly);
+                            }
+                            catch (Exception ex)
+                            {
+                                Debug.LogError($"扫描字段 {field.Name} 时出错: {ex.Message}");
+                                // 继续处理其他字段
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"扫描类型 {type.FullName} 时出错: {ex.Message}");
+                        // 继续处理其他类型
+                    }
                 }
             }
             catch (Exception ex)
             {
                 Debug.LogError($"扫描程序集 {assembly.FullName} 时出错: {ex.Message}");
                 // 继续处理其他程序集
-            }
-        }
-
-        /// <summary>
-        /// 扫描类型中的脚本变量
-        /// </summary>
-        private void ScanTypeForScriptVariables(Type type)
-        {
-            try
-            {
-                // 扫描静态属性
-                ScanPropertiesForScriptVariables(type);
-
-                // 扫描静态字段
-                ScanFieldsForScriptVariables(type);
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"扫描类型 {type.FullName} 时出错: {ex.Message}");
-                // 继续处理其他类型
-            }
-        }
-
-        /// <summary>
-        /// 扫描属性中的脚本变量
-        /// </summary>
-        private void ScanPropertiesForScriptVariables(Type type)
-        {
-            var properties = type.GetProperties(BindingFlags.Public | BindingFlags.Static);
-
-            foreach (var property in properties)
-            {
-                try
-                {
-                    var attribute = property.GetCustomAttribute<ScriptVarAttribute>();
-                    if (attribute != null)
-                    {
-                        string varName = attribute.Name ?? property.Name;
-                        RegisterPropertyAsVariable(property, varName);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogError($"扫描属性 {property.Name} 时出错: {ex.Message}");
-                    // 继续处理其他属性
-                }
-            }
-        }
-
-        /// <summary>
-        /// 扫描字段中的脚本变量
-        /// </summary>
-        private void ScanFieldsForScriptVariables(Type type)
-        {
-            var fields = type.GetFields(BindingFlags.Public | BindingFlags.Static);
-
-            foreach (var field in fields)
-            {
-                try
-                {
-                    var attribute = field.GetCustomAttribute<ScriptVarAttribute>();
-                    if (attribute != null)
-                    {
-                        string varName = attribute.Name ?? field.Name;
-                        bool isReadOnly = field.IsInitOnly;
-                        RegisterFieldAsVariable(field, varName, isReadOnly);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogError($"扫描字段 {field.Name} 时出错: {ex.Message}");
-                    // 继续处理其他字段
-                }
             }
         }
 
@@ -206,25 +172,50 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 注册对象实例的属性作为脚本变量
+        /// 注册对象实例的所有属性和字段作为脚本变量
         /// </summary>
         /// <param name="objectName">对象名称（用作变量名称的前缀）</param>
         /// <param name="instance">对象实例</param>
-        public void RegisterObjectProperties(string objectName, object instance)
+        public void RegisterObjectPropertiesAndFields(string objectName, object instance)
         {
             if (instance == null)
             {
-                Debug.LogError("注册对象实例的属性时，对象实例不能为null");
-                return; // 直接返回而不是抛出异常
+                Debug.LogError("注册对象实例的成员时，对象实例不能为null");
+                return;
             }
 
+            // 注册属性
             var properties = instance.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
-
             foreach (var property in properties)
             {
                 string varName = $"{objectName}__{property.Name}";
                 RegisterInstancePropertyAsVariable(property, instance, varName);
             }
+
+            // 注册字段
+            var fields = instance.GetType().GetFields(BindingFlags.Public | BindingFlags.Instance);
+            foreach (var field in fields)
+            {
+                string varName = $"{objectName}__{field.Name}";
+                RegisterInstanceFieldAsVariable(field, instance, varName);
+            }
+        }
+
+        /// <summary>
+        /// 注册实例字段作为变量
+        /// </summary>
+        private void RegisterInstanceFieldAsVariable(FieldInfo field, object instance, string varName)
+        {
+            // 创建getter
+            Func<object> getter = () => field.GetValue(instance);
+
+            // 创建setter
+            Action<object> setter = field.IsInitOnly
+                ? (obj) => { Debug.LogError($"字段 '{varName}' 是只读的"); }
+                : (obj) => field.SetValue(instance, obj);
+
+            // 注册变量
+            RegisterBuiltinVariable(varName, getter, setter);
         }
 
         /// <summary>
@@ -249,7 +240,7 @@ namespace MookDialogueScript
         #region 变量管理
 
         /// <summary>
-        /// 获取所有脚本变量
+        /// 获取所有脚本变量（用于保存状态）
         /// </summary>
         /// <returns>脚本变量</returns>
         public Dictionary<string, RuntimeValue> GetScriptVariables()
@@ -357,7 +348,7 @@ namespace MookDialogueScript
         #region 类型转换
 
         /// <summary>
-        /// 将运行时值转换为对象
+        /// 将脚本运行时值转换为C#对象
         /// </summary>
         private object ConvertToNativeType(RuntimeValue value)
         {
@@ -401,22 +392,25 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 将对象转换为运行时值
+        /// 将C#对象转换为脚本运行时值
         /// </summary>
         private RuntimeValue ConvertToRuntimeValue(object value)
         {
-            if (value == null)
-                return RuntimeValue.Null;
+            switch (value)
+            {
+                case null:
+                    return RuntimeValue.Null;
+                case double or int or float or long:
+                    return new RuntimeValue(Convert.ToDouble(value));
+                case string strValue:
+                    return new RuntimeValue(strValue);
+                case bool boolValue:
+                    return new RuntimeValue(boolValue);
+                default:
+                    Debug.LogError($"不支持的内置变量类型: {value.GetType().Name}");
+                    return RuntimeValue.Null; // 返回空值而不是抛出异常
+            }
 
-            if (value is double || value is int || value is float || value is long)
-                return new RuntimeValue(Convert.ToDouble(value));
-            else if (value is string strValue)
-                return new RuntimeValue(strValue);
-            else if (value is bool boolValue)
-                return new RuntimeValue(boolValue);
-
-            Debug.LogError($"不支持的内置变量类型: {value.GetType().Name}");
-            return RuntimeValue.Null; // 返回空值而不是抛出异常
         }
 
         #endregion

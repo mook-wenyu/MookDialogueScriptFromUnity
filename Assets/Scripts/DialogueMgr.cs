@@ -24,7 +24,6 @@ public class DialogueMgr : MonoBehaviour
         var player = new Player("二狗");
         // 使用Runner的RegisterObject方法注册玩家对象
         RunMgrs.RegisterObject("player", player);
-        RunMgrs.RegisterObjectFunction("player", player);
 
         // 注册一些测试变量
         RunMgrs.RegisterVariable("gold", new RuntimeValue(100));

@@ -16,10 +16,11 @@ namespace MookDialogueScript
         public Interpreter(DialogueContext context)
         {
             _context = context;
-            _operators = new Dictionary<string, Func<ExpressionNode, Task<RuntimeValue>>>
+            _operators = new Dictionary<string, Func<ExpressionNode, Task<RuntimeValue>>>(StringComparer.OrdinalIgnoreCase)
             {
                 ["-"] = async (right) => new RuntimeValue(-await GetNumberValue(right)),
                 ["!"] = async (right) => new RuntimeValue(!await GetBooleanValue(right)),
+                ["！"] = async (right) => new RuntimeValue(!await GetBooleanValue(right)),
                 ["not"] = async (right) => new RuntimeValue(!await GetBooleanValue(right))
             };
         }
@@ -34,11 +35,11 @@ namespace MookDialogueScript
             return op.ToLower() switch
             {
                 "eq" or "is" => "==",
-                "neq" => "!=",
-                "gt" => ">",
-                "lt" => "<",
-                "gte" => ">=",
-                "lte" => "<=",
+                "neq" or "！=" => "!=",
+                "gt" or "》" => ">",
+                "lt" or "《" => "<",
+                "gte" or "》=" => ">=",
+                "lte" or "《=" => "<=",
                 "and" => "&&",
                 "or" => "||",
                 "xor" => "^",
@@ -84,12 +85,9 @@ namespace MookDialogueScript
                     return _context.GetVariable(v.Name);
 
                 case UnaryOpNode u:
-                    if (!_operators.TryGetValue(u.Operator, out var @operator))
-                    {
-                        Debug.LogError($"未知的一元运算符 '{u.Operator}'");
-                        return RuntimeValue.Null;
-                    }
-                    return await @operator(u.Operand);
+                    if (_operators.TryGetValue(u.Operator, out var @operator)) return await @operator(u.Operand);
+                    Debug.LogError($"未知的一元运算符 '{u.Operator}'");
+                    return RuntimeValue.Null;
 
                 case BinaryOpNode b:
                     var left = await EvaluateExpression(b.Left);
@@ -140,20 +138,14 @@ namespace MookDialogueScript
                             return new RuntimeValue((double)left.Value * (double)right.Value);
 
                         case "/":
-                            if ((double)right.Value == 0)
-                            {
-                                Debug.LogError($"除数不能为零");
-                                return new RuntimeValue(0);
-                            }
-                            return new RuntimeValue((double)left.Value / (double)right.Value);
+                            if ((double)right.Value != 0) return new RuntimeValue((double)left.Value / (double)right.Value);
+                            Debug.LogError("除数不能为零");
+                            return new RuntimeValue(0);
 
                         case "%":
-                            if ((double)right.Value == 0)
-                            {
-                                Debug.LogError($"取模运算的除数不能为零");
-                                return new RuntimeValue(0);
-                            }
-                            return new RuntimeValue((double)left.Value % (double)right.Value);
+                            if ((double)right.Value != 0) return new RuntimeValue((double)left.Value % (double)right.Value);
+                            Debug.LogError("取模运算的除数不能为零");
+                            return new RuntimeValue(0);
 
                         case "==":
                             if (left.Type == RuntimeValue.ValueType.Null && right.Type == RuntimeValue.ValueType.Null)
@@ -222,12 +214,9 @@ namespace MookDialogueScript
         public async Task<double> GetNumberValue(ExpressionNode expression)
         {
             var value = await EvaluateExpression(expression);
-            if (value.Type != RuntimeValue.ValueType.Number)
-            {
-                Debug.LogError($"表达式必须计算为数值类型");
-                return 0;
-            }
-            return (double)value.Value;
+            if (value.Type == RuntimeValue.ValueType.Number) return (double)value.Value;
+            Debug.LogError("表达式必须计算为数值类型");
+            return 0;
         }
 
         /// <summary>
@@ -238,12 +227,9 @@ namespace MookDialogueScript
         public async Task<bool> GetBooleanValue(ExpressionNode node)
         {
             var value = await EvaluateExpression(node);
-            if (value.Type != RuntimeValue.ValueType.Boolean)
-            {
-                Debug.LogError($"表达式必须计算为布尔类型");
-                return false;
-            }
-            return (bool)value.Value;
+            if (value.Type == RuntimeValue.ValueType.Boolean) return (bool)value.Value;
+            Debug.LogError("表达式必须计算为布尔类型");
+            return false;
         }
 
         /// <summary>
@@ -254,12 +240,9 @@ namespace MookDialogueScript
         public async Task<string> GetStringValue(ExpressionNode node)
         {
             var value = await EvaluateExpression(node);
-            if (value.Type != RuntimeValue.ValueType.String)
-            {
-                Debug.LogError($"表达式必须计算为字符串类型");
-                return string.Empty;
-            }
-            return (string)value.Value;
+            if (value.Type == RuntimeValue.ValueType.String) return (string)value.Value;
+            Debug.LogError("表达式必须计算为字符串类型");
+            return string.Empty;
         }
 
         /// <summary>
@@ -296,7 +279,7 @@ namespace MookDialogueScript
                                     {
                                         Debug.LogWarning($"变量 '{varNode.Name}' 的值为null");
                                         // 变量为null时显示null，包括花括号和$符号
-                                        result.Append($"{{null}}");
+                                        result.Append("{null}");
                                     }
                                 }
                                 else
@@ -328,7 +311,7 @@ namespace MookDialogueScript
                                         {
                                             Debug.LogWarning($"函数 '{funcNode.Name}' 返回null");
                                             // 函数返回null时显示null，包括花括号
-                                            result.Append($"{{null}}");
+                                            result.Append("{null}");
                                         }
                                     }
                                     catch (Exception ex)
@@ -357,9 +340,9 @@ namespace MookDialogueScript
                                     }
                                     else
                                     {
-                                        Debug.LogWarning($"表达式返回null");
+                                        Debug.LogWarning("表达式返回null");
                                         // 表达式返回null时显示null，包括花括号
-                                        result.Append($"{{null}}");
+                                        result.Append("{null}");
                                     }
                                 }
                                 catch (Exception ex)
@@ -389,38 +372,41 @@ namespace MookDialogueScript
         /// <returns>格式化后的表达式字符串</returns>
         private string FormatExpressionNode(ExpressionNode node)
         {
-            if (node is NumberNode numNode)
-                return numNode.Value.ToString();
-            else if (node is StringInterpolationExpressionNode strNode)
+            switch (node)
             {
-                var result = new System.Text.StringBuilder();
-                foreach (var segment in strNode.Segments)
+                case NumberNode numNode:
+                    return numNode.Value.ToString();
+                case StringInterpolationExpressionNode strNode:
                 {
-                    switch (segment)
+                    var result = new System.Text.StringBuilder();
+                    foreach (var segment in strNode.Segments)
                     {
-                        case TextNode t:
-                            result.Append(t.Text);
-                            break;
+                        switch (segment)
+                        {
+                            case TextNode t:
+                                result.Append(t.Text);
+                                break;
 
-                        case InterpolationNode interpolation:
-                            result.Append($"{FormatExpressionNode(interpolation.Expression)}");
-                            break;
+                            case InterpolationNode interpolation:
+                                result.Append($"{FormatExpressionNode(interpolation.Expression)}");
+                                break;
+                        }
                     }
+                    return result.ToString();
                 }
-                return result.ToString();
+                case BooleanNode boolNode:
+                    return boolNode.Value ? "true" : "false";
+                case VariableNode varNode:
+                    return $"${varNode.Name}";
+                case FunctionCallNode funcNode:
+                    return FormatFunctionCall(funcNode); // 递归处理嵌套函数
+                case BinaryOpNode binNode:
+                    return $"({FormatExpressionNode(binNode.Left)} {binNode.Operator} {FormatExpressionNode(binNode.Right)})";
+                case UnaryOpNode unaryNode:
+                    return $"{unaryNode.Operator}{FormatExpressionNode(unaryNode.Operand)}";
+                default:
+                    return "?"; // 其他类型表达式用?表示
             }
-            else if (node is BooleanNode boolNode)
-                return boolNode.Value ? "true" : "false";
-            else if (node is VariableNode varNode)
-                return $"${varNode.Name}";
-            else if (node is FunctionCallNode funcNode)
-                return FormatFunctionCall(funcNode); // 递归处理嵌套函数
-            else if (node is BinaryOpNode binNode)
-                return $"({FormatExpressionNode(binNode.Left)} {binNode.Operator} {FormatExpressionNode(binNode.Right)})";
-            else if (node is UnaryOpNode unaryNode)
-                return $"{unaryNode.Operator}{FormatExpressionNode(unaryNode.Operand)}";
-            else
-                return "?"; // 其他类型表达式用?表示
         }
 
         /// <summary>
@@ -453,7 +439,7 @@ namespace MookDialogueScript
         /// <param name="callback">回调函数</param>
         public void BuildText(List<TextSegmentNode> segments, Action<string> callback)
         {
-            string text = "";
+            string text;
             Task.Run(async () =>
             {
                 text = await BuildText(segments);
@@ -506,7 +492,7 @@ namespace MookDialogueScript
                             var current = _context.GetVariable(v.Variable);
                             if (current.Type != RuntimeValue.ValueType.Number || value.Type != RuntimeValue.ValueType.Number)
                             {
-                                Debug.LogError($"Add操作需要数值类型");
+                                Debug.LogError("Add操作需要数值类型");
                                 return string.Empty;
                             }
                             _context.SetVariable(v.Variable, new RuntimeValue((double)current.Value + (double)value.Value));
@@ -516,7 +502,7 @@ namespace MookDialogueScript
                             current = _context.GetVariable(v.Variable);
                             if (current.Type != RuntimeValue.ValueType.Number || value.Type != RuntimeValue.ValueType.Number)
                             {
-                                Debug.LogError($"Sub操作需要数值类型");
+                                Debug.LogError("Sub操作需要数值类型");
                                 return string.Empty;
                             }
                             _context.SetVariable(v.Variable, new RuntimeValue((double)current.Value - (double)value.Value));
@@ -526,7 +512,7 @@ namespace MookDialogueScript
                             current = _context.GetVariable(v.Variable);
                             if (current.Type != RuntimeValue.ValueType.Number || value.Type != RuntimeValue.ValueType.Number)
                             {
-                                Debug.LogError($"Mul操作需要数值类型");
+                                Debug.LogError("Mul操作需要数值类型");
                                 return string.Empty;
                             }
                             _context.SetVariable(v.Variable, new RuntimeValue((double)current.Value * (double)value.Value));
@@ -536,7 +522,7 @@ namespace MookDialogueScript
                             current = _context.GetVariable(v.Variable);
                             if (current.Type != RuntimeValue.ValueType.Number || value.Type != RuntimeValue.ValueType.Number)
                             {
-                                Debug.LogError($"Div操作需要数值类型");
+                                Debug.LogError("Div操作需要数值类型");
                                 return string.Empty;
                             }
                             if ((double)value.Value == 0)
@@ -551,7 +537,7 @@ namespace MookDialogueScript
                             current = _context.GetVariable(v.Variable);
                             if (current.Type != RuntimeValue.ValueType.Number || value.Type != RuntimeValue.ValueType.Number)
                             {
-                                Debug.LogError($"Mod操作需要数值类型");
+                                Debug.LogError("Mod操作需要数值类型");
                                 return string.Empty;
                             }
                             if ((double)value.Value == 0)

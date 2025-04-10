@@ -117,8 +117,7 @@ namespace MookDialogueScript
 
             while (_currentToken.Type != TokenType.EOF)
             {
-                if (_currentToken.Type == TokenType.DOUBLE_COLON ||
-                    _currentToken.Type == TokenType.NODE_START)
+                if (_currentToken.Type is TokenType.DOUBLE_COLON or TokenType.NODE_START)
                 {
                     var node = ParseNodeDefinition();
 
@@ -168,7 +167,7 @@ namespace MookDialogueScript
             Consume(TokenType.NEWLINE);
 
             // 解析元数据（如果有）
-            Dictionary<string, string> metadata = new Dictionary<string, string>();
+            var metadata = new Dictionary<string, string>();
             while (_currentToken.Type == TokenType.LEFT_BRACKET)
             {
                 ParseMetadata(metadata);

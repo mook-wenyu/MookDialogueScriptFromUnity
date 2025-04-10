@@ -10,7 +10,7 @@ namespace MookDialogueScript
     /// <summary>
     /// 标记可在脚本中调用的函数
     /// </summary>
-    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
+    [AttributeUsage(AttributeTargets.Method)]
     public class ScriptFuncAttribute : Attribute
     {
         /// <summary>
@@ -64,6 +64,8 @@ namespace MookDialogueScript
             // 注册基本类型的处理器
             RegisterTaskHandler<string>();
             RegisterTaskHandler<int>();
+            RegisterTaskHandler<long>();
+            RegisterTaskHandler<float>();
             RegisterTaskHandler<double>();
             RegisterTaskHandler<bool>();
             RegisterTaskHandler<object>();
@@ -106,7 +108,7 @@ namespace MookDialogueScript
             if (taskType.IsGenericType && taskType.GetGenericTypeDefinition() == typeof(Task<>))
             {
                 var resultProperty = taskType.GetProperty("Result");
-                return resultProperty.GetValue(task);
+                if (resultProperty != null) return resultProperty.GetValue(task);
             }
 
             return null; // Task 没有结果
@@ -161,19 +163,28 @@ namespace MookDialogueScript
             if (targetType == typeof(double) || targetType == typeof(float) ||
                 targetType == typeof(int) || targetType == typeof(long))
             {
-                ValidateType(value, RuntimeValue.ValueType.Number, targetType.Name);
+                if (value.Type != RuntimeValue.ValueType.Number)
+                {
+                    Debug.LogError($"期望数字类型用于 '{targetType.Name}'，但得到了{GetTypeName(value.Type)}");
+                }
                 return Convert.ChangeType(value.Value, targetType);
             }
             // 字符串类型转换
             else if (targetType == typeof(string))
             {
-                ValidateType(value, RuntimeValue.ValueType.String, targetType.Name);
+                if (value.Type != RuntimeValue.ValueType.String)
+                {
+                    Debug.LogError($"期望字符串类型用于 '{targetType.Name}'，但得到了{GetTypeName(value.Type)}");
+                }
                 return value.Value;
             }
             // 布尔类型转换
             else if (targetType == typeof(bool))
             {
-                ValidateType(value, RuntimeValue.ValueType.Boolean, targetType.Name);
+                if (value.Type != RuntimeValue.ValueType.Boolean)
+                {
+                    Debug.LogError($"期望布尔类型用于 '{targetType.Name}'，但得到了{GetTypeName(value.Type)}");
+                }
                 return value.Value;
             }
             // 引用类型和可空值类型
@@ -186,16 +197,6 @@ namespace MookDialogueScript
             Debug.LogError($"不支持的参数类型转换: {targetType.Name}");
             // 返回类型的默认值而不是抛出异常
             return targetType.IsValueType ? Activator.CreateInstance(targetType) : null;
-        }
-
-        /// <summary>
-        /// 验证值类型
-        /// </summary>
-        private bool ValidateType(RuntimeValue value, RuntimeValue.ValueType expectedType, string typeName)
-        {
-            if (value.Type == expectedType) return true;
-            Debug.LogError($"期望{GetTypeName(expectedType)}类型用于 '{typeName}'，但得到了{GetTypeName(value.Type)}");
-            return false;
         }
 
         /// <summary>
@@ -292,37 +293,6 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 注册对象实例的方法作为脚本函数
-        /// </summary>
-        public void RegisterObjectFunctions(string objectName, object instance)
-        {
-            if (instance == null)
-            {
-                Debug.LogError("注册对象实例的方法作为脚本函数时，对象实例不能为null");
-                return;
-            }
-
-            // 获取所有非Object基类的公共实例方法
-            var methods = instance.GetType()
-                .GetMethods(BindingFlags.Public | BindingFlags.Instance)
-                .Where(m => m.DeclaringType != typeof(object));
-
-            foreach (var method in methods)
-            {
-                string funcName = $"{objectName}__{method.Name}";
-                try
-                {
-                    _compiledFunctions[funcName] = CompileMethod(method, instance);
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogError($"注册 {funcName} 时出错: {ex.Message}");
-                    // 继续处理其他方法
-                }
-            }
-        }
-
-        /// <summary>
         /// 编译方法为可执行函数
         /// </summary>
         private Func<List<RuntimeValue>, Task<RuntimeValue>> CompileMethod(MethodInfo method, object instance)
@@ -372,19 +342,42 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 编译委托为可执行函数
-        /// </summary>
-        private Func<List<RuntimeValue>, Task<RuntimeValue>> CompileDelegate(Delegate function)
-        {
-            return CompileMethod(function.Method, function.Target);
-        }
-
-        /// <summary>
         /// 注册内置函数
         /// </summary>
         public void RegisterFunction(string name, Delegate function)
         {
-            _compiledFunctions[name] = CompileDelegate(function);
+            _compiledFunctions[name] = CompileMethod(function.Method, function.Target);
+        }
+        
+        /// <summary>
+        /// 注册对象实例的方法作为脚本函数
+        /// </summary>
+        public void RegisterObjectFunctions(string objectName, object instance)
+        {
+            if (instance == null)
+            {
+                Debug.LogError("注册对象实例的方法作为脚本函数时，对象实例不能为null");
+                return;
+            }
+
+            // 获取所有非Object基类的公共实例方法
+            var methods = instance.GetType()
+                .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                .Where(m => m.DeclaringType != typeof(object));
+
+            foreach (var method in methods)
+            {
+                string funcName = $"{objectName}__{method.Name}";
+                try
+                {
+                    _compiledFunctions[funcName] = CompileMethod(method, instance);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"注册 {funcName} 时出错: {ex.Message}");
+                    // 继续处理其他方法
+                }
+            }
         }
 
         /// <summary>
@@ -451,17 +444,20 @@ namespace MookDialogueScript
         [ScriptFunc("log")]
         public static void Log(string message, string type = "log")
         {
-            if (type == "log")
+            switch (type)
             {
-                Debug.Log(message);
-            }
-            else if (type == "warn")
-            {
-                Debug.LogWarning(message);
-            }
-            else if (type == "error")
-            {
-                Debug.LogError(message);
+                case "log":
+                    Debug.Log(message);
+                    break;
+                case "warn":
+                    Debug.LogWarning(message);
+                    break;
+                case "error":
+                    Debug.LogError(message);
+                    break;
+                default:
+                    Debug.Log(message);
+                    break;
             }
         }
 
@@ -479,7 +475,7 @@ namespace MookDialogueScript
         /// 返回一个介于 0 和 1 之间的随机数
         /// </summary>
         [ScriptFunc("random")]
-        public static double Random_Float(int digits = 2)
+        public static double Random(int digits = 2)
         {
             return Math.Round(new System.Random().NextDouble(), digits);
         }
@@ -488,7 +484,7 @@ namespace MookDialogueScript
         /// 返回一个介于 min 和 max 之间的随机数
         /// </summary>
         [ScriptFunc("random_range")]
-        public static double Random_Float_Range(float min, float max, int digits = 2)
+        public static double Random_Range(float min, float max, int digits = 2)
         {
             return Math.Round(new System.Random().NextDouble() * (max - min) + min, digits);
         }
@@ -497,7 +493,7 @@ namespace MookDialogueScript
         /// 介于 1 和 sides 之间（含 1 和 sides ）的随机整数
         /// </summary>
         [ScriptFunc("dice")]
-        public static int Random_Dice(int sides)
+        public static int Dice(int sides)
         {
             return new System.Random().Next(1, sides + 1);
         }

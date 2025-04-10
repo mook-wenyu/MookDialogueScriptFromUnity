@@ -35,15 +35,8 @@ namespace MookDialogueScript
         /// <param name="extensions">脚本文件扩展名数组（包含点号，如 .txt, .mds）</param>
         public DefaultDialogueLoader(string rootDir, string[] extensions = null)
         {
-            if (string.IsNullOrEmpty(rootDir))
-            {
-                _rootDir = "DialogueScripts";
-            }
-            else
-            {
-                _rootDir = rootDir;
-            }
-            _extensions = extensions ?? new[] { ".txt", ".mds" };
+            _rootDir = string.IsNullOrEmpty(rootDir) ? "DialogueScripts" : rootDir;
+            _extensions = extensions ?? new[] {".txt", ".mds"};
         }
 
         /// <summary>
@@ -68,24 +61,20 @@ namespace MookDialogueScript
         /// 加载脚本内容
         /// </summary>
         private void LoadScriptContent(string scriptContent,
-            Runner runner, string filePath = "")
+            Runner runner, string filePath)
         {
             try
             {
                 // 创建词法分析器
                 var lexer = new Lexer(scriptContent);
-
                 // 创建语法分析器
                 var parser = new Parser(lexer.Tokenize());
-                var scriptNode = parser.Parse();
-
                 // 注册脚本节点
-                runner.RegisterScript(scriptNode);
+                runner.RegisterScript(parser.Parse());
             }
             catch (Exception ex)
             {
-                string fileInfo = string.IsNullOrEmpty(filePath) ? "" : $" (文件: {filePath})";
-                Debug.LogError($"解析脚本内容时出错{fileInfo}: {ex}");
+                Debug.LogError($"解析脚本内容时出错 (文件: {filePath}): {ex}");
             }
         }
     }

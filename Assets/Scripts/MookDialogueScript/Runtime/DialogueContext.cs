@@ -60,9 +60,7 @@ namespace MookDialogueScript
         {
             if (Value == null)
                 return "null";
-            if (Type == ValueType.Boolean)
-                return Value.ToString().ToLower();
-            return Value.ToString();
+            return Type == ValueType.Boolean ? Value.ToString().ToLower() : Value.ToString();
         }
     }
 
@@ -104,12 +102,8 @@ namespace MookDialogueScript
         /// <returns>节点</returns>
         public NodeDefinitionNode GetNode(string name)
         {
-            if (!_nodes.TryGetValue(name, out NodeDefinitionNode value))
-            {
-                Debug.LogError($"找不到节点 '{name}'");
-                throw new KeyNotFoundException($"找不到节点 '{name}'");
-            }
-            return value;
+            if (_nodes.TryGetValue(name, out var value)) return value;
+            throw new KeyNotFoundException($"找不到节点 '{name}'");
         }
 
         /// <summary>
@@ -122,6 +116,16 @@ namespace MookDialogueScript
         }
 
         /// <summary>
+        /// 注册对象实例的所有属性和字段作为脚本变量
+        /// </summary>
+        /// <param name="objectName">对象名称（用作变量名称的前缀）</param>
+        /// <param name="instance">对象实例</param>
+        public void RegisterObjectPropertiesAndFields(string objectName, object instance)
+        {
+            _variableManager.RegisterObjectPropertiesAndFields(objectName, instance);
+        }
+
+        /// <summary>
         /// 注册内置变量
         /// </summary>
         /// <param name="name">变量名</param>
@@ -130,16 +134,6 @@ namespace MookDialogueScript
         public void RegisterBuiltinVariable(string name, Func<object> getter, Action<object> setter)
         {
             _variableManager.RegisterBuiltinVariable(name, getter, setter);
-        }
-
-        /// <summary>
-        /// 注册对象实例的属性作为脚本变量
-        /// </summary>
-        /// <param name="objectName">对象名称（用作变量名称的前缀）</param>
-        /// <param name="instance">对象实例</param>
-        public void RegisterObjectProperties(string objectName, object instance)
-        {
-            _variableManager.RegisterObjectProperties(objectName, instance);
         }
 
         /// <summary>
@@ -209,16 +203,6 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 注册内置函数
-        /// </summary>
-        /// <param name="name">函数名</param>
-        /// <param name="function">函数</param>
-        public void RegisterFunction(string name, Delegate function)
-        {
-            _functionManager.RegisterFunction(name, function);
-        }
-
-        /// <summary>
         /// 注册对象实例的方法作为脚本函数
         /// </summary>
         /// <param name="objectName">对象名称（用作函数名称的前缀）</param>
@@ -226,6 +210,16 @@ namespace MookDialogueScript
         public void RegisterObjectFunctions(string objectName, object instance)
         {
             _functionManager.RegisterObjectFunctions(objectName, instance);
+        }
+
+        /// <summary>
+        /// 注册内置函数
+        /// </summary>
+        /// <param name="name">函数名</param>
+        /// <param name="function">函数</param>
+        public void RegisterFunction(string name, Delegate function)
+        {
+            _functionManager.RegisterFunction(name, function);
         }
 
         /// <summary>
@@ -269,19 +263,11 @@ namespace MookDialogueScript
             try
             {
                 // 获取指定节点
-                if (!_nodes.TryGetValue(nodeName, out NodeDefinitionNode node))
-                {
-                    Debug.LogWarning($"节点 {nodeName} 不存在");
-                    return null;
-                }
+                if (_nodes.TryGetValue(nodeName, out var node)) return node.Metadata.GetValueOrDefault(key, null);
+                Debug.LogWarning($"节点 {nodeName} 不存在");
+                return null;
 
                 // 如果元数据中不包含指定键，返回null
-                if (!node.Metadata.TryGetValue(key, out string value))
-                {
-                    return null;
-                }
-
-                return value;
             }
             catch (Exception ex)
             {
@@ -300,13 +286,10 @@ namespace MookDialogueScript
             try
             {
                 // 获取指定节点
-                if (!_nodes.TryGetValue(nodeName, out NodeDefinitionNode node))
-                {
-                    Debug.LogWarning($"节点 {nodeName} 不存在");
-                    return null;
-                }
+                if (_nodes.TryGetValue(nodeName, out var node)) return node.Metadata;
+                Debug.LogWarning($"节点 {nodeName} 不存在");
+                return null;
 
-                return node.Metadata;
             }
             catch (Exception ex)
             {

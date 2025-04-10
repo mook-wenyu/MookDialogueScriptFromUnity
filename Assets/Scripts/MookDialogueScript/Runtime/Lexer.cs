@@ -34,7 +34,7 @@ namespace MookDialogueScript
         private char _stringQuoteType;  // 当前字符串模式的引号类型
         private bool _isInOptionTextMode; // 是否在选项文本模式中（->后）
 
-
+        // 关键字
         private static readonly Dictionary<string, TokenType> _keywords = new(StringComparer.OrdinalIgnoreCase)
         {
             {"if", TokenType.IF},
