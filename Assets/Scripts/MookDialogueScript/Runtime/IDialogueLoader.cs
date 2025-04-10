@@ -1,5 +1,4 @@
 using System;
-using UnityEngine;
 
 namespace MookDialogueScript
 {
@@ -44,11 +43,11 @@ namespace MookDialogueScript
         public void LoadScripts(Runner runner)
         {
             // 加载所有对话脚本
-            var assets = Resources.LoadAll(_rootDir);
+            var assets = UnityEngine.Resources.LoadAll(_rootDir);
 
             foreach (var asset in assets)
             {
-                var textAsset = asset as TextAsset;
+                var textAsset = asset as UnityEngine.TextAsset;
                 if (textAsset != null)
                 {
                     LoadScriptContent(textAsset.text, runner, asset.name);
@@ -73,7 +72,7 @@ namespace MookDialogueScript
             }
             catch (Exception ex)
             {
-                Debug.LogError($"解析脚本内容时出错 (文件: {filePath}): {ex}");
+                MLogger.Error($"解析脚本内容时出错 (文件: {filePath}): {ex}");
             }
         }
     }

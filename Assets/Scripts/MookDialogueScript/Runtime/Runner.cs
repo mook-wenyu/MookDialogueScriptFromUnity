@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using UnityEngine;
 
 namespace MookDialogueScript
 {
@@ -83,8 +82,6 @@ namespace MookDialogueScript
 
         public Runner(IDialogueLoader loader)
         {
-            // 初始化日志系统
-            MLogger.Initialize();
             // 初始化对话上下文
             _context = new DialogueContext();
             // 初始化表达式解释器

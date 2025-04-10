@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
-using UnityEngine;
 
 namespace MookDialogueScript
 {
@@ -165,7 +164,7 @@ namespace MookDialogueScript
             {
                 if (value.Type != RuntimeValue.ValueType.Number)
                 {
-                    Debug.LogError($"期望数字类型用于 '{targetType.Name}'，但得到了{GetTypeName(value.Type)}");
+                    MLogger.Error($"期望数字类型用于 '{targetType.Name}'，但得到了{GetTypeName(value.Type)}");
                 }
                 return Convert.ChangeType(value.Value, targetType);
             }
@@ -174,7 +173,7 @@ namespace MookDialogueScript
             {
                 if (value.Type != RuntimeValue.ValueType.String)
                 {
-                    Debug.LogError($"期望字符串类型用于 '{targetType.Name}'，但得到了{GetTypeName(value.Type)}");
+                    MLogger.Error($"期望字符串类型用于 '{targetType.Name}'，但得到了{GetTypeName(value.Type)}");
                 }
                 return value.Value;
             }
@@ -183,7 +182,7 @@ namespace MookDialogueScript
             {
                 if (value.Type != RuntimeValue.ValueType.Boolean)
                 {
-                    Debug.LogError($"期望布尔类型用于 '{targetType.Name}'，但得到了{GetTypeName(value.Type)}");
+                    MLogger.Error($"期望布尔类型用于 '{targetType.Name}'，但得到了{GetTypeName(value.Type)}");
                 }
                 return value.Value;
             }
@@ -194,7 +193,7 @@ namespace MookDialogueScript
             }
 
             // 不支持的类型
-            Debug.LogError($"不支持的参数类型转换: {targetType.Name}");
+            MLogger.Error($"不支持的参数类型转换: {targetType.Name}");
             // 返回类型的默认值而不是抛出异常
             return targetType.IsValueType ? Activator.CreateInstance(targetType) : null;
         }
@@ -219,18 +218,21 @@ namespace MookDialogueScript
         /// </summary>
         private RuntimeValue ConvertToRuntimeValue(object value)
         {
-            if (value == null)
-                return RuntimeValue.Null;
+            switch (value)
+            {
+                case null:
+                    return RuntimeValue.Null;
+                case double or int or float or long:
+                    return new RuntimeValue(Convert.ToDouble(value));
+                case string strValue:
+                    return new RuntimeValue(strValue);
+                case bool boolValue:
+                    return new RuntimeValue(boolValue);
+                default:
+                    MLogger.Error($"不支持的返回值类型: {value.GetType().Name}，将返回空值");
+                    return RuntimeValue.Null;
+            }
 
-            if (value is double || value is int || value is float)
-                return new RuntimeValue(Convert.ToDouble(value));
-            else if (value is string strValue)
-                return new RuntimeValue(strValue);
-            else if (value is bool boolValue)
-                return new RuntimeValue(boolValue);
-
-            Debug.LogError($"不支持的返回值类型: {value.GetType().Name}，将返回空值");
-            return RuntimeValue.Null; // 返回空值而不是抛出异常
         }
 
         #endregion
@@ -281,13 +283,13 @@ namespace MookDialogueScript
                     }
                     catch (Exception ex)
                     {
-                        Debug.LogError($"无法为函数 '{funcName}' 创建适配器: {ex.Message}");
+                        MLogger.Error($"无法为函数 '{funcName}' 创建适配器: {ex}");
                     }
                 }
             }
             catch (Exception ex)
             {
-                Debug.LogError($"扫描程序集 {assembly.FullName} 时出错: {ex.Message}");
+                MLogger.Error($"扫描程序集 {assembly.FullName} 时出错: {ex}");
                 // 继续尝试扫描其他程序集
             }
         }
@@ -328,14 +330,9 @@ namespace MookDialogueScript
 
                     return ConvertToRuntimeValue(result);
                 }
-                catch (TargetInvocationException ex)
-                {
-                    Debug.LogError($"调用函数 '{method.Name}' 时出错: {ex.InnerException?.Message}");
-                    return RuntimeValue.Null;
-                }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"调用函数 '{method.Name}' 时出错: {ex.Message}");
+                    MLogger.Error($"调用函数 '{method.Name}' 时出错: {ex}");
                     return RuntimeValue.Null;
                 }
             };
@@ -356,7 +353,7 @@ namespace MookDialogueScript
         {
             if (instance == null)
             {
-                Debug.LogError("注册对象实例的方法作为脚本函数时，对象实例不能为null");
+                MLogger.Error("注册对象实例的方法作为脚本函数时，对象实例不能为null");
                 return;
             }
 
@@ -374,7 +371,7 @@ namespace MookDialogueScript
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"注册 {funcName} 时出错: {ex.Message}");
+                    MLogger.Error($"注册 {funcName} 时出错: {ex}");
                     // 继续处理其他方法
                 }
             }
@@ -416,12 +413,12 @@ namespace MookDialogueScript
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"调用函数 '{name}' 时出错: {ex.Message}");
+                    MLogger.Error($"调用函数 '{name}' 时出错: {ex}");
                     return RuntimeValue.Null; // 返回空值
                 }
             }
 
-            Debug.LogError($"函数 '{name}' 未找到");
+            MLogger.Error($"函数 '{name}' 未找到");
             return RuntimeValue.Null; // 返回空值而不是抛出异常
         }
 
@@ -432,31 +429,22 @@ namespace MookDialogueScript
         /// <summary>
         /// 输出日志
         /// </summary>
-        [ScriptFunc("cs_log")]
-        public static void CsLog(string message)
-        {
-            Debug.Log($"[LOG] {message}");
-        }
-
-        /// <summary>
-        /// 输出日志
-        /// </summary>
         [ScriptFunc("log")]
-        public static void Log(string message, string type = "log")
+        public static void Log(string message, string type = "info")
         {
             switch (type)
             {
-                case "log":
-                    Debug.Log(message);
+                case "info":
+                    MLogger.Info(message);
                     break;
                 case "warn":
-                    Debug.LogWarning(message);
+                    MLogger.Warning(message);
                     break;
                 case "error":
-                    Debug.LogError(message);
+                    MLogger.Error(message);
                     break;
                 default:
-                    Debug.Log(message);
+                    MLogger.Info(message);
                     break;
             }
         }

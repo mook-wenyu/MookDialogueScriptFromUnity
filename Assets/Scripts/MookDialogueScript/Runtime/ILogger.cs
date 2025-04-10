@@ -31,21 +31,7 @@ namespace MookDialogueScript
     /// </summary>
     public static class MLogger
     {
-        private static ILogger _logger;
-
-        public static void Initialize()
-        {
-        #if UNITY_2017_1_OR_NEWER
-            // Unity环境
-            _logger = new UnityLogger();
-        #elif GODOT
-        // Godot环境
-        _logger = new GodotLogger();
-        #else
-        // 其他环境（控制台）
-        _logger = new ConsoleLogger();
-        #endif
-        }
+        private static ILogger _logger = new UnityLogger();
 
         /// <summary>
         /// 初始化日志系统
