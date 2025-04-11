@@ -89,16 +89,6 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 检查节点是否是首次访问
-        /// </summary>
-        /// <param name="nodeName">节点名称</param>
-        /// <returns>是否是首次访问</returns>
-        public bool IsFirstVisit(string nodeName)
-        {
-            return GetNodeVisitCount(nodeName) == 1;
-        }
-
-        /// <summary>
         /// 清除特定节点的访问记录
         /// </summary>
         /// <param name="nodeName">节点名称</param>

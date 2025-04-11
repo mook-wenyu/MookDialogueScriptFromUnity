@@ -117,7 +117,6 @@ namespace MookDialogueScript
             // 注册内置函数
             _context.RegisterFunction("visited", (Func<string, bool>)(nodeName => _storage.HasVisitedNode(nodeName)));
             _context.RegisterFunction("visit_count", (Func<string, int>)(nodeName => _storage.GetNodeVisitCount(nodeName)));
-            _context.RegisterFunction("is_first_visit", (Func<string, bool>)(nodeName => _storage.IsFirstVisit(nodeName)));
         }
 
         /// <summary>

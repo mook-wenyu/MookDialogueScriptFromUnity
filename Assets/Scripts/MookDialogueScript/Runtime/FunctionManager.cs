@@ -500,9 +500,14 @@ namespace MookDialogueScript
         /// 介于 1 和 sides 之间（含 1 和 sides ）的随机整数
         /// </summary>
         [ScriptFunc("dice")]
-        public static int Dice(int sides)
+        public static int Dice(int sides, int count = 1)
         {
-            return new System.Random().Next(1, sides + 1);
+            int total = 0;
+            for (int i = 0; i < count; i++)
+            {
+                total += new System.Random().Next(1, sides + 1);
+            }
+            return total;
         }
 
         #endregion

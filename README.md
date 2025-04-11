@@ -705,6 +705,118 @@ public class DialogueMgr : MonoBehaviour
 
 ```
 
+### 内置函数
+
+MookDialogueScript 提供了一系列内置函数，可以直接在脚本中使用，无需额外注册。
+
+#### visited(string node_name)
+
+检查指定节点是否已被访问过。
+- 参数: 
+  - `node_name`: 节点名称
+- 返回值: 布尔值，表示指定节点是否已访问
+
+```mds
+// 检查节点 "shop" 是否已被访问
+if visited("shop")
+    商人: 欢迎再次光临！
+else
+    商人: 这是你第一次来我的商店吧？
+endif
+```
+
+#### visit_count(string node_name)
+
+返回指定节点被访问的次数。
+- 参数:
+  - `node_name`: 节点名称
+- 返回值: 整数，表示节点被访问的次数
+
+```mds
+// 获取节点 "shop" 的访问次数
+var $shop_visits visit_count("shop")
+商人: 这是你第{$shop_visits}次来我的商店。
+
+// 在条件判断中使用
+if visit_count("shop") > 3
+    商人: 看来你很喜欢我的商店！
+endif
+```
+
+#### concat(string str1, string str2, ...)
+
+连接多个字符串。
+- 参数:
+  - `str1, str2, ...`: 要连接的字符串参数，可以是变量或字面量
+- 返回值: 字符串，表示连接后的结果
+
+```mds
+// 连接字符串和变量
+var $full_name concat($first_name, " ", $last_name)
+
+// 在插值中使用
+商人: 你好，{concat($title, " ", $player__name)}！
+```
+
+#### random(int digits = 2)
+
+返回 0 到 1 之间的随机浮点数，可以指定小数位数。
+- 参数:
+  - `digits`: 小数点后的位数，默认为2位
+- 返回值: 浮点数，范围在 [0.0, 1.0) 之间
+
+```mds
+// 获取随机数（默认2位小数）
+var $chance random()
+
+// 获取随机数（4位小数）
+var $precise_chance random(4)
+
+// 在条件判断中使用
+if random() > 0.7
+    商人: 今天运气不错，给你打个折！
+endif
+```
+
+#### random_range(float min, float max, int digits = 2)
+
+返回指定范围内的随机浮点数，可以指定小数位数。
+- 参数:
+  - `min`: 最小值（包含）
+  - `max`: 最大值（包含）
+  - `digits`: 小数点后的位数，默认为2位
+- 返回值: 浮点数，范围在 [min, max] 之间
+
+```mds
+// 获取 1 到 10 之间的随机整数
+var $random_number random_range(1, 10)
+
+// 获取 0.5 到 1.5 之间的随机浮点数（3位小数）
+var $random_float random_range(0.5, 1.5, 3)
+
+// 在对话中使用
+商人: 今天的汇率是...{random_range(6.8, 7.2, 4)}！
+```
+
+#### dice(int sides, int count = 1)
+
+模拟掷骰子，返回指定数量和面数骰子的总和。
+- 参数:
+  - `sides`: 骰子面数
+  - `count`: 骰子数量，默认为1
+- 返回值: 整数，表示所有骰子点数的总和
+
+```mds
+// 掷一个六面骰子 (1d6)
+var $roll dice(6)
+
+// 掷三个八面骰子 (3d8)
+var $damage dice(8, 3)
+
+// 在对话中使用
+战士: 我攻击敌人，造成了{dice(6, 2)}点伤害！
+```
+
 ## 开源协议
 
 本项目采用 Apache License 2.0 开源协议。详情请参阅 [LICENSE](LICENSE.txt) 文件。
