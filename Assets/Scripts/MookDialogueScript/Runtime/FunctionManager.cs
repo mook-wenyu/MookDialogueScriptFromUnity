@@ -173,9 +173,9 @@ namespace MookDialogueScript
             {
                 if (value.Type != RuntimeValue.ValueType.String)
                 {
-                    MLogger.Error($"期望字符串类型用于 '{targetType.Name}'，但得到了{GetTypeName(value.Type)}");
+                    MLogger.Warning($"期望字符串类型用于 '{targetType.Name}'，但得到了{GetTypeName(value.Type)}");
                 }
-                return value.Value;
+                return value.Value.ToString();
             }
             // 布尔类型转换
             else if (targetType == typeof(bool))
@@ -184,7 +184,7 @@ namespace MookDialogueScript
                 {
                     MLogger.Error($"期望布尔类型用于 '{targetType.Name}'，但得到了{GetTypeName(value.Type)}");
                 }
-                return value.Value;
+                return Convert.ChangeType(value.Value, targetType);
             }
             // 引用类型和可空值类型
             else if (targetType.IsClass || (targetType.IsValueType && Nullable.GetUnderlyingType(targetType) != null))
@@ -345,7 +345,7 @@ namespace MookDialogueScript
         {
             _compiledFunctions[name] = CompileMethod(function.Method, function.Target);
         }
-        
+
         /// <summary>
         /// 注册对象实例的方法作为脚本函数
         /// </summary>
@@ -454,9 +454,28 @@ namespace MookDialogueScript
         /// </summary>
         [ScriptFunc("concat")]
         public static string Concat(string str1, string str2 = "", string str3 = "", string str4 = "",
-            string str5 = "", string str6 = "", string str7 = "", string str8 = "")
+            string str5 = "", string str6 = "", string str7 = "", string str8 = "",
+            string str9 = "", string str10 = "", string str11 = "", string str12 = "",
+            string str13 = "", string str14 = "", string str15 = "", string str16 = "")
         {
-            return str1 + str2 + str3 + str4 + str5 + str6 + str7 + str8;
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            if (!string.IsNullOrEmpty(str1)) sb.Append(str1);
+            if (!string.IsNullOrEmpty(str2)) sb.Append(str2);
+            if (!string.IsNullOrEmpty(str3)) sb.Append(str3);
+            if (!string.IsNullOrEmpty(str4)) sb.Append(str4);
+            if (!string.IsNullOrEmpty(str5)) sb.Append(str5);
+            if (!string.IsNullOrEmpty(str6)) sb.Append(str6);
+            if (!string.IsNullOrEmpty(str7)) sb.Append(str7);
+            if (!string.IsNullOrEmpty(str8)) sb.Append(str8);
+            if (!string.IsNullOrEmpty(str9)) sb.Append(str9);
+            if (!string.IsNullOrEmpty(str10)) sb.Append(str10);
+            if (!string.IsNullOrEmpty(str11)) sb.Append(str11);
+            if (!string.IsNullOrEmpty(str12)) sb.Append(str12);
+            if (!string.IsNullOrEmpty(str13)) sb.Append(str13);
+            if (!string.IsNullOrEmpty(str14)) sb.Append(str14);
+            if (!string.IsNullOrEmpty(str15)) sb.Append(str15);
+            if (!string.IsNullOrEmpty(str16)) sb.Append(str16);
+            return sb.ToString();
         }
 
         /// <summary>

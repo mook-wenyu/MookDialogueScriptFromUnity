@@ -31,7 +31,7 @@ namespace MookDialogueScript
     /// </summary>
     public static class MLogger
     {
-        private static ILogger _logger = new UnityLogger();
+        private static ILogger _logger = new ConsoleLogger();
 
         /// <summary>
         /// 初始化日志系统
@@ -75,34 +75,39 @@ namespace MookDialogueScript
         }
     }
 
-#if UNITY_2017_1_OR_NEWER
     /// <summary>
-    /// Unity引擎的日志实现
+    /// 控制台日志实现
     /// </summary>
-    public class UnityLogger : ILogger
+    public class ConsoleLogger : ILogger
     {
         public void Log(string message, LogLevel level = LogLevel.Info,
             string filePath = "", int lineNumber = 0, string memberName = "")
         {
-            string formattedMessage = $"[{memberName}] {message}\n在 {filePath}:行{lineNumber}";
+            string formattedMessage = $"[{level}][{memberName}] {message}\n在 {filePath}:行{lineNumber}";
 
             switch (level)
             {
                 case LogLevel.Debug:
                 case LogLevel.Info:
-                    UnityEngine.Debug.Log(formattedMessage);
+                    Console.WriteLine(formattedMessage);
                     break;
                 case LogLevel.Warning:
-                    UnityEngine.Debug.LogWarning(formattedMessage);
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine(formattedMessage);
+                    Console.ResetColor();
                     break;
                 case LogLevel.Error:
-                    UnityEngine.Debug.LogError(formattedMessage);
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine(formattedMessage);
+                    Console.ResetColor();
+                    break;
+                default:
+                    Console.WriteLine(formattedMessage);
                     break;
             }
         }
     }
-#endif
-
+    
 #if GODOT
 /// <summary>
 /// Godot引擎的日志实现
@@ -133,33 +138,4 @@ public class GodotLogger : ILogger
 }
 #endif
 
-    /// <summary>
-    /// 控制台日志实现（用于非游戏引擎环境）
-    /// </summary>
-    public class ConsoleLogger : ILogger
-    {
-        public void Log(string message, LogLevel level = LogLevel.Info,
-            string filePath = "", int lineNumber = 0, string memberName = "")
-        {
-            string formattedMessage = $"[{level}][{memberName}] {message}\n在 {filePath}:行{lineNumber}";
-
-            switch (level)
-            {
-                case LogLevel.Debug:
-                case LogLevel.Info:
-                    Console.WriteLine(formattedMessage);
-                    break;
-                case LogLevel.Warning:
-                    Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.WriteLine(formattedMessage);
-                    Console.ResetColor();
-                    break;
-                case LogLevel.Error:
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine(formattedMessage);
-                    Console.ResetColor();
-                    break;
-            }
-        }
-    }
 }

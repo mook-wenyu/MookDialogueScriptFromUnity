@@ -12,6 +12,7 @@ namespace MookDialogueScript
     {
         private readonly DialogueContext _context;
         private readonly Interpreter _interpreter;
+        private DialogueStorage _storage;
 
         private string _currentSectionId = "";
         /// <summary>
@@ -41,6 +42,11 @@ namespace MookDialogueScript
 
         // AST节点执行栈，用于跟踪嵌套执行
         private Stack<(ASTNode node, int index)> _executionStack = new Stack<(ASTNode node, int index)>();
+
+        /// <summary>
+        /// 获取当前对话存储
+        /// </summary>
+        public DialogueStorage Storage => _storage;
 
         /// <summary>
         /// 对话开始事件
@@ -82,11 +88,15 @@ namespace MookDialogueScript
 
         public Runner(IDialogueLoader loader)
         {
+            // 初始化日志系统
+            MLogger.Initialize(new UnityLogger());
+
             // 初始化对话上下文
             _context = new DialogueContext();
             // 初始化表达式解释器
             _interpreter = new Interpreter(_context);
-            // 初始化对话脚本加载器
+            // 初始化存储
+            _storage = new DialogueStorage();
 
             // 重置状态
             _conditionStates.Clear();
@@ -95,8 +105,41 @@ namespace MookDialogueScript
             // 清空执行栈
             _executionStack.Clear();
 
+            // 注册内置函数
+            RegisterBuiltinFunctions();
+
             // 加载脚本
             loader.LoadScripts(this);
+        }
+
+        private void RegisterBuiltinFunctions()
+        {
+            // 注册内置函数
+            _context.RegisterFunction("visited", (Func<string, bool>)(nodeName => _storage.HasVisitedNode(nodeName)));
+            _context.RegisterFunction("visit_count", (Func<string, int>)(nodeName => _storage.GetNodeVisitCount(nodeName)));
+            _context.RegisterFunction("is_first_visit", (Func<string, bool>)(nodeName => _storage.IsFirstVisit(nodeName)));
+        }
+
+        /// <summary>
+        /// 设置对话存储
+        /// </summary>
+        /// <param name="storage">对话存储实例</param>
+        public void SetStorage(DialogueStorage storage)
+        {
+            _storage = storage;
+            // 应用存储的变量
+            storage.ApplyToContext(_context);
+        }
+
+        /// <summary>
+        /// 获取当前对话存储
+        /// </summary>
+        /// <returns>对话存储</returns>
+        public DialogueStorage GetCurrentStorage()
+        {
+            // 更新存储中的变量
+            _storage.UpdateFromContext(_context);
+            return _storage;
         }
 
         /// <summary>
@@ -121,16 +164,6 @@ namespace MookDialogueScript
                 return currentIndex + 1;
             }
             return -1;
-        }
-
-        /// <summary>
-        /// 获取变量值
-        /// </summary>
-        /// <param name="name">变量名</param>
-        /// <returns>变量值</returns>
-        public RuntimeValue GetVariable(string name)
-        {
-            return _context.GetVariable(name);
         }
 
         /// <summary>
@@ -165,6 +198,16 @@ namespace MookDialogueScript
         }
 
         /// <summary>
+        /// 获取变量值
+        /// </summary>
+        /// <param name="name">变量名</param>
+        /// <returns>变量值</returns>
+        public RuntimeValue GetVariable(string name)
+        {
+            return _context.GetVariable(name);
+        }
+
+        /// <summary>
         /// 注册对象实例，将其属性和字段注册为变量，方法注册为函数
         /// </summary>
         /// <param name="name">对象名</param>
@@ -192,24 +235,6 @@ namespace MookDialogueScript
         public Dictionary<string, string> GetRegisteredFunctions()
         {
             return _context.GetRegisteredFunctions();
-        }
-
-        /// <summary>
-        /// 获取所有脚本变量（用于保存游戏状态）
-        /// </summary>
-        /// <returns>脚本变量的字典</returns>
-        public Dictionary<string, RuntimeValue> GetScriptVariables()
-        {
-            return _context.GetScriptVariables();
-        }
-
-        /// <summary>
-        /// 加载脚本变量（用于加载游戏状态）
-        /// </summary>
-        /// <param name="variables">要加载的脚本变量字典</param>
-        public void LoadScriptVariables(Dictionary<string, RuntimeValue> variables)
-        {
-            _context.LoadScriptVariables(variables);
         }
 
         /// <summary>
@@ -254,7 +279,7 @@ namespace MookDialogueScript
             catch (Exception ex)
             {
                 MLogger.Error($"找不到起始节点 '{startNodeName}': {ex}");
-                return; // 直接返回而不是抛出异常
+                return;
             }
 
             // 生成新的对话标识符并记录小节开始
@@ -273,13 +298,16 @@ namespace MookDialogueScript
             if (startContentIndex < 0 || startContentIndex >= startNode.Content.Count)
             {
                 MLogger.Error($"起始内容索引无效: {startContentIndex}");
-                startContentIndex = 0; // 使用默认值0而不是抛出异常
+                startContentIndex = 0;
             }
             // 将当前节点压入栈
             _executionStack.Push((startNode, startContentIndex));
 
             // 触发节点开始事件
             OnNodeStarted?.Invoke(startNodeName);
+
+            // 记录节点访问
+            _storage.RecordNodeVisit(startNodeName);
 
             // 显示第一个内容
             await Continue();
@@ -294,21 +322,21 @@ namespace MookDialogueScript
             if (_isExecuting)
             {
                 MLogger.Warning("当前正在执行中，请等待执行完成");
-                return; // 直接返回而不是抛出异常
+                return;
             }
 
             // 如果执行栈为空，无法继续执行
             if (_executionStack.Count == 0)
             {
                 MLogger.Error("没有当前执行上下文");
-                return; // 直接返回而不是抛出异常
+                return;
             }
 
             // 如果正在收集选项，并且已经有选项，则处理选项
             if (_isCollectingChoices && _currentChoices.Count > 0)
             {
                 MLogger.Warning("当前正在等待选择选项");
-                return; // 直接返回而不是抛出异常
+                return;
             }
 
             // 获取当前执行上下文
@@ -338,7 +366,7 @@ namespace MookDialogueScript
             else
             {
                 MLogger.Error($"未知的节点类型: {node.GetType().Name}");
-                await EndDialogue(true); // 结束对话而不是抛出异常
+                await EndDialogue(true);
             }
         }
 
@@ -599,7 +627,7 @@ namespace MookDialogueScript
                     _executionStack.Pop();
 
                     // 检查对话节点是否有嵌套内容
-                    if (dialogueNode.Content is {Count: > 0})
+                    if (dialogueNode.Content is { Count: > 0 })
                     {
                         // 把下一个内容的索引先压入堆栈
                         _executionStack.Push((contentContainer, index + 1));
@@ -653,7 +681,7 @@ namespace MookDialogueScript
                 if (condition.Type != RuntimeValue.ValueType.Boolean)
                 {
                     MLogger.Error("选项条件必须计算为布尔类型");
-                    return false; // 返回false而不是抛出异常
+                    return false;
                 }
                 return (bool)condition.Value;
             }
@@ -670,13 +698,13 @@ namespace MookDialogueScript
             if (_isExecuting)
             {
                 MLogger.Warning("当前正在执行中，请等待执行完成");
-                return; // 直接返回而不是抛出异常
+                return;
             }
 
             if (!_isCollectingChoices || _currentChoices.Count == 0)
             {
                 MLogger.Error("当前没有可选择的选项");
-                return; // 直接返回而不是抛出异常
+                return;
             }
 
             if (index < 0 || index >= _currentChoices.Count)
@@ -684,11 +712,11 @@ namespace MookDialogueScript
                 MLogger.Error($"选项索引无效: {index}");
                 if (_currentChoices.Count > 0)
                 {
-                    index = 0; // 使用第一个选项而不是抛出异常
+                    index = 0;
                 }
                 else
                 {
-                    return; // 没有选项可选，直接返回
+                    return;
                 }
             }
 
@@ -701,7 +729,7 @@ namespace MookDialogueScript
                 if (!conditionMet)
                 {
                     MLogger.Error($"选项条件不满足，无法选择: {index}");
-                    return; // 条件不满足，不执行该选项
+                    return;
                 }
             }
 
@@ -751,6 +779,9 @@ namespace MookDialogueScript
                 // 触发节点开始事件
                 OnNodeStarted?.Invoke(nodeName);
 
+                // 记录节点访问
+                _storage.RecordNodeVisit(nodeName);
+
                 // 开始执行
                 await Continue();
             }
@@ -799,7 +830,7 @@ namespace MookDialogueScript
             if (!force && _isExecuting)
             {
                 MLogger.Warning("当前正在执行中，请等待执行完成");
-                return; // 直接返回而不是抛出异常
+                return;
             }
 
             _currentChoices.Clear();
@@ -952,7 +983,7 @@ namespace MookDialogueScript
             }
 
             // 如果有else分支则返回else分支内容
-            return condition.ElseBranch is {Count: > 0} ? condition.ElseBranch : null;
+            return condition.ElseBranch is { Count: > 0 } ? condition.ElseBranch : null;
         }
 
         /// <summary>

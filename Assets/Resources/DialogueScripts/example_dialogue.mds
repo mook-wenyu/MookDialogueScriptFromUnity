@@ -203,7 +203,8 @@ endif
 
 --- adventure_start
 // 冒险开始场景
-这是一个神秘的森林入口，树木高耸入云。
+这是一个神秘的森林入口，树木高耸入云，进入次数 {visit_count('adventure_start')} 次。
+call log(concat("进入次数 ", visit_count('adventure_start'), " 次"))
 
 // 根据装备情况显示不同对话
 if $has_sword and $has_shield

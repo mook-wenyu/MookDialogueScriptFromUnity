@@ -455,6 +455,61 @@ endif
 
 ## 与 C# 集成
 
+### 创建 Runner
+
+Runner 是对话系统的核心组件，负责加载和执行对话脚本。创建 Runner 是使用 MookDialogueScript 的第一步。
+
+```csharp
+// 方法一：使用默认加载器（从 Resources 文件夹加载脚本）
+Runner runner = new Runner();
+
+// 方法二：指定脚本根目录
+Runner runner = new Runner("DialogueScripts");
+
+// 方法三：使用自定义加载器
+Runner runner = new Runner(new CustomDialogueLoader());
+```
+
+在 MonoBehaviour 中创建和初始化 Runner：
+```csharp
+public class DialogueMgr : MonoBehaviour
+{
+    public static DialogueMgr Instance { get; private set; }
+    public Runner RunMgrs { get; private set; }
+
+    void Awake()
+    {
+        Instance = this;
+        Initialize();
+    }
+
+    public void Initialize()
+    {
+        Debug.Log("开始初始化对话系统");
+        RunMgrs = new Runner();
+
+        // 注册对象、变量和函数
+        // ...
+    }
+}
+```
+
+### 对话状态存储 (DialogueStorage)
+
+DialogueStorage 类用于记录对话状态和变量，支持保存和加载游戏进度，是实现游戏存档功能的关键组件。
+
+在 Runner 中使用：
+```csharp
+// 获取当前存储
+DialogueStorage storage = runner.Storage;
+
+// 设置自定义存储
+runner.SetStorage(customStorage);
+
+// 获取并更新当前存储（用于保存游戏）
+DialogueStorage updatedStorage = runner.GetCurrentStorage();
+```
+
 ### 注册变量
 
 变量注册提供了多种方式，可以注册静态变量、脚本变量和C#变量，使它们在脚本中可用。所有注册的变量都支持在脚本中读取和修改。
