@@ -47,6 +47,9 @@ public class NormalDialogueUI : MonoBehaviour
     {
         Debug.Log("对话开始");
         normalDialogue.SetActive(true);
+
+        // 存档时机
+        
     }
 
     private void HandleDialogueDisplayed(DialogueNode dialogue)
@@ -109,6 +112,9 @@ public class NormalDialogueUI : MonoBehaviour
         Debug.Log("对话结束");
         normalDialogue.SetActive(false);
         btnRoot.SetActive(true);
+
+        // 存档时机
+
     }
 
     public void OnNormalClickDialogue()

@@ -14,16 +14,6 @@ namespace MookDialogueScript
         private readonly Interpreter _interpreter;
         private DialogueStorage _storage;
 
-        private string _currentSectionId = "";
-        /// <summary>
-        /// 获取当前对话的唯一标识符，如果为null则表示不在对话中
-        /// </summary>
-        public string CurrentSectionId => _currentSectionId;
-        /// <summary>
-        /// 是否在对话中
-        /// </summary>
-        public bool IsInDialogue => !string.IsNullOrEmpty(_currentSectionId);
-
         // 是否正在执行中（等待用户输入等状态）
         private bool _isExecuting = false;
 
@@ -49,7 +39,7 @@ namespace MookDialogueScript
         public DialogueStorage Storage => _storage;
 
         /// <summary>
-        /// 对话开始事件
+        /// 对话开始事件，需要存储对话状态并存档，对话结束前禁止存档
         /// </summary>
         public event Action OnDialogueStarted;
 
@@ -104,7 +94,7 @@ namespace MookDialogueScript
             _isCollectingChoices = false;
             // 清空执行栈
             _executionStack.Clear();
-
+            
             // 注册内置函数
             RegisterBuiltinFunctions();
 
@@ -264,7 +254,7 @@ namespace MookDialogueScript
         public async Task StartDialogue(string startNodeName = "start", int startContentIndex = 0, bool force = false)
         {
             // 如果当前有对话在进行，不允许开始新对话
-            if (!force && !string.IsNullOrEmpty(_currentSectionId))
+            if (!force && _storage.isInDialogue)
             {
                 MLogger.Warning("当前对话尚未结束，无法开始新的对话");
                 return;
@@ -280,9 +270,10 @@ namespace MookDialogueScript
                 MLogger.Error($"找不到起始节点 '{startNodeName}': {ex}");
                 return;
             }
+            
 
-            // 生成新的对话标识符并记录小节开始
-            _currentSectionId = Guid.NewGuid().ToString("N");
+            // 记录初始节点到存储中
+            _storage.RecordInitialNode(startNodeName);
 
             // 触发对话开始事件
             OnDialogueStarted?.Invoke();
@@ -834,7 +825,9 @@ namespace MookDialogueScript
 
             _currentChoices.Clear();
             _isCollectingChoices = false;
-            _currentSectionId = string.Empty;
+            
+            // 清除存储中的对话状态
+            _storage.ClearDialogueState();
 
             // 清空执行栈
             _executionStack.Clear();

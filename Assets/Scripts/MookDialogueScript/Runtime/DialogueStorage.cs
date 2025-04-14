@@ -12,22 +12,22 @@ namespace MookDialogueScript
         /// <summary>
         /// 已访问的节点记录
         /// </summary>
-        private Dictionary<string, int> _visitedNodes = new Dictionary<string, int>();
+        public Dictionary<string, int> visitedNodes = new Dictionary<string, int>();
 
         /// <summary>
         /// 脚本变量存储
         /// </summary>
-        private Dictionary<string, RuntimeValue> _variables = new Dictionary<string, RuntimeValue>();
+        public Dictionary<string, RuntimeValue> variables = new Dictionary<string, RuntimeValue>();
 
         /// <summary>
-        /// 获取已访问节点的记录（节点名和访问次数）
+        /// 是否正在对话中
         /// </summary>
-        public Dictionary<string, int> VisitedNodes => _visitedNodes;
+        public bool isInDialogue = false;
 
         /// <summary>
-        /// 获取所有已保存的脚本变量
+        /// 对话的初始节点名称
         /// </summary>
-        public Dictionary<string, RuntimeValue> Variables => _variables;
+        public string initialNodeName = string.Empty;
 
         /// <summary>
         /// 创建一个新的对话存储实例
@@ -45,8 +45,30 @@ namespace MookDialogueScript
             // 从DialogueContext获取所有当前的脚本变量
             if (context != null)
             {
-                _variables = new Dictionary<string, RuntimeValue>(context.GetScriptVariables());
+                variables = context.GetScriptVariables();
             }
+        }
+
+        /// <summary>
+        /// 记录初始节点
+        /// </summary>
+        /// <param name="nodeName">初始节点名称</param>
+        public void RecordInitialNode(string nodeName)
+        {
+            if (!string.IsNullOrEmpty(nodeName))
+            {
+                initialNodeName = nodeName;
+                isInDialogue = true;
+            }
+        }
+
+        /// <summary>
+        /// 清除对话状态
+        /// </summary>
+        public void ClearDialogueState()
+        {
+            isInDialogue = false;
+            initialNodeName = string.Empty;
         }
 
         /// <summary>
@@ -58,13 +80,13 @@ namespace MookDialogueScript
             if (string.IsNullOrEmpty(nodeName))
                 return;
 
-            if (_visitedNodes.ContainsKey(nodeName))
+            if (visitedNodes.ContainsKey(nodeName))
             {
-                _visitedNodes[nodeName]++;
+                visitedNodes[nodeName]++;
             }
             else
             {
-                _visitedNodes[nodeName] = 1;
+                visitedNodes[nodeName] = 1;
             }
         }
 
@@ -75,7 +97,7 @@ namespace MookDialogueScript
         /// <returns>节点是否已被访问</returns>
         public bool HasVisitedNode(string nodeName)
         {
-            return _visitedNodes.ContainsKey(nodeName) && _visitedNodes[nodeName] > 0;
+            return visitedNodes.ContainsKey(nodeName) && visitedNodes[nodeName] > 0;
         }
 
         /// <summary>
@@ -85,7 +107,7 @@ namespace MookDialogueScript
         /// <returns>节点访问次数，未访问过则返回0</returns>
         public int GetNodeVisitCount(string nodeName)
         {
-            return _visitedNodes.TryGetValue(nodeName, out int count) ? count : 0;
+            return visitedNodes.TryGetValue(nodeName, out int count) ? count : 0;
         }
 
         /// <summary>
@@ -94,9 +116,9 @@ namespace MookDialogueScript
         /// <param name="nodeName">节点名称</param>
         public void ClearNodeVisit(string nodeName)
         {
-            if (_visitedNodes.ContainsKey(nodeName))
+            if (visitedNodes.ContainsKey(nodeName))
             {
-                _visitedNodes.Remove(nodeName);
+                visitedNodes.Remove(nodeName);
             }
         }
 
@@ -105,7 +127,7 @@ namespace MookDialogueScript
         /// </summary>
         public void ClearAllNodeVisits()
         {
-            _visitedNodes.Clear();
+            visitedNodes.Clear();
         }
 
         /// <summary>
@@ -115,7 +137,7 @@ namespace MookDialogueScript
         /// <param name="value">变量值</param>
         public void SaveVariable(string name, RuntimeValue value)
         {
-            _variables[name] = value;
+            variables[name] = value;
         }
 
         /// <summary>
@@ -128,7 +150,7 @@ namespace MookDialogueScript
                 return;
 
             // 加载存储的变量到上下文
-            context.LoadScriptVariables(_variables);
+            context.LoadScriptVariables(variables);
         }
 
         /// <summary>
@@ -141,8 +163,7 @@ namespace MookDialogueScript
                 return;
 
             // 更新变量存储
-            _variables = context.GetScriptVariables();
+            variables = context.GetScriptVariables();
         }
-
     }
-} 
+}
