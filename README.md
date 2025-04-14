@@ -39,7 +39,7 @@ MookDialogueScript 是一个轻量级的对话脚本系统，专为 Unity 游戏
 4. 选择"Add package from git URL..."
 5. 输入以下 URL：
    ```
-   https://github.com/mook-wenyu/MookDialogueScriptFromUnity.git?path=Assets/Scripts/MookDialogueScript
+   https://github.com/mook-wenyu/MookDialogueScriptFromUnity.git?path=Assets/MookDialogueScript
    ```
 6. 点击"Add"按钮
 
