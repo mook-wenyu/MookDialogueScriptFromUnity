@@ -32,6 +32,7 @@ namespace MookDialogueScript
         private bool _isInStringMode;     // 是否在字符串模式中
         private char _stringQuoteType;    // 当前字符串模式的引号类型
         private bool _isInOptionTextMode; // 是否在选项文本模式中（->后）
+        private bool _isInDialogueTextMode; // 是否在对话内容模式中（角色名后）
 
         // 关键字
         private static readonly Dictionary<string, TokenType> _keywords = new(StringComparer.OrdinalIgnoreCase)
@@ -79,6 +80,7 @@ namespace MookDialogueScript
             _isInStringMode = false;
             _stringQuoteType = '\0';
             _isInOptionTextMode = false;
+            _isInDialogueTextMode = false;
         }
 
         /// <summary>
@@ -105,6 +107,18 @@ namespace MookDialogueScript
         private Token GetLastToken()
         {
             return _tokens.Count > 0 ? _tokens[_tokens.Count - 1] : null;
+        }
+
+        /// <summary>
+        /// 获取倒数第n个Token
+        /// </summary>
+        /// <param name="index">倒数第几个，从1开始</param>
+        /// <returns>对应位置的Token，如果index超出范围则返回null</returns>
+        public Token GetTokenFromLast(int index = 1)
+        {
+            if (index <= 0 || index > _tokens.Count)
+                return null;
+            return _tokens[_tokens.Count - index];
         }
 
         /// <summary>
@@ -249,8 +263,9 @@ namespace MookDialogueScript
             // 记录当前行号用于生成Token
             int currentLine = _line;
 
-            // 如果遇到换行，退出选项文本模式
+            // 如果遇到换行，退出选项文本模式和对话文本模式
             _isInOptionTextMode = false;
+            _isInDialogueTextMode = false;
             // 如果在字符串模式下遇到换行，这通常是一个错误，但我们仍然退出该模式
             if (_isInStringMode)
             {
@@ -492,12 +507,16 @@ namespace MookDialogueScript
                 hasContent = true;
             }
 
-            // 如果遇到换行，检查是否需要退出选项文本模式
+            // 如果遇到换行，检查是否需要退出文本模式
             if (_currentChar is '\n' or '\r')
             {
                 if (_isInOptionTextMode)
                 {
                     _isInOptionTextMode = false;
+                }
+                if (_isInDialogueTextMode)
+                {
+                    _isInDialogueTextMode = false;
                 }
             }
 
@@ -562,8 +581,8 @@ namespace MookDialogueScript
                     case '\u201C': closingQuote = '\u201D'; break; // 中文双引号
                 }
                 return new TextProcessingRules(
-                    truncateChars: new[] {'{', closingQuote},
-                    escapeChars: new[] {'{', '}', '\\', closingQuote}
+                    truncateChars: new[] { '{', closingQuote },
+                    escapeChars: new[] { '{', '}', '\\', closingQuote }
                 );
             }
 
@@ -571,15 +590,24 @@ namespace MookDialogueScript
             {
                 // 选项文本模式下的截断字符包括左方括号，转义字符不变
                 return new TextProcessingRules(
-                    truncateChars: new[] {'{', '[', '【'},
-                    escapeChars: new[] {'[', ']', '{', '}', '\\', '【', '】'}
+                    truncateChars: new[] { '{', '[', '【' },
+                    escapeChars: new[] { '[', ']', '{', '}', '【', '】', '\\' }
                 );
             }
 
-            // 默认模式 - 修改为支持所有引号和冒号的转义
+            if (_isInDialogueTextMode)
+            {
+                // 对话文本模式下的处理规则
+                return new TextProcessingRules(
+                    truncateChars: new[] { '#', ':', '：', '{', '[', '【' },
+                    escapeChars: new[] { '#', ':', '：', '{', '}', '[', ']', '【', '】', '\\' }
+                );
+            }
+
+            // 默认模式 - 修改为支持所有引号和冒号的转义，并添加方括号
             return new TextProcessingRules(
-                truncateChars: new[] {'#', ':', '：', '{'},
-                escapeChars: new[] {'#', ':', '：', '{', '}', '\\', '\'', '"', '\u2018', '\u2019', '\u201C', '\u201D'}
+                truncateChars: new[] { '#', ':', '：', '{', '[', '【' },
+                escapeChars: new[] { '#', ':', '：', '{', '}', '[', ']', '【', '】', '\\', '\'', '"', '\u2018', '\u2019', '\u201C', '\u201D' }
             );
         }
 
@@ -793,6 +821,11 @@ namespace MookDialogueScript
                             Advance();
                             return new Token(TokenType.DOUBLE_COLON, GetRange(startPosition, _position), _line, _column - 2);
                         }
+                        // 进入对话文本模式
+                        if (GetTokenFromLast(2).Type != TokenType.LEFT_BRACKET)
+                        {
+                            _isInDialogueTextMode = true;
+                        }
                         // 不直接处理后面的文本，只返回冒号标记
                         return new Token(TokenType.COLON, GetRange(startPosition, _position), _line, _column - 1);
 
@@ -866,6 +899,11 @@ namespace MookDialogueScript
 
                     case '[':
                     case '【':
+                        // 如果在对话文本模式下，退出该模式
+                        if (_isInDialogueTextMode)
+                        {
+                            _isInDialogueTextMode = false;
+                        }
                         // 如果在选项文本模式下，退出该模式
                         if (_isInOptionTextMode)
                         {
@@ -989,6 +1027,13 @@ namespace MookDialogueScript
             if (_isInOptionTextMode)
             {
                 return lastToken.Type == TokenType.ARROW ||
+                       lastToken.Type == TokenType.RIGHT_BRACE;
+            }
+
+            // 3. 对话文本模式: 上一个Token是冒号（旁白）或右大括号
+            if (_isInDialogueTextMode)
+            {
+                return lastToken.Type == TokenType.COLON ||
                        lastToken.Type == TokenType.RIGHT_BRACE;
             }
 
