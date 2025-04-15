@@ -43,13 +43,13 @@ public class NormalDialogueUI : MonoBehaviour
         lDialogueBtn.onClick.AddListener(OnListClickDialogue);
     }
 
-    private void HandleDialogueStarted()
+    private async Task HandleDialogueStarted()
     {
         Debug.Log("对话开始");
         normalDialogue.SetActive(true);
 
         // 存档时机
-        
+        await Task.Delay(0);
     }
 
     private void HandleDialogueDisplayed(DialogueNode dialogue)

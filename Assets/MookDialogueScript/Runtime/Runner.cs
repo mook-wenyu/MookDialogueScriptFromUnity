@@ -41,7 +41,7 @@ namespace MookDialogueScript
         /// <summary>
         /// 对话开始事件，需要存储对话状态并存档，对话结束前禁止存档
         /// </summary>
-        public event Action OnDialogueStarted;
+        public event Func<Task> OnDialogueStarted;
 
         /// <summary>
         /// 节点开始事件
@@ -64,7 +64,7 @@ namespace MookDialogueScript
         public event Action<List<ChoiceNode>> OnChoicesDisplayed;
 
         /// <summary>
-        /// 对话完成事件
+        /// 对话完成事件，存档时机
         /// </summary>
         public event Action OnDialogueCompleted;
 
@@ -276,7 +276,14 @@ namespace MookDialogueScript
             _storage.RecordInitialNode(startNodeName);
 
             // 触发对话开始事件
-            OnDialogueStarted?.Invoke();
+            if (OnDialogueStarted != null)
+            {
+                // 获取所有订阅者并等待它们全部完成
+                foreach (Func<Task> handler in OnDialogueStarted.GetInvocationList().Cast<Func<Task>>())
+                {
+                    await handler();
+                }
+            }
 
             // 重置选项收集状态
             _currentChoices.Clear();
@@ -854,6 +861,16 @@ namespace MookDialogueScript
         public async Task<string> BuildChoiceText(ChoiceNode choiceNode)
         {
             return await _interpreter.BuildText(choiceNode.Text);
+        }
+
+        /// <summary>
+        /// 构建文本
+        /// </summary>
+        /// <param name="textSegments">文本段列表</param>
+        /// <returns>构建好的文本</returns>
+        public async Task<string> BuildText(List<TextSegmentNode> textSegments)
+        {
+            return await _interpreter.BuildText(textSegments);
         }
 
         /// <summary>
