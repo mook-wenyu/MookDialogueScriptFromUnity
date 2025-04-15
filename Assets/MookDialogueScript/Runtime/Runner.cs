@@ -41,7 +41,7 @@ namespace MookDialogueScript
         /// <summary>
         /// 对话开始事件，需要存储对话状态并存档，对话结束前禁止存档
         /// </summary>
-        public event Func<Task> OnDialogueStarted;
+        public event Action OnDialogueStarted;
 
         /// <summary>
         /// 节点开始事件
@@ -276,14 +276,7 @@ namespace MookDialogueScript
             _storage.RecordInitialNode(startNodeName);
 
             // 触发对话开始事件
-            if (OnDialogueStarted != null)
-            {
-                // 获取所有订阅者并等待它们全部完成
-                foreach (Func<Task> handler in OnDialogueStarted.GetInvocationList().Cast<Func<Task>>())
-                {
-                    await handler();
-                }
-            }
+            OnDialogueStarted?.Invoke();
 
             // 重置选项收集状态
             _currentChoices.Clear();
