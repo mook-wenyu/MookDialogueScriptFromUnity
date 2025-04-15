@@ -576,10 +576,10 @@ namespace MookDialogueScript
                 );
             }
 
-            // 默认模式
+            // 默认模式 - 修改为支持所有引号和冒号的转义
             return new TextProcessingRules(
                 truncateChars: new[] {'#', ':', '：', '{'},
-                escapeChars: new[] {'#', ':', '：', '{', '}', '\\'}
+                escapeChars: new[] {'#', ':', '：', '{', '}', '\\', '\'', '"', '\u2018', '\u2019', '\u201C', '\u201D'}
             );
         }
 
