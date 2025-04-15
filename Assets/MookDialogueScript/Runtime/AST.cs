@@ -125,11 +125,6 @@ namespace MookDialogueScript
         public string Speaker { get; }
 
         /// <summary>
-        /// 表情
-        /// </summary>
-        public string Emotion { get; }
-
-        /// <summary>
         /// 文本列表
         /// </summary>
         public List<TextSegmentNode> Text { get; }
@@ -144,11 +139,10 @@ namespace MookDialogueScript
         /// </summary>
         public List<ContentNode> Content { get; }
 
-        public DialogueNode(string speaker, string emotion, List<TextSegmentNode> text, List<string> labels, List<ContentNode> content, int line, int column)
+        public DialogueNode(string speaker, List<TextSegmentNode> text, List<string> labels, List<ContentNode> content, int line, int column)
             : base(line, column)
         {
             Speaker = speaker;
-            Emotion = emotion;
             Text = text;
             Labels = labels;
             Content = content ?? new List<ContentNode>();
@@ -161,7 +155,6 @@ namespace MookDialogueScript
             : base(line, column)
         {
             Speaker = null;
-            Emotion = null;
             Text = text;
             Labels = labels;
             Content = content ?? new List<ContentNode>();
@@ -170,7 +163,7 @@ namespace MookDialogueScript
         public override string ToString()
         {
             StringBuilder sb = new StringBuilder();
-            sb.Append($"{Speaker} [{Emotion}]: ");
+            sb.Append($"{Speaker}: ");
             sb.Append(string.Join("", Text));
             if (Labels != null && Labels.Count > 0)
             {

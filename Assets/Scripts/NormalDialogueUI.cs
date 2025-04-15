@@ -63,7 +63,6 @@ public class NormalDialogueUI : MonoBehaviour
     private async Task HandleDialogueDisplayedAsync(DialogueNode dialogue)
     {
         Debug.Log($"角色：{dialogue.Speaker}");
-        Debug.Log($"情绪：{dialogue.Emotion}");
         string text = await DialogueMgr.Instance.RunMgrs.BuildDialogueText(dialogue);
         speakerText.text = !string.IsNullOrEmpty(dialogue.Speaker) ? dialogue.Speaker : "";
         contentText.text = text;
@@ -103,7 +102,13 @@ public class NormalDialogueUI : MonoBehaviour
 
     private void HandleOptionSelected(ChoiceNode choice, int index)
     {
-        DialogueMgr.Instance.RunMgrs.BuildText(choice.Text, s => Debug.Log("选择：" + (index + 1) + ". " + s));
+        _ = HandleOptionSelectedAsync(choice, index);
+    }
+
+    private async Task HandleOptionSelectedAsync(ChoiceNode choice, int index)
+    {
+        string text = await DialogueMgr.Instance.RunMgrs.BuildText(choice.Text);
+        Debug.Log($"选择：{index + 1}. {text}");
     }
 
     private void HandleDialogueCompleted()

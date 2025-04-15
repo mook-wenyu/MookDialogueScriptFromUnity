@@ -867,16 +867,6 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 构建文本
-        /// </summary>
-        /// <param name="textSegments">文本段列表</param>
-        /// <param name="callback">回调函数</param>
-        public void BuildText(List<TextSegmentNode> textSegments, Action<string> callback)
-        {
-            _interpreter.BuildText(textSegments, callback);
-        }
-
-        /// <summary>
         /// 检查是否还有下一个可显示的内容（对话、选项或跳转命令）
         /// </summary>
         /// <returns>

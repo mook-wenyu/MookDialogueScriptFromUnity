@@ -399,10 +399,9 @@ namespace MookDialogueScript
             int column = _currentToken.Column;
 
             // 检查是否是对话（有说话者+冒号）
-            bool isDialogue = CheckNext(TokenType.COLON) || CheckNext(TokenType.LEFT_BRACKET);
+            bool isDialogue = CheckNext(TokenType.COLON);
 
             string speaker = null;
-            string emotion = null;
 
             if (isDialogue)
             {
@@ -412,32 +411,6 @@ namespace MookDialogueScript
                 // 消耗当前token，可能是TEXT或IDENTIFIER
                 Consume(_currentToken.Type);
 
-                if (_currentToken.Type == TokenType.LEFT_BRACKET)
-                {
-                    // 消耗左括号
-                    Consume(TokenType.LEFT_BRACKET);
-
-                    if (_currentToken.Type == TokenType.IDENTIFIER || _currentToken.Type == TokenType.TEXT)
-                    {
-                        emotion = _currentToken.Value;
-                        // 消耗表情名称
-                        Consume(_currentToken.Type);
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望表情名称，但得到 {_currentToken.Type}");
-                    }
-
-                    if (_currentToken.Type == TokenType.RIGHT_BRACKET)
-                    {
-                        Consume(TokenType.RIGHT_BRACKET);
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望右括号，但得到 {_currentToken.Type}");
-                    }
-                }
-
                 if (_currentToken.Type == TokenType.COLON)
                 {
                     Consume(TokenType.COLON);
@@ -446,6 +419,11 @@ namespace MookDialogueScript
                 {
                     throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望冒号，但得到 {_currentToken.Type}");
                 }
+            }
+
+            if (_currentToken.Type == TokenType.COLON)
+            {
+                Consume(TokenType.COLON);
             }
 
             if (_currentToken.Type == TokenType.QUOTE)
@@ -482,7 +460,7 @@ namespace MookDialogueScript
             var content = new List<ContentNode>();
             ParseIndentedContent(content);
 
-            return new DialogueNode(speaker, emotion, text, labels, content, line, column);
+            return new DialogueNode(speaker, text, labels, content, line, column);
         }
 
         /// <summary>
