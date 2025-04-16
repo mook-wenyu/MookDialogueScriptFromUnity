@@ -33,7 +33,6 @@ public class NormalDialogueUI : MonoBehaviour
         }
         _clickHandler.onClick.AddListener(() => _ = DialogueMgr.Instance.RunMgrs.Continue());
 
-        DialogueMgr.Instance.RunMgrs.OnDialogueStarted += HandleDialogueStarted;
         DialogueMgr.Instance.RunMgrs.OnDialogueDisplayed += HandleDialogueDisplayed;
         DialogueMgr.Instance.RunMgrs.OnChoicesDisplayed += HandleChoicesDisplayed;
         DialogueMgr.Instance.RunMgrs.OnOptionSelected += HandleOptionSelected;
@@ -41,14 +40,6 @@ public class NormalDialogueUI : MonoBehaviour
 
         nDialogueBtn.onClick.AddListener(OnNormalClickDialogue);
         lDialogueBtn.onClick.AddListener(OnListClickDialogue);
-    }
-
-    private void HandleDialogueStarted()
-    {
-        Debug.Log("对话开始");
-        normalDialogue.SetActive(true);
-
-        // 存档时机
     }
 
     private void HandleDialogueDisplayed(DialogueNode dialogue)
@@ -124,18 +115,27 @@ public class NormalDialogueUI : MonoBehaviour
     public void OnNormalClickDialogue()
     {
         btnRoot.SetActive(false);
-        _ = DialogueMgr.Instance.RunMgrs.StartDialogue(inputField.text.Trim());
+        _ = DialogueMgr.Instance.RunMgrs.StartDialogue(inputField.text.Trim(), onDialogueStarted: async (nodeName) =>
+        {
+            Debug.Log($"对话开始：{nodeName}");
+            normalDialogue.SetActive(true);
+            await Task.CompletedTask;
+        });
     }
 
     public void OnListClickDialogue()
     {
         btnRoot.SetActive(false);
-        _ = DialogueMgr.Instance.RunMgrs.StartDialogue(inputField.text.Trim());
+        _ = DialogueMgr.Instance.RunMgrs.StartDialogue(inputField.text.Trim(), onDialogueStarted: async (nodeName) =>
+        {
+            Debug.Log($"对话开始：{nodeName}");
+            normalDialogue.SetActive(true);
+            await Task.CompletedTask;
+        });
     }
 
     private void OnDestroy()
     {
-        DialogueMgr.Instance.RunMgrs.OnDialogueStarted -= HandleDialogueStarted;
         DialogueMgr.Instance.RunMgrs.OnDialogueDisplayed -= HandleDialogueDisplayed;
         DialogueMgr.Instance.RunMgrs.OnChoicesDisplayed -= HandleChoicesDisplayed;
         DialogueMgr.Instance.RunMgrs.OnOptionSelected -= HandleOptionSelected;

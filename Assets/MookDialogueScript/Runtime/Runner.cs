@@ -39,11 +39,6 @@ namespace MookDialogueScript
         public DialogueStorage Storage => _storage;
 
         /// <summary>
-        /// 对话开始事件，需要存储对话状态并存档，对话结束前禁止存档
-        /// </summary>
-        public event Action OnDialogueStarted;
-
-        /// <summary>
         /// 节点开始事件
         /// </summary>
         public event Action<string> OnNodeStarted;
@@ -94,7 +89,7 @@ namespace MookDialogueScript
             _isCollectingChoices = false;
             // 清空执行栈
             _executionStack.Clear();
-            
+
             // 注册内置函数
             RegisterBuiltinFunctions();
 
@@ -251,7 +246,7 @@ namespace MookDialogueScript
         /// <param name="startContentIndex">起始内容索引，默认为0</param>
         /// <param name="force">是否强制开始，忽略当前执行状态</param>
         /// <returns>异步任务</returns>
-        public async Task StartDialogue(string startNodeName = "start", int startContentIndex = 0, bool force = false)
+        public async Task StartDialogue(string startNodeName = "start", int startContentIndex = 0, bool force = false, Func<string, Task> onDialogueStarted = null)
         {
             // 如果当前有对话在进行，不允许开始新对话
             if (!force && _storage.isInDialogue)
@@ -270,13 +265,13 @@ namespace MookDialogueScript
                 MLogger.Error($"找不到起始节点 '{startNodeName}': {ex}");
                 return;
             }
-            
+
 
             // 记录初始节点到存储中
             _storage.RecordInitialNode(startNodeName);
 
             // 触发对话开始事件
-            OnDialogueStarted?.Invoke();
+            await onDialogueStarted?.Invoke(startNodeName);
 
             // 重置选项收集状态
             _currentChoices.Clear();
@@ -825,7 +820,7 @@ namespace MookDialogueScript
 
             _currentChoices.Clear();
             _isCollectingChoices = false;
-            
+
             // 清除存储中的对话状态
             _storage.ClearDialogueState();
 
