@@ -273,7 +273,7 @@ namespace MookDialogueScript
                 valueStr = _currentToken.Value;
                 Consume(TokenType.IDENTIFIER);
             }
-            
+
             Consume(TokenType.RIGHT_BRACKET);
 
             // 添加到元数据字典
@@ -432,7 +432,7 @@ namespace MookDialogueScript
             }
 
             var text = ParseText();
-            
+
             if (_currentToken.Type == TokenType.QUOTE)
             {
                 Consume(TokenType.QUOTE);
@@ -444,17 +444,18 @@ namespace MookDialogueScript
                 // 消耗HASH标记
                 Consume(TokenType.HASH);
 
-                // 获取标签名称
-                if (_currentToken.Type is TokenType.IDENTIFIER or TokenType.TEXT)
+                StringBuilder labelBuilder = new StringBuilder();
+
+                // 读取直到遇到下一个标签符号或换行
+                while (_currentToken.Type != TokenType.NEWLINE &&
+                       _currentToken.Type != TokenType.HASH)
                 {
-                    labels.Add(_currentToken.Value);
+                    // 处理类型的Token（比如文本、标点符号、引号等）都作为标签的一部分
+                    labelBuilder.Append(_currentToken.Value);
                     Consume(_currentToken.Type);
                 }
-                else
-                {
-                    throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望标签名称，但得到 {_currentToken.Type}");
-                }
 
+                labels.Add(labelBuilder.ToString().TrimEnd());
             }
 
             var content = new List<ContentNode>();

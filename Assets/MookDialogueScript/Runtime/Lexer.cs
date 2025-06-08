@@ -33,6 +33,7 @@ namespace MookDialogueScript
         private char _stringQuoteType;    // 当前字符串模式的引号类型
         private bool _isInOptionTextMode; // 是否在选项文本模式中（->后）
         private bool _isInDialogueTextMode; // 是否在对话内容模式中（角色名后）
+        private bool _isInHashTagMode;    // 是否在标签文本模式中（#后）
 
         // 关键字
         private static readonly Dictionary<string, TokenType> _keywords = new(StringComparer.OrdinalIgnoreCase)
@@ -81,6 +82,7 @@ namespace MookDialogueScript
             _stringQuoteType = '\0';
             _isInOptionTextMode = false;
             _isInDialogueTextMode = false;
+            _isInHashTagMode = false;
         }
 
         /// <summary>
@@ -266,6 +268,7 @@ namespace MookDialogueScript
             // 如果遇到换行，退出选项文本模式和对话文本模式
             _isInOptionTextMode = false;
             _isInDialogueTextMode = false;
+            _isInHashTagMode = false;
             // 如果在字符串模式下遇到换行，这通常是一个错误，但我们仍然退出该模式
             if (_isInStringMode)
             {
@@ -518,6 +521,10 @@ namespace MookDialogueScript
                 {
                     _isInDialogueTextMode = false;
                 }
+                if (_isInHashTagMode)
+                {
+                    _isInHashTagMode = false;
+                }
             }
 
             // 4. 生成最终文本Token
@@ -582,7 +589,7 @@ namespace MookDialogueScript
                 }
                 return new TextProcessingRules(
                     truncateChars: new[] { '{', closingQuote },
-                    escapeChars: new[] { '{', '}', '\\', closingQuote }
+                    escapeChars: new[] { '{', '}', '#', '\\', closingQuote }
                 );
             }
 
@@ -599,8 +606,17 @@ namespace MookDialogueScript
             {
                 // 对话文本模式下的处理规则
                 return new TextProcessingRules(
-                    truncateChars: new[] { '#', ':', '：', '{', '[', '【' },
-                    escapeChars: new[] { '#', ':', '：', '{', '}', '[', ']', '【', '】', '\\' }
+                    truncateChars: new[] { '#', '{' },
+                    escapeChars: new[] { '#', '{', '}', '\\' }
+                );
+            }
+
+            if (_isInHashTagMode)
+            {
+                // 标签文本模式下的处理规则，空格作为截断字符
+                return new TextProcessingRules(
+                    truncateChars: new[] { ' ', '\t', '\n', '\r', '#' },
+                    escapeChars: new[] { '\\' }
                 );
             }
 
@@ -776,19 +792,28 @@ namespace MookDialogueScript
                 if (!_isInStringMode && (_currentChar == '\'' || _currentChar == '"' ||
                                          _currentChar == '\u2018' || _currentChar == '\u201C'))
                 {
-                    // 创建一个QUOTE类型的Token
-                    char quoteChar = _currentChar;
-                    int startLine = _line;
-                    int startColumn = _column;
+                    // 仅在非标签模式下进入字符串模式
+                    if (!_isInHashTagMode)
+                    {
+                        // 创建一个QUOTE类型的Token
+                        char quoteChar = _currentChar;
+                        int startLine = _line;
+                        int startColumn = _column;
 
-                    // 进入字符串模式
-                    _isInStringMode = true;
-                    _stringQuoteType = quoteChar;
+                        // 进入字符串模式
+                        _isInStringMode = true;
+                        _stringQuoteType = quoteChar;
 
-                    // 消耗掉引号
-                    Advance();
+                        // 消耗掉引号
+                        Advance();
 
-                    return new Token(TokenType.QUOTE, quoteChar.ToString(), startLine, startColumn);
+                        return new Token(TokenType.QUOTE, quoteChar.ToString(), startLine, startColumn);
+                    }
+                    else
+                    {
+                        // 在标签模式下，引号作为普通字符处理
+                        return HandleText();
+                    }
                 }
 
                 // 先检查是否是字符串模式下的结束引号
@@ -821,8 +846,10 @@ namespace MookDialogueScript
                             Advance();
                             return new Token(TokenType.DOUBLE_COLON, GetRange(startPosition, _position), _line, _column - 2);
                         }
-                        // 进入对话文本模式
-                        if (GetTokenFromLast(2).Type != TokenType.LEFT_BRACKET)
+                        // 检查冒号的上上个token是否为左括号
+                        Token secondLastToken = GetTokenFromLast(2);
+                        // 仅在非标签模式下且上上个token不是左括号时进入对话文本模式
+                        if (!_isInHashTagMode && (secondLastToken == null || secondLastToken.Type != TokenType.LEFT_BRACKET))
                         {
                             _isInDialogueTextMode = true;
                         }
@@ -931,6 +958,11 @@ namespace MookDialogueScript
                         return new Token(TokenType.COMMA, GetRange(startPosition, _position), _line, _column - 1);
                     case '#':
                         Advance();
+                        // 仅在非字符串模式下进入标签文本模式
+                        if (!_isInStringMode)
+                        {
+                            _isInHashTagMode = true;
+                        }
                         return new Token(TokenType.HASH, "#", _line, _column - 1);
 
                     case '!':
@@ -1035,6 +1067,12 @@ namespace MookDialogueScript
             {
                 return lastToken.Type == TokenType.COLON ||
                        lastToken.Type == TokenType.RIGHT_BRACE;
+            }
+
+            // 4. 标签文本模式: 上一个Token是井号(#)
+            if (_isInHashTagMode)
+            {
+                return lastToken.Type == TokenType.HASH;
             }
 
             return false;

@@ -9,7 +9,7 @@ namespace MookDialogueScript.Editor
     {
         public override void OnImportAsset(AssetImportContext ctx)
         {
-            TextAsset textAsset = new TextAsset(File.ReadAllText(ctx.assetPath));
+            TextAsset textAsset = new(File.ReadAllText(ctx.assetPath));
             ctx.AddObjectToAsset("text", textAsset);
             ctx.SetMainObject(textAsset);
         }

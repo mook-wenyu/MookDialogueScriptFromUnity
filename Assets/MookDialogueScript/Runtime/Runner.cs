@@ -19,10 +19,10 @@ namespace MookDialogueScript
 
         // 条件状态
         private Dictionary<ConditionNode, (int branch, int elifIndex, int contentIndex)> _conditionStates =
-            new Dictionary<ConditionNode, (int, int, int)>();
+            new();
 
         // 当前收集的选项列表
-        private List<ChoiceNode> _currentChoices = new List<ChoiceNode>();
+        private List<ChoiceNode> _currentChoices = new();
 
         // 是否正在收集选项
         private bool _isCollectingChoices = false;
@@ -31,7 +31,7 @@ namespace MookDialogueScript
         public bool HasChoices => _isCollectingChoices && _currentChoices.Count > 0;
 
         // AST节点执行栈，用于跟踪嵌套执行
-        private Stack<(ASTNode node, int index)> _executionStack = new Stack<(ASTNode node, int index)>();
+        private Stack<(ASTNode node, int index)> _executionStack = new();
 
         /// <summary>
         /// 获取当前对话存储
@@ -41,17 +41,12 @@ namespace MookDialogueScript
         /// <summary>
         /// 对话开始事件，需要存储对话状态并存档，对话结束前禁止存档
         /// </summary>
-        public event Action OnDialogueStarted;
+        public event Func<Task> OnDialogueStarted;
 
         /// <summary>
         /// 节点开始事件
         /// </summary>
         public event Action<string> OnNodeStarted;
-
-        /// <summary>
-        /// 选项选择事件
-        /// </summary>
-        public event Action<ChoiceNode, int> OnOptionSelected;
 
         /// <summary>
         /// 对话显示事件
@@ -62,6 +57,11 @@ namespace MookDialogueScript
         /// 选项显示事件
         /// </summary>
         public event Action<List<ChoiceNode>> OnChoicesDisplayed;
+
+        /// <summary>
+        /// 选项选择事件
+        /// </summary>
+        public event Action<ChoiceNode, int> OnOptionSelected;
 
         /// <summary>
         /// 对话完成事件，存档时机
@@ -276,7 +276,12 @@ namespace MookDialogueScript
             _storage.RecordInitialNode(startNodeName);
 
             // 触发对话开始事件
-            OnDialogueStarted?.Invoke();
+            if (OnDialogueStarted != null)
+            {
+                await Task.WhenAll(OnDialogueStarted.GetInvocationList()
+                    .Cast<Func<Task>>()
+                    .Select(handler => handler()));
+            }
 
             // 重置选项收集状态
             _currentChoices.Clear();
