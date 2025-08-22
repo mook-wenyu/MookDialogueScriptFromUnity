@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__UnityMCP__read_console",
+      "Bash(git add .)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

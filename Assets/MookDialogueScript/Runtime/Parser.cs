@@ -26,6 +26,14 @@ namespace MookDialogueScript
         private readonly List<Token> _tokens;
         private int _tokenIndex;
         private Token _currentToken;
+        
+        // 自动标签生成
+        private int _lineCounter = 0;
+        private string _currentNodeName = "";
+        
+        // 嵌套层数警告
+        private const int MAX_SAFE_NESTING_LEVEL = 10;
+        private int _currentNestingLevel = 0;
 
         public Parser(List<Token> tokens)
         {
@@ -115,29 +123,24 @@ namespace MookDialogueScript
         {
             var nodes = new List<NodeDefinitionNode>();
 
-            while (_currentToken.Type != TokenType.EOF)
+            while (!IsEOF())
             {
-                if (_currentToken.Type is TokenType.DOUBLE_COLON or TokenType.NODE_START)
+                try
                 {
                     var node = ParseNodeDefinition();
-
-                    // 如果节点内容为空，则跳过该节点
-                    if (node != null && node.Content.Count > 0)
+                    if (node != null)
                     {
                         nodes.Add(node);
                     }
                 }
-                else if (_currentToken.Type == TokenType.NEWLINE)
+                catch (Exception ex)
                 {
-                    Consume(TokenType.NEWLINE);
-                }
-                else
-                {
-                    throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，意外的Token {_currentToken.Type}");
+                    MLogger.Error($"解析节点错误: {ex.Message}");
+                    RecoverToNextNode();
                 }
             }
 
-            return new ScriptNode(nodes, 1, 1);
+            return new ScriptNode(nodes);
         }
 
         /// <summary>
@@ -145,141 +148,105 @@ namespace MookDialogueScript
         /// </summary>
         private NodeDefinitionNode ParseNodeDefinition()
         {
-            if (_currentToken.Type == TokenType.NODE_START)
+            // 解析节点元数据
+            var metadata = ParseNodeMetadata();
+            
+            // 需要有节点开始标记
+            if (!Check(TokenType.NODE_START))
             {
-                Consume(TokenType.NODE_START);
+                MLogger.Error($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，缺少节点开始标记 ---");
+                // 自动修复：插入 ---
+                InsertToken(TokenType.NODE_START, "---");
             }
-            else if (_currentToken.Type == TokenType.DOUBLE_COLON)
-            {
-                Consume(TokenType.DOUBLE_COLON);
-            }
-
-            string nodeName = string.Empty;
+            
             int line = _currentToken.Line;
             int column = _currentToken.Column;
-
-            // 检查是否有节点名称
-            if (_currentToken.Type == TokenType.IDENTIFIER)
-            {
-                nodeName = _currentToken.Value;
-                Consume(TokenType.IDENTIFIER);
-            }
-            Consume(TokenType.NEWLINE);
-
-            // 解析元数据（如果有）
-            var metadata = new Dictionary<string, string>();
-            while (_currentToken.Type == TokenType.LEFT_BRACKET)
-            {
-                ParseMetadata(metadata);
-
-                // 如果下一个是换行符，消耗掉
-
-                if (_currentToken.Type == TokenType.NEWLINE)
-                {
-                    Consume(TokenType.NEWLINE);
-                }
-            }
-
-            // 检查元数据中是否有title键，有则用其值更新nodeName
-            if (metadata.TryGetValue("title", out string titleValue) && !string.IsNullOrEmpty(titleValue))
-            {
-                nodeName = titleValue;
-            }
-
+            Consume(TokenType.NODE_START);
+            
+            // 重置行计数器并设置当前节点名
+            _lineCounter = 0;
+            _currentNodeName = metadata.GetValueOrDefault("node", "unnamed");
+            
             var content = new List<ContentNode>();
-            while (_currentToken.Type != TokenType.EOF &&
-                   _currentToken.Type != TokenType.DOUBLE_COLON &&
-                   _currentToken.Type != TokenType.NODE_START)
+            while (!Check(TokenType.NODE_END) && !IsEOF())
             {
-                if (_currentToken.Type == TokenType.NEWLINE)
+                if (Check(TokenType.NEWLINE))
                 {
                     Consume(TokenType.NEWLINE);
                     continue;
                 }
-
-                if (_currentToken.Type == TokenType.NODE_END)
+                
+                try
                 {
-                    Consume(TokenType.NODE_END);
-                    break;
+                    var node = ParseCollectionContent();
+                    if (node != null && !IsEmptyContentNode(node))
+                    {
+                        content.Add(node);
+                    }
                 }
-
-                ContentNode node = ParseContent();
-                // 跳过空内容节点或解析错误的节点
-                if (node != null && !IsEmptyContentNode(node))
+                catch (Exception ex)
                 {
-                    content.Add(node);
+                    MLogger.Error($"解析内容错误: {ex.Message}");
+                    RecoverToSafePoint();
                 }
             }
-
-            return new NodeDefinitionNode(nodeName, metadata, content, line, column);
+            
+            if (!Check(TokenType.NODE_END))
+            {
+                MLogger.Error($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，缺少节点结束标记 ===");
+                // 自动修复：插入 ===
+                InsertToken(TokenType.NODE_END, "===");
+            }
+            Consume(TokenType.NODE_END);
+            
+            return new NodeDefinitionNode(_currentNodeName, metadata, content, line, column);
         }
 
         /// <summary>
-        /// 解析元数据
+        /// 解析节点元数据
         /// </summary>
-        private void ParseMetadata(Dictionary<string, string> metadata)
+        private Dictionary<string, string> ParseNodeMetadata()
         {
-            // 解析一组元数据 [key:value]
-            Consume(TokenType.LEFT_BRACKET);
-
-            string key = _currentToken.Value;
-            Consume(TokenType.IDENTIFIER);
-
-            Consume(TokenType.COLON);
-
-            // 解析值 - 只支持简单类型
-            string valueStr = string.Empty;
-            if (_currentToken.Type == TokenType.QUOTE)
+            var metadata = new Dictionary<string, string>();
+            
+            // 解析节点元数据（key: value 格式）
+            while (!Check(TokenType.NODE_START) && !IsEOF())
             {
-                // 字符串值 - 不支持插值
-                Consume(TokenType.QUOTE);
-
-                if (_currentToken.Type == TokenType.TEXT)
+                if (Check(TokenType.NEWLINE))
                 {
-                    valueStr = _currentToken.Value;
-                    Consume(TokenType.TEXT);
+                    Consume(TokenType.NEWLINE);
+                    continue;
                 }
-
-                Consume(TokenType.QUOTE);
+                
+                if (Check(TokenType.IDENTIFIER) && CheckNext(TokenType.METADATA_SEPARATOR))
+                {
+                    string key = _currentToken.Value;
+                    Consume(TokenType.IDENTIFIER);
+                    Consume(TokenType.METADATA_SEPARATOR);
+                    
+                    string value = "";
+                    if (Check(TokenType.TEXT))
+                    {
+                        value = _currentToken.Value;
+                        Consume(TokenType.TEXT);
+                    }
+                    
+                    metadata[key] = value;
+                    
+                    if (Check(TokenType.NEWLINE))
+                    {
+                        Consume(TokenType.NEWLINE);
+                    }
+                }
+                else
+                {
+                    break;
+                }
             }
-            else if (_currentToken.Type == TokenType.NUMBER)
-            {
-                // 数字值
-                valueStr = _currentToken.Value;
-                Consume(TokenType.NUMBER);
-            }
-            else if (_currentToken.Type == TokenType.MINUS && CheckNext(TokenType.NUMBER))
-            {
-                // 负数值
-                Consume(TokenType.MINUS);
-                valueStr = "-" + _currentToken.Value;
-                Consume(TokenType.NUMBER);
-            }
-            else if (_currentToken.Type == TokenType.TRUE)
-            {
-                // 布尔值true
-                valueStr = "true";
-                Consume(TokenType.TRUE);
-            }
-            else if (_currentToken.Type == TokenType.FALSE)
-            {
-                // 布尔值false
-                valueStr = "false";
-                Consume(TokenType.FALSE);
-            }
-            else if (_currentToken.Type == TokenType.IDENTIFIER)
-            {
-                // 标识符
-                valueStr = _currentToken.Value;
-                Consume(TokenType.IDENTIFIER);
-            }
-
-            Consume(TokenType.RIGHT_BRACKET);
-
-            // 添加到元数据字典
-            metadata[key] = valueStr;
+            
+            return metadata;
         }
-
+        
         /// <summary>
         /// 检查内容节点是否为空
         /// </summary>
@@ -316,80 +283,169 @@ namespace MookDialogueScript
             return false;
         }
 
-        private ContentNode ParseContent()
-        {
-            switch (_currentToken.Type)
-            {
-                case TokenType.TEXT:
-                case TokenType.IDENTIFIER:
-                case TokenType.COLON:
-                    return ParseDialogue();
-                case TokenType.ARROW:
-                    return ParseChoice();
-                case TokenType.IF:
-                    return ParseCondition();
-                case TokenType.ENDIF:
-                    throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，意外的ENDIF");
-                case TokenType.COMMAND:
-                case TokenType.SET:
-                case TokenType.ADD:
-                case TokenType.SUB:
-                case TokenType.MUL:
-                case TokenType.DIV:
-                case TokenType.MOD:
-                case TokenType.CALL:
-                case TokenType.WAIT:
-                case TokenType.VAR:
-                case TokenType.JUMP:
-                    return ParseCommand();
-                default:
-                    return ParseDialogue();
-            }
-        }
-
         /// <summary>
-        /// 解析条件
+        /// 解析集合内容（新设计）
+        /// </summary>
+        private ContentNode ParseCollectionContent()
+        {
+            return _currentToken.Type switch
+            {
+                // 角色对话：角色名:
+                TokenType.TEXT when CheckNext(TokenType.COLON) => ParseDialogue(),
+                
+                // 选项：-> 文本
+                TokenType.ARROW => ParseChoice(),
+                
+                // 条件：<<if>>
+                TokenType.COMMAND_START when CheckNextCommand(TokenType.IF) => ParseCondition(),
+                
+                // 其他命令：<<command>>
+                TokenType.COMMAND_START => ParseCommand(),
+                
+                // 旁白：所有其他情况（包括:文本和普通文本）
+                _ => ParseNarration()
+            };
+        }
+        
+        /// <summary>
+        /// 解析条件（新设计）
         /// </summary>
         private ConditionNode ParseCondition()
         {
             int line = _currentToken.Line;
             int column = _currentToken.Column;
+            
+            Consume(TokenType.COMMAND_START);
             Consume(TokenType.IF);
-
             var condition = ParseExpression();
-
+            Consume(TokenType.COMMAND_END);
+            
             // 解析then分支
-            var thenBranch = new List<ContentNode>();
-            ParseIndentedContent(thenBranch, TokenType.ELIF, TokenType.ELSE, TokenType.ENDIF);
-
+            var thenBranch = ParseConditionalBranch(TokenType.ELIF, TokenType.ELSE, TokenType.ENDIF);
+            
             // 解析elif分支
             var elifBranches = new List<(ExpressionNode Condition, List<ContentNode> Content)>();
-            while (_currentToken.Type == TokenType.ELIF)
+            while (Check(TokenType.COMMAND_START) && CheckNextCommand(TokenType.ELIF))
             {
+                Consume(TokenType.COMMAND_START);
                 Consume(TokenType.ELIF);
                 var elifCondition = ParseExpression();
-
-                var elifContent = new List<ContentNode>();
-                ParseIndentedContent(elifContent, TokenType.ELIF, TokenType.ELSE, TokenType.ENDIF);
+                Consume(TokenType.COMMAND_END);
+                
+                var elifContent = ParseConditionalBranch(TokenType.ELIF, TokenType.ELSE, TokenType.ENDIF);
                 elifBranches.Add((elifCondition, elifContent));
             }
-
+            
             // 解析else分支
             List<ContentNode> elseBranch = null;
-            if (_currentToken.Type == TokenType.ELSE)
+            if (Check(TokenType.COMMAND_START) && CheckNextCommand(TokenType.ELSE))
             {
+                Consume(TokenType.COMMAND_START);
                 Consume(TokenType.ELSE);
-                elseBranch = new List<ContentNode>();
-                ParseIndentedContent(elseBranch, TokenType.ENDIF);
+                Consume(TokenType.COMMAND_END);
+                
+                elseBranch = ParseConditionalBranch(TokenType.ENDIF);
             }
-
-            // 消耗结束标记
-            Consume(TokenType.ENDIF);
-            Consume(TokenType.NEWLINE);
-
+            
+            // 消耗endif
+            if (!Check(TokenType.COMMAND_START) || !CheckNextCommand(TokenType.ENDIF))
+            {
+                MLogger.Error($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，缺少条件结束标记 <<endif>>");
+                // 自动修复：插入 <<endif>>
+                InsertToken(TokenType.COMMAND_START, "<<");
+                GetNextToken();
+                InsertToken(TokenType.ENDIF, "endif");
+                GetNextToken();
+                InsertToken(TokenType.COMMAND_END, ">>");
+            }
+            else
+            {
+                Consume(TokenType.COMMAND_START);
+                Consume(TokenType.ENDIF);
+                Consume(TokenType.COMMAND_END);
+            }
+            
             return new ConditionNode(condition, thenBranch, elifBranches, elseBranch, line, column);
         }
+        
+        /// <summary>
+        /// 解析条件分支内容
+        /// </summary>
+        private List<ContentNode> ParseConditionalBranch(params TokenType[] endTokens)
+        {
+            var content = new List<ContentNode>();
+            
+            while (!IsConditionalEnd(endTokens) && !IsEOF())
+            {
+                if (Check(TokenType.NEWLINE))
+                {
+                    Consume(TokenType.NEWLINE);
+                    continue;
+                }
+                
+                try
+                {
+                    var node = ParseCollectionContent();
+                    if (node != null && !IsEmptyContentNode(node))
+                    {
+                        content.Add(node);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MLogger.Error($"解析条件分支错误: {ex.Message}");
+                    RecoverToSafePoint();
+                }
+            }
+            
+            return content;
+        }
+        
+        /// <summary>
+        /// 检查是否到达条件结束
+        /// </summary>
+        private bool IsConditionalEnd(TokenType[] endTokens)
+        {
+            if (!Check(TokenType.COMMAND_START)) return false;
+            
+            foreach (var endToken in endTokens)
+            {
+                if (CheckNextCommand(endToken))
+                {
+                    return true;
+                }
+            }
+            
+            return false;
+        }
 
+        /// <summary>
+        /// 生成自动行号标签
+        /// </summary>
+        private string GenerateLineTag()
+        {
+            _lineCounter++;
+            return $"line:{_currentNodeName.ToLower()}{_lineCounter}";
+        }
+        
+        /// <summary>
+        /// 解析旁白（统一处理:文本和普通文本）
+        /// </summary>
+        private DialogueNode ParseNarration()
+        {
+            int line = _currentToken.Line;
+            int column = _currentToken.Column;
+            
+            // 不特殊处理冒号，让ParseText()自然处理所有文本内容
+            var text = ParseText();
+            var tags = ParseTags();
+            tags.Add(GenerateLineTag());
+            
+            var content = ParseNestedContent();
+            
+            return new DialogueNode(null, text, tags, content, line, column);
+        }
+        
         /// <summary>
         /// 解析对话
         /// </summary>
@@ -398,70 +454,17 @@ namespace MookDialogueScript
             int line = _currentToken.Line;
             int column = _currentToken.Column;
 
-            // 检查是否是对话（有说话者+冒号）
-            bool isDialogue = CheckNext(TokenType.COLON);
-
-            string speaker = null;
-
-            if (isDialogue)
-            {
-                // 如果是对话，保存说话者
-                speaker = _currentToken.Value;
-
-                // 消耗当前token，可能是TEXT或IDENTIFIER
-                Consume(_currentToken.Type);
-
-                if (_currentToken.Type == TokenType.COLON)
-                {
-                    Consume(TokenType.COLON);
-                }
-                else
-                {
-                    throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望冒号，但得到 {_currentToken.Type}");
-                }
-            }
-
-            if (_currentToken.Type == TokenType.COLON)
-            {
-                Consume(TokenType.COLON);
-            }
-
-            if (_currentToken.Type == TokenType.QUOTE)
-            {
-                Consume(TokenType.QUOTE);
-            }
+            string speaker = _currentToken.Value;
+            Consume(TokenType.TEXT);
+            Consume(TokenType.COLON);
 
             var text = ParseText();
+            var tags = ParseTags();
+            tags.Add(GenerateLineTag());
 
-            if (_currentToken.Type == TokenType.QUOTE)
-            {
-                Consume(TokenType.QUOTE);
-            }
+            var content = ParseNestedContent();
 
-            List<string> labels = new List<string>();
-            while (_currentToken.Type == TokenType.HASH)
-            {
-                // 消耗HASH标记
-                Consume(TokenType.HASH);
-
-                StringBuilder labelBuilder = new StringBuilder();
-
-                // 读取直到遇到下一个标签符号或换行
-                while (_currentToken.Type != TokenType.NEWLINE &&
-                       _currentToken.Type != TokenType.HASH)
-                {
-                    // 处理类型的Token（比如文本、标点符号、引号等）都作为标签的一部分
-                    labelBuilder.Append(_currentToken.Value);
-                    Consume(_currentToken.Type);
-                }
-
-                labels.Add(labelBuilder.ToString().TrimEnd());
-            }
-
-            var content = new List<ContentNode>();
-            ParseIndentedContent(content);
-
-            return new DialogueNode(speaker, text, labels, content, line, column);
+            return new DialogueNode(speaker, text, tags, content, line, column);
         }
 
         /// <summary>
@@ -474,8 +477,7 @@ namespace MookDialogueScript
 
             while (_currentToken.Type != TokenType.NEWLINE &&
                    _currentToken.Type != TokenType.HASH &&
-                   _currentToken.Type != TokenType.QUOTE &&
-                   _currentToken.Type != TokenType.LEFT_BRACKET)
+                   _currentToken.Type != TokenType.QUOTE)
             {
                 if (_currentToken.Type == TokenType.LEFT_BRACE)
                 {
@@ -526,66 +528,86 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 解析缩进的内容块，直到遇到指定的结束标记
+        /// 解析标签
         /// </summary>
-        /// <param name="content">用于存储解析结果的内容列表</param>
-        /// <param name="endTokens">结束标记</param>
-        private void ParseIndentedContent(List<ContentNode> content, params TokenType[] endTokens)
+        private List<string> ParseTags()
         {
-            // 检查是否有效的缩进开始
-            bool hasIndent = false;
-
-            Consume(TokenType.NEWLINE);
-            // 如果下一个是INDENT，则处理缩进
-            if (_currentToken.Type == TokenType.INDENT)
+            var tags = new List<string>();
+            
+            while (Check(TokenType.HASH))
             {
-                hasIndent = true;
-                Consume(TokenType.INDENT);
-            }
-
-            // 只有当有缩进时才解析内容
-            if (!hasIndent) return;
-            while (!IsEndToken())
-            {
-                ContentNode node;
-                if (_currentToken.Type == TokenType.IF)
+                Consume(TokenType.HASH);
+                
+                var tagBuilder = new StringBuilder();
+                
+                // 读取直到遇到下一个标签符号或换行
+                while (!Check(TokenType.NEWLINE) && !Check(TokenType.HASH) && !IsEOF())
                 {
-                    node = ParseCondition();
+                    tagBuilder.Append(_currentToken.Value);
+                    GetNextToken();
                 }
-                else
+                
+                string tag = tagBuilder.ToString().TrimEnd();
+                if (!string.IsNullOrEmpty(tag))
                 {
-                    node = ParseContent();
-                }
-
-                // 跳过空的内容节点
-                if (!IsEmptyContentNode(node))
-                {
-                    content.Add(node);
+                    tags.Add(tag);
                 }
             }
-
-            if (_currentToken.Type == TokenType.DEDENT)
-            {
-                Consume(TokenType.DEDENT);
-            }
-            return;
-
-            // 检查当前标记是否是任一结束标记
-            bool IsEndToken()
-            {
-                if (_currentToken.Type is TokenType.DEDENT or TokenType.EOF or
-                    TokenType.DOUBLE_COLON or TokenType.NODE_START or TokenType.NODE_END)
-                    return true;
-
-                foreach (var endToken in endTokens)
-                {
-                    if (_currentToken.Type == endToken)
-                        return true;
-                }
-                return false;
-            }
+            
+            return tags;
         }
-
+        
+        /// <summary>
+        /// 解析嵌套内容
+        /// </summary>
+        private List<ContentNode> ParseNestedContent()
+        {
+            var content = new List<ContentNode>();
+            
+            if (Check(TokenType.NEWLINE) && CheckNext(TokenType.INDENT))
+            {
+                Consume(TokenType.NEWLINE);
+                Consume(TokenType.INDENT);
+                
+                _currentNestingLevel++;
+                if (_currentNestingLevel > MAX_SAFE_NESTING_LEVEL)
+                {
+                    MLogger.Warning($"警告: 第{_currentToken.Line}行，嵌套层数过深（{_currentNestingLevel}层），可能影响性能");
+                }
+                
+                while (!Check(TokenType.DEDENT) && !IsEOF() && !IsCollectionEnd())
+                {
+                    if (Check(TokenType.NEWLINE))
+                    {
+                        Consume(TokenType.NEWLINE);
+                        continue;
+                    }
+                    
+                    try
+                    {
+                        var node = ParseCollectionContent();
+                        if (node != null && !IsEmptyContentNode(node))
+                        {
+                            content.Add(node);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        MLogger.Error($"解析嵌套内容错误: {ex.Message}");
+                        RecoverToSafePoint();
+                    }
+                }
+                
+                if (Check(TokenType.DEDENT))
+                {
+                    Consume(TokenType.DEDENT);
+                }
+                _currentNestingLevel--;
+            }
+            
+            return content;
+        }
+        
         private ChoiceNode ParseChoice()
         {
             int line = _currentToken.Line;
@@ -595,17 +617,29 @@ namespace MookDialogueScript
             var text = ParseText();
 
             ExpressionNode condition = null;
-            if (Match(TokenType.LEFT_BRACKET))
+            var tags = new List<string>();
+            
+            // 解析 <<if 条件>> 语法
+            if (Check(TokenType.COMMAND_START))
             {
-                Consume(TokenType.IF);
-                condition = ParseExpression();
-                Consume(TokenType.RIGHT_BRACKET);
+                Consume(TokenType.COMMAND_START);
+                if (Check(TokenType.IF))
+                {
+                    Consume(TokenType.IF);
+                    condition = ParseExpression();
+                }
+                Consume(TokenType.COMMAND_END);
             }
+            
+            // 解析其他标签
+            tags.AddRange(ParseTags());
+            
+            // 添加自动生成的行号标签
+            tags.Add(GenerateLineTag());
+            
+            var content = ParseNestedContent();
 
-            var content = new List<ContentNode>();
-            ParseIndentedContent(content);
-
-            return new ChoiceNode(text, condition, content, line, column);
+            return new ChoiceNode(text, condition, tags, content, line, column);
         }
 
         /// <summary>
@@ -975,6 +1009,69 @@ namespace MookDialogueScript
 
                 default:
                     throw new InvalidOperationException($"语法错误: 第{token.Line}行，第{token.Column}列，意外的符号 {token.Type}");
+            }
+        }
+
+        /// <summary>
+        /// 检查是否到达文件结束
+        /// </summary>
+        private bool IsEOF()
+        {
+            return _currentToken.Type == TokenType.EOF;
+        }
+        
+        /// <summary>
+        /// 检查是否到达集合结束
+        /// </summary>
+        private bool IsCollectionEnd()
+        {
+            return Check(TokenType.NODE_END) || Check(TokenType.NODE_START);
+        }
+        
+        /// <summary>
+        /// 检查下一个命令Token类型
+        /// </summary>
+        private bool CheckNextCommand(TokenType commandType)
+        {
+            if (_tokenIndex + 1 < _tokens.Count)
+            {
+                return _tokens[_tokenIndex + 1].Type == commandType;
+            }
+            return false;
+        }
+        
+        /// <summary>
+        /// 插入Token（错误修复用）
+        /// </summary>
+        private void InsertToken(TokenType type, string value)
+        {
+            var token = new Token(type, value, _currentToken.Line, _currentToken.Column);
+            _tokens.Insert(_tokenIndex, token);
+            _currentToken = token;
+        }
+        
+        /// <summary>
+        /// 恢复到下一个节点
+        /// </summary>
+        private void RecoverToNextNode()
+        {
+            while (!IsEOF() && !Check(TokenType.NODE_START))
+            {
+                GetNextToken();
+            }
+        }
+        
+        /// <summary>
+        /// 恢复到安全点
+        /// </summary>
+        private void RecoverToSafePoint()
+        {
+            while (!IsEOF() && 
+                   !Check(TokenType.NODE_START) && 
+                   !Check(TokenType.NODE_END) &&
+                   !Check(TokenType.NEWLINE))
+            {
+                GetNextToken();
             }
         }
 

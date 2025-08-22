@@ -25,6 +25,18 @@ namespace MookDialogueScript
         /// 节点结束标记 三重等号 ===
         /// </summary>
         NODE_END,
+        /// <summary>
+        /// 命令开始标记 <<
+        /// </summary>
+        COMMAND_START,
+        /// <summary>
+        /// 命令结束标记 >>
+        /// </summary>
+        COMMAND_END,
+        /// <summary>
+        /// 元数据键值对分隔符 :
+        /// </summary>
+        METADATA_SEPARATOR,
 
         // 标点符号
         /// <summary>

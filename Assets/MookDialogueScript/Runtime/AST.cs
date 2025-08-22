@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 
 namespace MookDialogueScript
@@ -40,10 +41,10 @@ namespace MookDialogueScript
         /// </summary>
         public List<NodeDefinitionNode> Nodes { get; }
 
-        public ScriptNode(List<NodeDefinitionNode> nodes, int line, int column)
-            : base(line, column)
+        public ScriptNode(List<NodeDefinitionNode> nodes)
+            : base(1, 1)
         {
-            Nodes = nodes;
+            Nodes = nodes ?? new List<NodeDefinitionNode>();
         }
     }
 
@@ -89,7 +90,7 @@ namespace MookDialogueScript
             sb.AppendLine($"--- {NodeName}");
             
             // 添加元数据到输出
-            if (Metadata != null && Metadata.Count > 0)
+            if (Metadata is {Count: > 0})
             {
                 foreach (var meta in Metadata)
                 {
@@ -163,20 +164,22 @@ namespace MookDialogueScript
         public override string ToString()
         {
             StringBuilder sb = new StringBuilder();
-            sb.Append($"{Speaker}: ");
-            sb.Append(string.Join("", Text));
-            if (Labels != null && Labels.Count > 0)
+            if (Speaker != null)
             {
-                sb.AppendLine(string.Join(", ", Labels));
+                sb.Append($"{Speaker}: ");
             }
-            if (Content != null && Content.Count > 0)
+            sb.Append(string.Join("", Text));
+            if (Labels is {Count: > 0})
             {
-                sb.AppendLine("--- 对话内容 ---");
+                sb.Append($" {string.Join(" ", Labels.Select(l => $"#{l}"))}");
+            }
+            sb.AppendLine();
+            if (Content is {Count: > 0})
+            {
                 foreach (var content in Content)
                 {
-                    sb.AppendLine($"{content}");
+                    sb.AppendLine($"    {content}");
                 }
-                sb.AppendLine("--- 对话内容结束 ---");
             }
             return sb.ToString();
         }
@@ -250,34 +253,43 @@ namespace MookDialogueScript
         public ExpressionNode Condition { get; }
 
         /// <summary>
+        /// 标签列表
+        /// </summary>
+        public List<string> Tags { get; }
+
+        /// <summary>
         /// 内容列表
         /// </summary>
         public List<ContentNode> Content { get; }
 
-        public ChoiceNode(List<TextSegmentNode> text, ExpressionNode condition, List<ContentNode> content, int line, int column)
+        public ChoiceNode(List<TextSegmentNode> text, ExpressionNode condition, List<string> tags, List<ContentNode> content, int line, int column)
             : base(line, column)
         {
-            Text = text;
+            Text = text ?? new List<TextSegmentNode>();
             Condition = condition;
-            Content = content;
+            Tags = tags ?? new List<string>();
+            Content = content ?? new List<ContentNode>();
         }
 
         public override string ToString()
         {
             StringBuilder sb = new StringBuilder();
-            sb.Append($"-> {string.Join("", Text)} \n");
+            sb.Append($"-> {string.Join("", Text)}");
             if (Condition != null)
             {
-                sb.AppendLine($"[{Condition}]");
+                sb.Append($" <<if {Condition}>>");
             }
-            if (Content != null && Content.Count > 0)
+            if (Tags is {Count: > 0})
             {
-                sb.AppendLine("--- 选项内容 ---");
+                sb.Append($" {string.Join(" ", Tags.Select(t => $"#{t}"))}");
+            }
+            sb.AppendLine();
+            if (Content is {Count: > 0})
+            {
                 foreach (var content in Content)
                 {
-                    sb.AppendLine($"{content}");
+                    sb.AppendLine($"    {content}");
                 }
-                sb.AppendLine("--- 选项内容结束 ---");
             }
             return sb.ToString();
         }
@@ -331,7 +343,7 @@ namespace MookDialogueScript
             {
                 sb.AppendLine($"内容: {content}");
             }
-            if (ElifBranches != null && ElifBranches.Count > 0)
+            if (ElifBranches is {Count: > 0})
             {
                 sb.AppendLine("--- 否则如果分支 ---");
                 foreach (var (condition, content) in ElifBranches)
@@ -340,7 +352,7 @@ namespace MookDialogueScript
                     sb.AppendLine($"内容: {content}");
                 }
             }
-            if (ElseBranch != null && ElseBranch.Count > 0)
+            if (ElseBranch is {Count: > 0})
             {
                 sb.AppendLine("--- 否则分支 ---");
                 foreach (var content in ElseBranch)
@@ -419,7 +431,7 @@ namespace MookDialogueScript
         {
             StringBuilder sb = new StringBuilder();
             sb.Append($"调用命令节点: {FunctionName}(");
-            if (Parameters != null && Parameters.Count > 0)
+            if (Parameters is {Count: > 0})
             {
                 sb.Append(string.Join(", ", Parameters));
             }
@@ -680,7 +692,7 @@ namespace MookDialogueScript
         {
             StringBuilder sb = new StringBuilder();
             sb.Append($"函数调用节点: {Name}(");
-            if (Arguments != null && Arguments.Count > 0)
+            if (Arguments is {Count: > 0})
             {
                 sb.Append(string.Join(", ", Arguments));
             }
