@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Threading.Tasks;
+using UnityEngine.Scripting;
 
 namespace MookDialogueScript
 {
@@ -19,7 +21,6 @@ namespace MookDialogueScript
             {
                 ["-"] = async (right) => new RuntimeValue(-await GetNumberValue(right)),
                 ["!"] = async (right) => new RuntimeValue(!await GetBooleanValue(right)),
-                ["！"] = async (right) => new RuntimeValue(!await GetBooleanValue(right)),
                 ["not"] = async (right) => new RuntimeValue(!await GetBooleanValue(right))
             };
         }
@@ -147,22 +148,10 @@ namespace MookDialogueScript
                             return new RuntimeValue(0);
 
                         case "==":
-                            if (left.Type == RuntimeValue.ValueType.Null && right.Type == RuntimeValue.ValueType.Null)
-                                return new RuntimeValue(true);
-                            else if (left.Type == RuntimeValue.ValueType.Null || right.Type == RuntimeValue.ValueType.Null)
-                                return new RuntimeValue(false);
-                            else if (left.Type != right.Type)
-                                return new RuntimeValue(false);
-                            return new RuntimeValue(left.Value.Equals(right.Value));
+                            return new RuntimeValue(left == right);
 
                         case "!=":
-                            if (left.Type == RuntimeValue.ValueType.Null && right.Type == RuntimeValue.ValueType.Null)
-                                return new RuntimeValue(false);
-                            else if (left.Type == RuntimeValue.ValueType.Null || right.Type == RuntimeValue.ValueType.Null)
-                                return new RuntimeValue(true);
-                            else if (left.Type != right.Type)
-                                return new RuntimeValue(true);
-                            return new RuntimeValue(!left.Value.Equals(right.Value));
+                            return new RuntimeValue(left != right);
 
                         case ">":
                             return new RuntimeValue((double)left.Value > (double)right.Value);
@@ -213,7 +202,9 @@ namespace MookDialogueScript
         public async Task<double> GetNumberValue(ExpressionNode expression)
         {
             var value = await EvaluateExpression(expression);
-            if (value.Type == RuntimeValue.ValueType.Number) return (double)value.Value;
+            if (value.Type == RuntimeValue.ValueType.Number)
+                return (double)value.Value;
+
             MLogger.Error("表达式必须计算为数值类型");
             return 0;
         }
@@ -226,7 +217,9 @@ namespace MookDialogueScript
         public async Task<bool> GetBooleanValue(ExpressionNode node)
         {
             var value = await EvaluateExpression(node);
-            if (value.Type == RuntimeValue.ValueType.Boolean) return (bool)value.Value;
+            if (value.Type == RuntimeValue.ValueType.Boolean)
+                return (bool)value.Value;
+
             MLogger.Error("表达式必须计算为布尔类型");
             return false;
         }
@@ -239,7 +232,9 @@ namespace MookDialogueScript
         public async Task<string> GetStringValue(ExpressionNode node)
         {
             var value = await EvaluateExpression(node);
-            if (value.Type == RuntimeValue.ValueType.String) return (string)value.Value;
+            if (value.Type == RuntimeValue.ValueType.String)
+                return (string)value.Value;
+
             MLogger.Error("表达式必须计算为字符串类型");
             return string.Empty;
         }
@@ -270,7 +265,7 @@ namespace MookDialogueScript
                                 if (_context.HasVariable(varNode.Name))
                                 {
                                     var value = _context.GetVariable(varNode.Name);
-                                    if (value != null && value.Type != RuntimeValue.ValueType.Null)
+                                    if (value.Type != RuntimeValue.ValueType.Null && value.Value != null)
                                     {
                                         result.Append(value.ToString());
                                     }
@@ -302,7 +297,7 @@ namespace MookDialogueScript
                                         }
 
                                         var value = await _context.CallFunction(funcNode.Name, functionArgs);
-                                        if (value != null && value.Type != RuntimeValue.ValueType.Null)
+                                        if (value.Type != RuntimeValue.ValueType.Null && value.Value != null)
                                         {
                                             result.Append(value.ToString());
                                         }
@@ -333,7 +328,7 @@ namespace MookDialogueScript
                                 try
                                 {
                                     var value = await EvaluateExpression(i.Expression);
-                                    if (value != null && value.Type != RuntimeValue.ValueType.Null)
+                                    if (value.Type != RuntimeValue.ValueType.Null && value.Value != null)
                                     {
                                         result.Append(value.ToString());
                                     }
@@ -374,7 +369,7 @@ namespace MookDialogueScript
             switch (node)
             {
                 case NumberNode numNode:
-                    return numNode.Value.ToString();
+                    return numNode.Value.ToString(CultureInfo.CurrentCulture);
                 case StringInterpolationExpressionNode strNode:
                 {
                     var result = new System.Text.StringBuilder();
@@ -432,21 +427,6 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 构建文本
-        /// </summary>
-        /// <param name="segments">文本段列表</param>
-        /// <param name="callback">回调函数</param>
-        public void BuildText(List<TextSegmentNode> segments, Action<string> callback)
-        {
-            string text;
-            Task.Run(async () =>
-            {
-                text = await BuildText(segments);
-                callback(text);
-            });
-        }
-
-        /// <summary>
         /// 注册脚本中的所有节点
         /// </summary>
         /// <param name="script">脚本</param>
@@ -460,7 +440,7 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 执行命令
+        /// 运行时执行命令
         /// </summary>
         /// <param name="command">命令节点</param>
         /// <returns>如果是跳转命令则返回目标节点名称，否则返回空字符串</returns>
@@ -549,7 +529,7 @@ namespace MookDialogueScript
 
                         default:
                             MLogger.Error($"未知的变量操作 '{v.Operation}'");
-                            return string.Empty;
+                            break;
                     }
                     return string.Empty;
 

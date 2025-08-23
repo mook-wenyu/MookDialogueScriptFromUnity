@@ -2,25 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Linq;
+using UnityEngine;
 
 namespace MookDialogueScript
 {
-
-    /// <summary>
-    /// 定义操作符信息，包含优先级和相关的TokenType
-    /// </summary>
-    public class OperatorInfo
-    {
-        public int Precedence { get; }
-        public TokenType[] TokenTypes { get; }
-
-        public OperatorInfo(int precedence, params TokenType[] tokenTypes)
-        {
-            Precedence = precedence;
-            TokenTypes = tokenTypes;
-        }
-    }
-
     public class Parser
     {
         private readonly List<Token> _tokens;
@@ -28,12 +13,12 @@ namespace MookDialogueScript
         private Token _currentToken;
 
         // 自动标签生成
-        private int _lineCounter = 0;
+        private int _lineCounter;
         private string _currentNodeName = "";
 
         // 嵌套层数警告
         private const int MAX_SAFE_NESTING_LEVEL = 10;
-        private int _currentNestingLevel = 0;
+        private int _currentNestingLevel;
 
         public Parser(List<Token> tokens)
         {
@@ -79,7 +64,7 @@ namespace MookDialogueScript
             }
             else
             {
-                _currentToken = new Token(TokenType.EOF, string.Empty, _tokens[_tokens.Count - 1].Line, _tokens[_tokens.Count - 1].Column);
+                _currentToken = new Token(TokenType.EOF, string.Empty, _tokens[^1].Line, _tokens[^1].Column);
             }
         }
 
@@ -204,14 +189,14 @@ namespace MookDialogueScript
                     Consume(TokenType.IDENTIFIER);
                     Consume(TokenType.METADATA_SEPARATOR);
 
-                    string value = "";
-                    if (Check(TokenType.TEXT))
+                    var value = new StringBuilder();
+                    while (!Check(TokenType.NEWLINE) && !IsEOF())
                     {
-                        value = _currentToken.Value;
-                        Consume(TokenType.TEXT);
+                        value.Append(_currentToken.Value);
+                        Consume(_currentToken.Type);
                     }
 
-                    metadata[key] = value;
+                    metadata[key] = value.ToString();
 
                     if (Check(TokenType.NEWLINE))
                     {
@@ -437,12 +422,15 @@ namespace MookDialogueScript
         private List<TextSegmentNode> ParseText()
         {
             var segments = new List<TextSegmentNode>();
-            StringBuilder textBuilder = new StringBuilder(128);
+            var textBuilder = new StringBuilder(128);
 
-            while (_currentToken.Type != TokenType.NEWLINE &&
-                   _currentToken.Type != TokenType.COMMAND_START &&
-                   _currentToken.Type != TokenType.HASH &&
-                   _currentToken.Type != TokenType.QUOTE)
+            while (_currentToken.Type != TokenType.NEWLINE
+                   && _currentToken.Type != TokenType.COMMAND_START
+                   && _currentToken.Type != TokenType.HASH
+                   && _currentToken.Type != TokenType.QUOTE
+                   && _currentToken.Type != TokenType.NODE_START
+                   && _currentToken.Type != TokenType.NODE_END
+                   && !IsEOF())
             {
                 if (_currentToken.Type == TokenType.LEFT_BRACE)
                 {
@@ -621,7 +609,7 @@ namespace MookDialogueScript
             Consume(TokenType.COMMAND_START); // 先消耗 <<
 
             string commandValue = _currentToken.Value.ToLower();
-            TokenType commandType = _currentToken.Type;
+            var commandType = _currentToken.Type;
             Consume(commandType);
 
             switch (commandType)
@@ -752,30 +740,21 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 处理换行符（包括文件末尾情况）
-        /// </summary>
-        private void ConsumeNewlineOrEof()
-        {
-            if (_currentToken.Type != TokenType.EOF)
-            {
-                Consume(TokenType.NEWLINE);
-            }
-        }
-
-        /// <summary>
         /// 解析字符串
         /// </summary>
         private ExpressionNode ParseString(Token token)
         {
             var segments = new List<TextSegmentNode>();
-            StringBuilder textBuilder = new StringBuilder(128);
+            var textBuilder = new StringBuilder(128);
 
             int exprLine = token.Line;
             int exprColumn = token.Column;
 
             Consume(TokenType.QUOTE);
 
-            while (_currentToken.Type != TokenType.QUOTE)
+            while (_currentToken.Type != TokenType.QUOTE
+                   && _currentToken.Type != TokenType.NEWLINE
+                   && !IsEOF())
             {
                 if (_currentToken.Type == TokenType.LEFT_BRACE)
                 {
@@ -817,35 +796,35 @@ namespace MookDialogueScript
         /// <summary>
         /// 定义所有二元操作符的优先级(数字越大优先级越高)
         /// </summary>
-        private static readonly Dictionary<TokenType, OperatorInfo> _binaryOperators = new Dictionary<TokenType, OperatorInfo>
+        private static readonly Dictionary<TokenType, int> _binaryOperators = new()
         {
             // 逻辑运算符 (优先级 1-2)
-            {TokenType.OR, new OperatorInfo(1, TokenType.OR)},
-            {TokenType.AND, new OperatorInfo(2, TokenType.AND)},
-            {TokenType.XOR, new OperatorInfo(2, TokenType.XOR)},
+            {TokenType.OR, 1},
+            {TokenType.AND, 2},
+            {TokenType.XOR, 2},
 
             // 比较运算符 (优先级 3)
-            {TokenType.EQUALS, new OperatorInfo(3, TokenType.EQUALS)},
-            {TokenType.NOT_EQUALS, new OperatorInfo(3, TokenType.NOT_EQUALS)},
-            {TokenType.GREATER, new OperatorInfo(3, TokenType.GREATER)},
-            {TokenType.LESS, new OperatorInfo(3, TokenType.LESS)},
-            {TokenType.GREATER_EQUALS, new OperatorInfo(3, TokenType.GREATER_EQUALS)},
-            {TokenType.LESS_EQUALS, new OperatorInfo(3, TokenType.LESS_EQUALS)},
+            {TokenType.EQUALS, 3},
+            {TokenType.NOT_EQUALS, 3},
+            {TokenType.GREATER, 3},
+            {TokenType.LESS, 3},
+            {TokenType.GREATER_EQUALS, 3},
+            {TokenType.LESS_EQUALS, 3},
 
             // 加减运算符 (优先级 4)
-            {TokenType.PLUS, new OperatorInfo(4, TokenType.PLUS)},
-            {TokenType.MINUS, new OperatorInfo(4, TokenType.MINUS)},
+            {TokenType.PLUS, 4},
+            {TokenType.MINUS, 4},
 
             // 乘除模运算符 (优先级 5)
-            {TokenType.MULTIPLY, new OperatorInfo(5, TokenType.MULTIPLY)},
-            {TokenType.DIVIDE, new OperatorInfo(5, TokenType.DIVIDE)},
-            {TokenType.MODULO, new OperatorInfo(5, TokenType.MODULO)}
+            {TokenType.MULTIPLY, 5},
+            {TokenType.DIVIDE, 5},
+            {TokenType.MODULO, 5}
         };
 
         /// <summary>
         /// 定义一元运算符
         /// </summary>
-        private static readonly HashSet<TokenType> _unaryOperators = new HashSet<TokenType>
+        private static readonly HashSet<TokenType> _unaryOperators = new()
         {
             TokenType.NOT,
             TokenType.MINUS
@@ -867,13 +846,13 @@ namespace MookDialogueScript
         private ExpressionNode ParseExpressionWithPrecedence(int minPrecedence)
         {
             // 解析一个表达式项（可能是一元运算符后跟表达式项，或者是基本表达式）
-            ExpressionNode left = ParseExpressionTerm();
+            var left = ParseExpressionTerm();
 
             // 继续解析可能的中缀运算符
             while (true)
             {
                 // 如果当前token不是运算符，或者优先级低于最小优先级，则退出循环
-                if (!IsTokenBinaryOperator(_currentToken.Type, out OperatorInfo opInfo) || opInfo.Precedence < minPrecedence)
+                if (!IsTokenBinaryOperator(_currentToken.Type, out int precedence) || precedence < minPrecedence)
                 {
                     break;
                 }
@@ -885,7 +864,7 @@ namespace MookDialogueScript
                 Consume(_currentToken.Type);
 
                 // 解析运算符右侧的表达式，传入当前运算符的优先级+1确保同优先级的右结合性
-                ExpressionNode right = ParseExpressionWithPrecedence(opInfo.Precedence + 1);
+                var right = ParseExpressionWithPrecedence(precedence + 1);
 
                 // 构建二元运算符节点
                 left = new BinaryOpNode(left, op, right, line, column);
@@ -897,9 +876,9 @@ namespace MookDialogueScript
         /// <summary>
         /// 判断Token类型是否为二元运算符
         /// </summary>
-        private bool IsTokenBinaryOperator(TokenType type, out OperatorInfo operatorInfo)
+        private bool IsTokenBinaryOperator(TokenType type, out int precedence)
         {
-            return _binaryOperators.TryGetValue(type, out operatorInfo);
+            return _binaryOperators.TryGetValue(type, out precedence);
         }
 
         /// <summary>
@@ -916,7 +895,7 @@ namespace MookDialogueScript
                 Consume(_currentToken.Type);
 
                 // 递归解析操作数
-                ExpressionNode operand = ParseExpressionTerm();
+                var operand = ParseExpressionTerm();
                 return new UnaryOpNode(op, operand, line, column);
             }
 
@@ -929,7 +908,7 @@ namespace MookDialogueScript
         /// </summary>
         private ExpressionNode ParsePrimary()
         {
-            Token token = _currentToken;
+            var token = _currentToken;
             switch (token.Type)
             {
                 case TokenType.NUMBER:
@@ -1009,8 +988,5 @@ namespace MookDialogueScript
             }
             return false;
         }
-
-
-
     }
 }

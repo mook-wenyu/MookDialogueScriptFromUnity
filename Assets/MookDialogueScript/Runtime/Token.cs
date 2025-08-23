@@ -216,10 +216,6 @@ namespace MookDialogueScript
         /// </summary>
         NUMBER,
         /// <summary>
-        /// 字符串
-        /// </summary>
-        STRING,
-        /// <summary>
         /// 文本 字符串
         /// </summary>
         TEXT,

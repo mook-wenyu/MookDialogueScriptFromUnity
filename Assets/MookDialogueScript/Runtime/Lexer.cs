@@ -15,12 +15,15 @@ namespace MookDialogueScript
         private readonly Stack<int> _indentStack;
         private int _currentIndent;
         private readonly List<Token> _tokens;
+        // 待输出的连续DEDENT数量（用于多级缩进回退时逐个发出）
+        private int _pendingDedent;
 
         // 状态标志
-        private bool _isInNodeContent; // 是否在 --- 到 === 集合内
-        private bool _isInCommandMode; // 是否在 << >> 命令内
-        private bool _isInStringMode;  // 是否在字符串模式中
-        private char _stringQuoteType; // 当前字符串模式的引号类型
+        private bool _isInNodeContent;   // 是否在 --- 到 === 集合内
+        private bool _isInCommandMode;   // 是否在 << >> 命令内
+        private bool _isInStringMode;    // 是否在字符串模式中
+        private bool _isInInterpolation; // 是否在 { } 插值表达式内
+        private char _stringQuoteType;   // 当前字符串模式的引号类型
 
         // 关键字
         private static readonly Dictionary<string, TokenType> _keywords = new(StringComparer.OrdinalIgnoreCase)
@@ -64,12 +67,53 @@ namespace MookDialogueScript
             _indentStack.Push(0);
             _tokens = new List<Token>();
             _currentIndent = 0;
+            _pendingDedent = 0;
 
             // 初始化新的状态标志
             _isInNodeContent = false;
             _isInCommandMode = false;
             _isInStringMode = false;
+            _isInInterpolation = false;
             _stringQuoteType = '\0';
+        }
+
+        /// <summary>
+        /// 只读预判：在列首判断该行是否为空行或注释行（允许前导空白）；同时检测是否混合缩进。
+        /// 不改变 _position/_column，仅基于 GetCharAt/Peek 读取。
+        /// </summary>
+        private void ClassifyLineAtColumn1(out bool isEmptyOrCommentLine, out bool hasMixedIndent)
+        {
+            isEmptyOrCommentLine = false;
+            hasMixedIndent = false;
+            int p = _position;
+
+            bool sawSpace = false;
+            bool sawTab = false;
+
+            // 跳过前导空白并检测混合缩进
+            char c = GetCharAt(p);
+            while (c == ' ' || c == '\t')
+            {
+                if (c == ' ') sawSpace = true; else sawTab = true;
+                p++;
+                c = GetCharAt(p);
+            }
+
+            hasMixedIndent = sawSpace && sawTab;
+
+            // 空行或到达文件末尾
+            if (c == '\n' || c == '\r' || c == '\0')
+            {
+                isEmptyOrCommentLine = true;
+                return;
+            }
+
+            // 注释行：前导空白后是 //
+            if (c == '/' && GetCharAt(p + 1) == '/')
+            {
+                isEmptyOrCommentLine = true;
+                return;
+            }
         }
 
         /// <summary>
@@ -82,52 +126,10 @@ namespace MookDialogueScript
             do
             {
                 token = GetNextToken();
-
-                // 验证集合外内容的合法性
-                if (ValidateOutsideContent(token))
-                {
-                    _tokens.Add(token);
-                    MLogger.Debug($"{token}");
-                }
-                else
-                {
-                    // 非法的Token被忽略，但继续处理
-                    MLogger.Debug($"忽略非法Token: {token}");
-
-                    // 如果不是EOF，继续处理下一个Token
-                    if (token.Type != TokenType.EOF)
-                        continue;
-                    else
-                    {
-                        // EOF必须添加
-                        _tokens.Add(token);
-                    }
-                }
-
+                _tokens.Add(token);
             } while (token.Type != TokenType.EOF);
 
             return _tokens;
-        }
-
-        /// <summary>
-        /// 获取最后一个生成的Token
-        /// </summary>
-        /// <returns>最后一个Token，如果没有则返回null</returns>
-        private Token GetLastToken()
-        {
-            return _tokens.Count > 0 ? _tokens[^1] : null;
-        }
-
-        /// <summary>
-        /// 获取倒数第n个Token
-        /// </summary>
-        /// <param name="index">倒数第几个，从1开始</param>
-        /// <returns>对应位置的Token，如果index超出范围则返回null</returns>
-        public Token GetTokenFromLast(int index = 1)
-        {
-            if (index <= 0 || index > _tokens.Count)
-                return null;
-            return _tokens[^index];
         }
 
         /// <summary>
@@ -161,9 +163,9 @@ namespace MookDialogueScript
         /// </summary>
         private void Advance()
         {
-            #if UNITY_EDITOR
-            Debug.Log(_currentChar);
-            #endif
+            // #if UNITY_EDITOR
+            // Debug.Log(_currentChar);
+            // #endif
 
             _position++;
             _column++;
@@ -176,6 +178,14 @@ namespace MookDialogueScript
         private char Peek()
         {
             return GetCharAt(_position + 1);
+        }
+
+        /// <summary>
+        /// </summary>
+        private char Previous()
+        {
+            int pre = _position - 1;
+            return pre >= 0 ? GetCharAt(pre) : '\0';
         }
 
         /// <summary>
@@ -199,7 +209,8 @@ namespace MookDialogueScript
         /// </summary>
         private bool ShouldSkipIndentation()
         {
-            return _currentChar is '\0' or '\n' or '\r' or '/';
+            // 在行首仅对 EOF/换行跳过缩进处理；注释判定由调用方负责
+            return _currentChar is '\0' or '\n' or '\r';
         }
 
         /// <summary>
@@ -207,11 +218,19 @@ namespace MookDialogueScript
         /// </summary>
         private int CountIndentation()
         {
-            int indent = 0;
+            var indent = 0;
+            bool seenSpace = false;
+            bool seenTab = false;
             while (_currentChar is ' ' or '\t')
             {
+                if (_currentChar == ' ') seenSpace = true;
+                else if (_currentChar == '\t') seenTab = true;
                 indent++;
                 Advance();
+            }
+            if (seenSpace && seenTab)
+            {
+                MLogger.Warning($"词法警告: 第{_line}行，检测到混合缩进（空格与Tab）");
             }
             return indent;
         }
@@ -231,187 +250,33 @@ namespace MookDialogueScript
         /// </summary>
         private Token HandleIndentDecrease(int indent)
         {
-            // 只删除一个缩进级别
-            if (_indentStack.Count > 1 && _indentStack.Peek() > indent)
+            // 计算需要回退的层级数，并逐个发出DEDENT
+            int popCount = 0;
+            while (_indentStack.Count > 1 && _indentStack.Peek() > indent)
             {
                 _indentStack.Pop();
-                // 更新当前缩进为栈顶缩进值
-                _currentIndent = _indentStack.Peek();
+                popCount++;
+            }
+            _currentIndent = _indentStack.Peek();
 
+            if (popCount > 0)
+            {
+                // 先返回一个 DEDENT，其余的记录到 pending 里，保持“每次只返回一个 Token”
+                _pendingDedent = popCount - 1;
                 return new Token(TokenType.DEDENT, string.Empty, _line, _column);
             }
 
-            // 如果缩进不匹配任何已知级别，报错并尝试恢复
+            // 如果没有发生弹栈，但目标缩进与现有层级仍不一致，说明缩进不匹配
             if (_indentStack.Count == 0 || (_indentStack.Count > 0 && _indentStack.Peek() != indent))
             {
-                MLogger.Error($"词法错误: 第{_line}行，第{_column}列，无效的缩进");
-                // 尝试恢复 - 添加当前缩进到栈中
-                if (_indentStack.Count == 0)
-                {
-                    _indentStack.Push(indent);
-                }
-                _currentIndent = indent;
+                // 避免产生“幽灵层级”：不将该缩进压栈，仅记录错误并保持现有缩进栈不变
+                MLogger.Error($"词法错误: 第{_line}行，第{_column}列，无效的缩进（未匹配任何已知缩进层级）");
+                // 保持 _currentIndent = _indentStack.Peek() 的值，不返回任何缩进Token
+                return null;
             }
 
-            return new Token(TokenType.DEDENT, string.Empty, _line, _column);
-        }
-
-        /// <summary>
-        /// 跳过空白字符
-        /// </summary>
-        private void SkipWhitespace()
-        {
-            while (_currentChar != '\0' && char.IsWhiteSpace(_currentChar) && _currentChar != '\n' && _currentChar != '\r')
-            {
-                Advance();
-            }
-        }
-
-        /// <summary>
-        /// 处理换行字符、跳过连续的换行和注释行
-        /// </summary>
-        /// <returns>换行Token或EOF Token</returns>
-        private Token HandleNewlineAndComments()
-        {
-            // 记录当前行号用于生成Token
-            int currentLine = _line;
-
-            // 如果遇到换行，处理状态退出
-            if (_isInCommandMode)
-            {
-                MLogger.Error($"词法错误: 第{_line}行，第{_column}列，命令未闭合就遇到了换行");
-                _isInCommandMode = false;
-            }
-
-            // 如果在字符串模式下遇到换行，这通常是一个错误，但我们仍然退出该模式
-            if (_isInStringMode)
-            {
-                MLogger.Error($"词法错误: 第{_line}行，第{_column}列，字符串未闭合就遇到了换行");
-                _isInStringMode = false;
-                _stringQuoteType = '\0';
-            }
-
-            // 处理当前换行
-            if (_currentChar == '\r' && Peek() == '\n')
-            {
-                Advance();
-            }
-            Advance();
-            _line++;
-            _column = 1;
-
-            // 循环处理连续的空行和注释行
-            while (true)
-            {
-                // 如果列号为1（行首），预检查缩进
-                if (_column == 1)
-                {
-                    // 查看当前行是否是空行或注释行
-                    bool isCommentOrEmptyLine = false;
-
-                    // 暂存当前位置
-                    int savedPosition = _position;
-                    int savedColumn = _column;
-
-                    // 跳过空白字符计算缩进
-                    int indent = 0;
-                    while (_currentChar is ' ' or '\t')
-                    {
-                        indent++;
-                        Advance();
-                    }
-
-                    // 检查跳过空白后是否是注释或空行
-                    if (_currentChar == '/' && Peek() == '/' ||
-                        _currentChar == '\n' || _currentChar == '\r' ||
-                        _currentChar == '\0')
-                    {
-                        isCommentOrEmptyLine = true;
-                    }
-
-                    // 如果不是注释行或空行，且缩进与当前缩进不同，则回退并退出循环
-                    if (!isCommentOrEmptyLine && indent != _currentIndent)
-                    {
-                        // 恢复位置，让GetNextToken处理缩进
-                        _position = savedPosition;
-                        _column = savedColumn;
-                        UpdateCurrentChar();
-                        break;
-                    }
-
-                    // 如果是注释行或空行，继续处理
-                    if (isCommentOrEmptyLine)
-                    {
-                        // 对于连续的注释行和空行，跳过缩进处理
-                    }
-                }
-
-                // 跳过行首空白
-                SkipWhitespace();
-
-                // 检查是否是注释行
-                if (_currentChar == '/' && Peek() == '/')
-                {
-                    // 跳过这一行的注释内容
-                    while (_currentChar != '\0' && _currentChar != '\n' && _currentChar != '\r')
-                    {
-                        Advance();
-                    }
-
-                    // 如果注释后没有换行了，结束循环
-                    if (_currentChar != '\n' && _currentChar != '\r')
-                    {
-                        break;
-                    }
-                }
-                // 检查是否是空行
-                else if (_currentChar is '\n' or '\r')
-                {
-                    // 处理换行（空行）
-                }
-                else
-                {
-                    // 不是空行也不是注释行，结束循环
-                    break;
-                }
-
-                // 处理换行
-                if (_currentChar == '\r' && Peek() == '\n')
-                {
-                    Advance();
-                }
-                if (_currentChar is '\n' or '\r')
-                {
-                    Advance();
-                    _line++;
-                    _column = 1;
-                }
-                else
-                {
-                    break; // 如果没有换行了，结束循环
-                }
-            }
-
-            // 如果处理完换行和注释后到达了文件末尾，直接返回EOF
-            if (_currentChar == '\0')
-            {
-                return new Token(TokenType.EOF, string.Empty, _line, _column);
-            }
-
-            // 返回一个NEWLINE token，无论有几个连续的换行和注释
-            return new Token(TokenType.NEWLINE, "\\n", currentLine, _column);
-        }
-
-        /// <summary>
-        /// 跳过注释和连续的注释行
-        /// </summary>
-        private void SkipComment()
-        {
-            // 跳过当前行的注释
-            while (_currentChar != '\0' && _currentChar != '\n' && _currentChar != '\r')
-            {
-                Advance();
-            }
+            // 未发生弹栈且缩进匹配时，不返回 Token
+            return null;
         }
 
         /// <summary>
@@ -419,7 +284,11 @@ namespace MookDialogueScript
         /// </summary>
         private Token HandleIndentation()
         {
-            // 保存当前位置
+            if (_column != 1) return null;
+            // 仅在集合内处理缩进
+            if (!_isInNodeContent) return null;
+
+            // 保存当前位置用于缩进计算后的恢复
             int savedPosition = _position;
             int savedColumn = _column;
 
@@ -435,9 +304,9 @@ namespace MookDialogueScript
 
             if (indent > _currentIndent)
                 return HandleIndentIncrease(indent);
-            else if (indent < _currentIndent)
+            if (indent < _currentIndent)
                 return HandleIndentDecrease(indent);
-            else if (indent != _currentIndent)
+            if (indent != _currentIndent)
             {
                 MLogger.Error($"词法错误: 第{_line}行，第{_column}列，不一致的缩进");
                 // 尝试恢复 - 使用当前缩进
@@ -446,7 +315,106 @@ namespace MookDialogueScript
 
             return null;
         }
-        
+
+        /// <summary>
+        /// 跳过空白字符
+        /// </summary>
+        private void SkipWhitespace()
+        {
+            while (_currentChar != '\0' && char.IsWhiteSpace(_currentChar) && _currentChar != '\n' && _currentChar != '\r')
+            {
+                Advance();
+            }
+        }
+
+        /// <summary>
+        /// 处理换行字符、跳过连续地换行和注释行
+        /// </summary>
+        /// <returns>换行Token或EOF Token</returns>
+        private Token HandleNewlineAndComments()
+        {
+            int currentLine = _line;
+
+            // 处理多行注释和空行：允许前导空白（无回溯）
+            while (true)
+            {
+                // 跳过行首空白
+                while (_currentChar is ' ' or '\t')
+                {
+                    Advance();
+                }
+
+                // 注释行
+                if (_currentChar == '/' && Peek() == '/')
+                {
+                    // 跳过当前行注释内容
+                    while (_currentChar != '\0' && _currentChar != '\n' && _currentChar != '\r')
+                    {
+                        Advance();
+                    }
+                }
+                // 空行（或空白后直接换行）
+                else if (_currentChar is '\n' or '\r')
+                {
+                    // nothing, 交由下面统一换行推进
+                }
+                else
+                {
+                    // 非注释/非空行，结束批量跳过
+                    break;
+                }
+
+                // 统一推进一个换行
+                if (_currentChar == '\r' && Peek() == '\n')
+                {
+                    Advance();
+                }
+                if (_currentChar is '\n' or '\r')
+                {
+                    Advance();
+                    _line++;
+                    _column = 1;
+                }
+                else
+                {
+                    // 已到达文件末尾或无换行字符
+                    break;
+                }
+            }
+
+            // 如果处理完换行和注释后到达了文件末尾，优先补齐所有未关闭的缩进
+            if (_currentChar == '\0')
+            {
+                if (_pendingDedent > 0)
+                {
+                    _pendingDedent--;
+                    return new Token(TokenType.DEDENT, string.Empty, _line, _column);
+                }
+                if (_indentStack.Count > 1)
+                {
+                    _indentStack.Pop();
+                    _currentIndent = _indentStack.Peek();
+                    return new Token(TokenType.DEDENT, string.Empty, _line, _column);
+                }
+                return new Token(TokenType.EOF, string.Empty, _line, _column);
+            }
+
+            // 返回一个NEWLINE token，无论有几个连续的换行和注释
+            return new Token(TokenType.NEWLINE, "\n", currentLine, _column);
+        }
+
+        /// <summary>
+        /// 跳过注释和连续的注释行
+        /// </summary>
+        private void SkipComment()
+        {
+            // 跳过当前行的注释
+            while (_currentChar != '\0' && _currentChar != '\n' && _currentChar != '\r')
+            {
+                Advance();
+            }
+        }
+
         /// <summary>
         /// 处理元数据键值对
         /// </summary>
@@ -457,8 +425,10 @@ namespace MookDialogueScript
             int startPosition = _position;
 
             // 收集键名（冒号前的内容）
-            while (_currentChar != '\0' && _currentChar != ':' && _currentChar != '：' &&
-                   _currentChar != '\n' && _currentChar != '\r')
+            while (_currentChar != '\0'
+                   && _currentChar != ':'
+                   && _currentChar != '\n'
+                   && _currentChar != '\r')
             {
                 Advance();
             }
@@ -466,80 +436,31 @@ namespace MookDialogueScript
             string key = GetRange(startPosition, _position).Trim();
 
             // 检查是否遇到冒号
-            if (_currentChar is ':' or '：')
+            if (_currentChar is ':')
             {
                 // 这里暂时只验证键名格式，值的验证在后续处理中进行
-                if (string.IsNullOrWhiteSpace(key))
+                if (!string.IsNullOrEmpty(key))
                 {
-                    MLogger.Warning($"词法警告: 第{startLine}行，第{startColumn}列，元数据缺少键名");
-                    // 仍然返回Token，让上层处理
+                    return new Token(TokenType.IDENTIFIER, key, startLine, startColumn);
                 }
 
-                return new Token(TokenType.IDENTIFIER, key, startLine, startColumn);
+                MLogger.Warning($"词法警告: 第{startLine}行，第{startColumn}列，元数据缺少键名");
+                // 仍然返回Token，让上层处理
+            }
+            else if (_currentChar is '\r' or '\n')
+            {
+                if (!string.IsNullOrEmpty(key))
+                {
+                    // 键值
+                    return new Token(TokenType.TEXT, key, startLine, startColumn);
+                }
+
+                MLogger.Warning($"词法警告: 第{startLine}行，第{startColumn}列，元数据缺少键值");
             }
 
             // 如果没有冒号，这不是有效的元数据格式
-            MLogger.Warning($"词法警告: 第{startLine}行，第{startColumn}列，无效的元数据格式，缺少冒号");
-            return new Token(TokenType.TEXT, key, startLine, startColumn);
-        }
-
-        /// <summary>
-        /// 验证集合外内容是否合法
-        /// </summary>
-        /// <param name="token">要验证的Token</param>
-        /// <returns>是否合法</returns>
-        private bool ValidateOutsideContent(Token token)
-        {
-            // 如果在集合内，不需要验证
-            if (_isInNodeContent)
-                return true;
-
-            // 允许的Token类型
-            switch (token.Type)
-            {
-                case TokenType.IDENTIFIER:         // 元数据键名
-                case TokenType.METADATA_SEPARATOR: // 冒号
-                case TokenType.TEXT:               // 元数据值
-                case TokenType.NEWLINE:            // 换行
-                case TokenType.EOF:                // 文件结束
-                case TokenType.INDENT:             // 缩进
-                case TokenType.DEDENT:             // 取消缩进
-                case TokenType.NODE_START:         // 节点开始 ---
-                case TokenType.NODE_END:           // 节点结束 ===
-                    return true;
-
-                // 不允许的内容
-                case TokenType.ARROW: // 选项 ->
-                    MLogger.Warning($"词法警告: 第{token.Line}行，第{token.Column}列，选项只能在集合内使用");
-                    return false;
-
-                case TokenType.COMMAND_START: // 命令 <<
-                case TokenType.COMMAND_END:   // 命令 >>
-                    MLogger.Warning($"词法警告: 第{token.Line}行，第{token.Column}列，命令只能在集合内使用");
-                    return false;
-
-                case TokenType.HASH: // 标签 #
-                    MLogger.Warning($"词法警告: 第{token.Line}行，第{token.Column}列，标签只能在集合内使用");
-                    return false;
-
-                case TokenType.VARIABLE: // 变量 $var
-                    MLogger.Warning($"词法警告: 第{token.Line}行，第{token.Column}列，变量只能在集合内使用");
-                    return false;
-
-                case TokenType.LEFT_BRACE:  // 变量插值 {
-                case TokenType.RIGHT_BRACE: // 变量插值 }
-                    MLogger.Warning($"词法警告: 第{token.Line}行，第{token.Column}列，变量插值只能在集合内使用");
-                    return false;
-
-                case TokenType.COLON: // 普通冒号（非元数据分隔符）
-                    MLogger.Warning($"词法警告: 第{token.Line}行，第{token.Column}列，对话格式只能在集合内使用");
-                    return false;
-
-                default:
-                    // 其他不明确的内容也警告
-                    MLogger.Warning($"词法警告: 第{token.Line}行，第{token.Column}列，此内容只能在集合内使用: {token.Type}");
-                    return false;
-            }
+            MLogger.Warning($"词法警告: 第{startLine}行，第{startColumn}列，无效的元数据格式");
+            return null;
         }
 
         /// <summary>
@@ -547,10 +468,12 @@ namespace MookDialogueScript
         /// </summary>
         private Token HandleNumber()
         {
+            if (!char.IsDigit(_currentChar)) return null;
+
             int startPosition = _position;
             int startLine = _line;
             int startColumn = _column;
-            bool hasDecimalPoint = false;
+            var hasDecimalPoint = false;
 
             while (_currentChar != '\0' &&
                    (char.IsDigit(_currentChar) || _currentChar == '.'))
@@ -575,49 +498,77 @@ namespace MookDialogueScript
         {
             int startLine = _line;
             int startColumn = _column;
-            StringBuilder resultBuilder = new StringBuilder(64);
+            var resultBuilder = new StringBuilder(64);
 
             // 在集合内的文本处理
             while (_currentChar != '\0' && _currentChar != '\n' && _currentChar != '\r')
             {
-                // 处理转义字符
-                if (_currentChar == '\\')
+                if (_isInStringMode)
                 {
-                    char nextChar = Peek();
-                    // 支持的转义字符: \: \<< \\
-                    if (nextChar is ':' or '：' or '<' or '\\')
+                    // 字符串 有引号
+                    // 处理转义字符
+                    if (_currentChar == '\\')
                     {
-                        Advance(); // 跳过反斜杠
-                        resultBuilder.Append(nextChar);
+                        char next = Peek();
+                        if (next is '{' or '}' or '\'' or '"' or '\\')
+                        {
+                            Advance(); // 跳过反斜杠
+                            resultBuilder.Append(next);
+                        }
+                        else
+                        {
+                            // 其他情况保留反斜杠
+                            resultBuilder.Append(_currentChar);
+                        }
                         Advance();
+                        continue;
                     }
-                    else
+
+                    // 遇到结束引号或插值起始，停止由外层生成对应Token
+                    if (IsClosingQuote(_currentChar) || _currentChar == '{')
                     {
-                        // 其他情况保留反斜杠
-                        resultBuilder.Append(_currentChar);
-                        Advance();
+                        break;
                     }
-                    continue;
                 }
-
-                // 检查截断字符
-                // 在集合内，文本会被 << >> # 等字符截断
-                if (_currentChar is '<' && Peek() == '<')
+                else
                 {
-                    // 遇到命令开始，停止文本处理
-                    break;
-                }
+                    // 文本
+                    // 处理转义字符
+                    if (_currentChar == '\\')
+                    {
+                        char nextChar = Peek();
+                        // 支持的转义字符:
+                        if (nextChar is ':' or '#' or '{' or '}' or '<' or '>' or '\'' or '"' or '\\')
+                        {
+                            Advance(); // 跳过反斜杠
+                            resultBuilder.Append(nextChar);
+                        }
+                        else
+                        {
+                            // 其他情况保留反斜杠
+                            resultBuilder.Append(_currentChar);
+                        }
+                        Advance();
+                        continue;
+                    }
 
-                if (_currentChar == '#')
-                {
-                    // 遇到标签，停止文本处理
-                    break;
-                }
-
-                if (_currentChar == '{')
-                {
-                    // 遇到变量插值，停止文本处理
-                    break;
+                    // 检查截断字符
+                    char pre = Previous();
+                    if (_currentChar == ':' && pre != '\0' && !char.IsWhiteSpace(pre))
+                    {
+                        break;
+                    }
+                    // 在集合内，文本会被 << >> # 等字符截断
+                    if (_currentChar is '<' && Peek() == '<')
+                    {
+                        // 遇到命令开始，停止文本处理
+                        break;
+                    }
+                    if (_currentChar is '#' or '{')
+                    {
+                        // 遇到标签或文本插值，停止文本处理
+                        break;
+                    }
                 }
 
                 // 正常字符处理
@@ -625,9 +576,7 @@ namespace MookDialogueScript
                 Advance();
             }
 
-            string result = resultBuilder.ToString();
-
-            return new Token(TokenType.TEXT, result, startLine, startColumn);
+            return new Token(TokenType.TEXT, resultBuilder.ToString(), startLine, startColumn);
         }
 
         /// <summary>
@@ -637,14 +586,12 @@ namespace MookDialogueScript
         {
             if (!_isInStringMode) return false;
 
-            switch (_stringQuoteType)
+            return _stringQuoteType switch
             {
-                case '\u2018': return c == '\u2019'; // 中文单引号
-                case '\u201C': return c == '\u201D'; // 中文双引号
-                case '\'': return c == '\'';         // 英文单引号
-                case '"': return c == '"';           // 英文双引号
-                default: return false;
-            }
+                '\'' => c == '\'', // 英文单引号
+                '"' => c == '"',   // 英文双引号
+                _ => false
+            };
         }
 
         /// <summary>
@@ -652,6 +599,8 @@ namespace MookDialogueScript
         /// </summary>
         private Token HandleVariable()
         {
+            if (!_isInNodeContent || _currentChar != '$') return null;
+
             int startLine = _line;
             int startColumn = _column;
             Advance(); // 跳过$符号
@@ -675,6 +624,8 @@ namespace MookDialogueScript
         /// </summary>
         private Token HandleIdentifierOrKeyword()
         {
+            if (!IsIdentifierStart(_currentChar)) return null;
+
             int startPosition = _position;
             int startLine = _line;
             int startColumn = _column;
@@ -694,7 +645,7 @@ namespace MookDialogueScript
             string text = GetRange(startPosition, _position);
 
             // 检查是否是关键字（忽略大小写）
-            if (_keywords.TryGetValue(text, out TokenType type))
+            if (_keywords.TryGetValue(text, out var type))
             {
                 return new Token(type, text, startLine, startColumn);
             }
@@ -708,6 +659,8 @@ namespace MookDialogueScript
         /// </summary>
         private Token HandleCommand()
         {
+            if (!_isInNodeContent) return null;
+
             if (_currentChar == '<' && Peek() == '<')
             {
                 // 处理命令开始
@@ -718,7 +671,7 @@ namespace MookDialogueScript
                 _isInCommandMode = true;
                 return new Token(TokenType.COMMAND_START, "<<", startLine, startColumn);
             }
-            else if (_currentChar == '>' && Peek() == '>')
+            if (_currentChar == '>' && Peek() == '>')
             {
                 // 处理命令结束
                 int startLine = _line;
@@ -728,7 +681,6 @@ namespace MookDialogueScript
                 _isInCommandMode = false;
                 return new Token(TokenType.COMMAND_END, ">>", startLine, startColumn);
             }
-
             return null;
         }
 
@@ -738,23 +690,51 @@ namespace MookDialogueScript
         /// <returns>下一个Token</returns>
         private Token GetNextToken()
         {
+            // 先输出 pending 的 DEDENT，以保持“每次只返回一个 Token”
+            if (_pendingDedent > 0)
+            {
+                _pendingDedent--;
+                return new Token(TokenType.DEDENT, string.Empty, _line, _column);
+            }
+
+            // 如果已到输入末尾，优先补齐所有未关闭的缩进
+            if (_currentChar == '\0')
+            {
+                if (_indentStack.Count > 1)
+                {
+                    _indentStack.Pop();
+                    _currentIndent = _indentStack.Peek();
+                    return new Token(TokenType.DEDENT, string.Empty, _line, _column);
+                }
+                return new Token(TokenType.EOF, string.Empty, _line, _column);
+            }
+
             while (_currentChar != '\0')
             {
                 // 1. 处理行首缩进（仅在集合内需要）
                 if (_column == 1 && _isInNodeContent)
                 {
-                    if (_currentChar != '/' || Peek() != '/')
+                    // 列首预判：空行/注释行直接批量跳过并返回一个 NEWLINE
+                    ClassifyLineAtColumn1(out bool isEmptyOrComment, out bool hasMixedIndent);
+                    if (hasMixedIndent)
                     {
-                        Token indentToken = HandleIndentation();
-                        if (indentToken != null)
-                        {
-                            return indentToken;
-                        }
+                        MLogger.Warning($"词法警告: 第{_line}行，检测到混合缩进（空格与制表符混用）");
+                    }
+                    if (isEmptyOrComment)
+                    {
+                        return HandleNewlineAndComments();
+                    }
+
+                    // 内容行才进行缩进比较
+                    var indentToken = HandleIndentation();
+                    if (indentToken != null)
+                    {
+                        return indentToken;
                     }
                 }
 
-                // 2. 跳过空白字符（非文本模式下）
-                if (!_isInNodeContent || _isInCommandMode)
+                // 2. 跳过空白字符（非文本模式下或在插值表达式内）
+                if (!_isInNodeContent || _isInCommandMode || _isInInterpolation)
                 {
                     if (char.IsWhiteSpace(_currentChar) && _currentChar != '\n' && _currentChar != '\r')
                     {
@@ -764,7 +744,7 @@ namespace MookDialogueScript
                 }
 
                 // 3. 处理注释和换行
-                if (_currentChar == '/' && Peek() == '/' || _currentChar == '\n' || _currentChar == '\r')
+                if (((_currentChar == '/' && Peek() == '/')) || _currentChar == '\n' || _currentChar == '\r')
                 {
                     if (_currentChar == '/' && Peek() == '/')
                     {
@@ -781,44 +761,49 @@ namespace MookDialogueScript
                     return HandleNewlineAndComments();
                 }
 
-                // 4. 处理命令 << >>
-                Token commandToken = HandleCommand();
-                if (commandToken != null)
+                // 处理元数据模式或特殊的冒号
+                if (!_isInNodeContent && IsIdentifierStart(_currentChar))
                 {
-                    return commandToken;
+                    // 是元数据
+                    var meta = HandleMetadata();
+                    if (meta != null)
+                    {
+                        return meta;
+                    }
                 }
 
-                // 5. 处理节点标记 ===
-
-                if (_currentChar == '=' && Peek() == '=')
+                // 处理节点标记 ===
+                if (_currentChar == '=' && Peek() == '=' && GetCharAt(_position + 2) == '=')
                 {
-                    int startPosition = _position;
                     int startLine = _line;
                     int startColumn = _column;
 
                     Advance();
                     Advance();
-                    if (_currentChar == '=')
-                    {
-                        Advance();
-                        _isInNodeContent = false;
-                        return new Token(TokenType.NODE_END, "===", startLine, startColumn);
-                    }
-                    else
-                    {
-                        // 处理 == 操作符
-                        return new Token(TokenType.EQUALS, "==", startLine, startColumn);
-                    }
+                    Advance();
+                    _isInNodeContent = false;
+                    return new Token(TokenType.NODE_END, "===", startLine, startColumn);
                 }
 
-                // 6. 处理元数据模式或特殊的冒号
-                if (!_isInNodeContent && IsIdentifierStart(_currentChar))
+                // 处理引号文本
+                if (_isInStringMode && !IsClosingQuote(_currentChar) && !_isInInterpolation && _currentChar != '{')
                 {
-                    // 可能是元数据键名
-                    return HandleMetadata();
+                    return HandleText();
                 }
 
-                if (_currentChar is ':' or '：')
+                // 处理普通文本
+                if (_isInNodeContent
+                    && !_isInInterpolation
+                    && !_isInCommandMode
+                    && _currentChar != ':'
+                    && _currentChar != '#'
+                    && _currentChar != '{'
+                    && !(_currentChar == '<' && Peek() == '<'))
+                {
+                    return HandleText();
+                }
+
+                if (_currentChar is ':')
                 {
                     int startLine = _line;
                     int startColumn = _column;
@@ -834,80 +819,62 @@ namespace MookDialogueScript
                     return new Token(TokenType.COLON, ":", startLine, startColumn);
                 }
 
-                // 7. 处理减号 -
-                if (_currentChar == '-')
+                // 在集合外
+                if (!_isInNodeContent)
                 {
-                    int startLine = _line;
-                    int startColumn = _column;
-
-                    if (_isInNodeContent)
+                    // 检查是否是节点标记 ---
+                    if (_currentChar == '-' && Peek() == '-' && GetCharAt(_position + 2) == '-')
                     {
-                        // 在集合内：所有减号都按字面意思处理
-                        if (Peek() == '>')
-                        {
-                            // -> 识别为 ARROW
-                            Advance();
-                            Advance();
-                            return new Token(TokenType.ARROW, "->", startLine, startColumn);
-                        }
-                        else
-                        {
-                            // 单个 - 识别为 MINUS
-                            Advance();
-                            return new Token(TokenType.MINUS, "-", startLine, startColumn);
-                        }
-                    }
-                    else
-                    {
-                        // 在集合外：检查是否是节点标记 ---
-                        if (Peek() == '-' && GetCharAt(_position + 2) == '-')
-                        {
-                            // --- 识别为 NODE_START
-                            Advance();
-                            Advance();
-                            Advance();
-                            _isInNodeContent = true;
-                            return new Token(TokenType.NODE_START, "---", startLine, startColumn);
-                        }
-                        else
-                        {
-                            // 其他情况作为文本处理
-                            return HandleText();
-                        }
-                    }
-                }
-
-                // 8. 处理变量
-                if (_currentChar is '$' or '￥')
-                {
-                    return HandleVariable();
-                }
-
-                // 9. 处理标识符和关键字
-                if (IsIdentifierStart(_currentChar))
-                {
-                    return HandleIdentifierOrKeyword();
-                }
-
-                // 10. 处理数字
-                if (char.IsDigit(_currentChar))
-                {
-                    return HandleNumber();
-                }
-
-                // 11. 处理字符串引号（仅在命令模式下）
-                if (_isInCommandMode && _currentChar is '\'' or '"' or '\u2018' or '\u201C')
-                {
-                    if (!_isInStringMode)
-                    {
-                        char quoteChar = _currentChar;
                         int startLine = _line;
                         int startColumn = _column;
-                        _isInStringMode = true;
-                        _stringQuoteType = quoteChar;
+
+                        // --- 识别为 NODE_START
                         Advance();
-                        return new Token(TokenType.QUOTE, quoteChar.ToString(), startLine, startColumn);
+                        Advance();
+                        Advance();
+                        _isInNodeContent = true;
+                        return new Token(TokenType.NODE_START, "---", startLine, startColumn);
                     }
+                }
+
+                // 处理数字
+                var num = HandleNumber();
+                if (num != null)
+                {
+                    return num;
+                }
+
+                // 处理命令 << >>
+                var commandToken = HandleCommand();
+                if (commandToken != null)
+                {
+                    return commandToken;
+                }
+
+                // 处理变量
+                var hVar = HandleVariable();
+                if (hVar != null)
+                {
+                    return hVar;
+                }
+
+                // 处理标识符和关键字
+                var idOrKey = HandleIdentifierOrKeyword();
+                if (idOrKey != null)
+                {
+                    return idOrKey;
+                }
+
+                // 处理字符串引号
+                if (!_isInStringMode && _currentChar is '\'' or '"')
+                {
+                    char quoteChar = _currentChar;
+                    int startLine = _line;
+                    int startColumn = _column;
+                    _isInStringMode = true;
+                    _stringQuoteType = quoteChar;
+                    Advance();
+                    return new Token(TokenType.QUOTE, quoteChar.ToString(), startLine, startColumn);
                 }
 
                 // 处理字符串结束引号
@@ -926,7 +893,6 @@ namespace MookDialogueScript
                 switch (_currentChar)
                 {
                     case '(':
-                    case '（':
                     {
                         int startLine = _line;
                         int startColumn = _column;
@@ -934,7 +900,6 @@ namespace MookDialogueScript
                         return new Token(TokenType.LEFT_PAREN, "(", startLine, startColumn);
                     }
                     case ')':
-                    case '）':
                     {
                         int startLine = _line;
                         int startColumn = _column;
@@ -946,6 +911,7 @@ namespace MookDialogueScript
                         int startLine = _line;
                         int startColumn = _column;
                         Advance();
+                        _isInInterpolation = true;
                         return new Token(TokenType.LEFT_BRACE, "{", startLine, startColumn);
                     }
                     case '}':
@@ -953,6 +919,7 @@ namespace MookDialogueScript
                         int startLine = _line;
                         int startColumn = _column;
                         Advance();
+                        _isInInterpolation = false;
                         return new Token(TokenType.RIGHT_BRACE, "}", startLine, startColumn);
                     }
                     case '#':
@@ -963,7 +930,6 @@ namespace MookDialogueScript
                         return new Token(TokenType.HASH, "#", startLine, startColumn);
                     }
                     case ',':
-                    case '，':
                     {
                         int startLine = _line;
                         int startColumn = _column;
@@ -976,6 +942,19 @@ namespace MookDialogueScript
                         int startColumn = _column;
                         Advance();
                         return new Token(TokenType.PLUS, "+", startLine, startColumn);
+                    }
+                    case '-':
+                    {
+                        int startLine = _line;
+                        int startColumn = _column;
+                        Advance();
+                        if (_currentChar == '>')
+                        {
+                            // -> 识别为 ARROW
+                            Advance();
+                            return new Token(TokenType.ARROW, "->", startLine, startColumn);
+                        }
+                        return new Token(TokenType.MINUS, "-", startLine, startColumn);
                     }
                     case '*':
                     {
@@ -1003,10 +982,14 @@ namespace MookDialogueScript
                         int startLine = _line;
                         int startColumn = _column;
                         Advance();
+                        if (_currentChar == '=')
+                        {
+                            Advance();
+                            return new Token(TokenType.EQUALS, "==", startLine, startColumn);
+                        }
                         return new Token(TokenType.ASSIGN, "=", startLine, startColumn);
                     }
                     case '!':
-                    case '！':
                     {
                         int startLine = _line;
                         int startColumn = _column;
@@ -1052,11 +1035,7 @@ namespace MookDialogueScript
                             Advance();
                             return new Token(TokenType.AND, "&&", startLine, startColumn);
                         }
-                        // 单个&作为文本处理
-                        _position--;
-                        _column--;
-                        UpdateCurrentChar();
-                        return HandleText();
+                        break;
                     }
                     case '|':
                     {
@@ -1068,21 +1047,11 @@ namespace MookDialogueScript
                             Advance();
                             return new Token(TokenType.OR, "||", startLine, startColumn);
                         }
-                        // 单个|作为文本处理
-                        _position--;
-                        _column--;
-                        UpdateCurrentChar();
-                        return HandleText();
+                        break;
                     }
                 }
 
-                // 13. 如果在集合内且不在命令模式，当做文本处理
-                if (_isInNodeContent && !_isInCommandMode)
-                {
-                    return HandleText();
-                }
-
-                // 14. 其他字符作为文本处理
+                // 其他情况
                 return HandleText();
             }
 

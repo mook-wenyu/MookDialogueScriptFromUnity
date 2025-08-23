@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
+using UnityEngine.Scripting;
 
 namespace MookDialogueScript
 {
@@ -33,14 +34,11 @@ namespace MookDialogueScript
     public class FunctionManager
     {
         #region 字段和构造函数
-
         // 编译后的函数字典：函数名 -> 函数实现
-        private readonly Dictionary<string, Func<List<RuntimeValue>, Task<RuntimeValue>>> _compiledFunctions =
-            new Dictionary<string, Func<List<RuntimeValue>, Task<RuntimeValue>>>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, Func<List<RuntimeValue>, Task<RuntimeValue>>> _compiledFunctions = new(StringComparer.OrdinalIgnoreCase);
 
         // 任务处理器缓存：Task类型 -> 处理函数
-        private readonly Dictionary<Type, Func<Task, Task<object>>> _taskResultHandlers =
-            new Dictionary<Type, Func<Task, Task<object>>>();
+        private readonly Dictionary<Type, Func<Task, Task<object>>> _taskResultHandlers = new();
 
         /// <summary>
         /// 初始化函数管理器
@@ -50,11 +48,9 @@ namespace MookDialogueScript
             // 初始化任务处理器
             InitializeTaskHandlers();
         }
-
         #endregion
 
         #region 任务处理
-
         /// <summary>
         /// 初始化常用任务类型的处理器
         /// </summary>
@@ -112,133 +108,9 @@ namespace MookDialogueScript
 
             return null; // Task 没有结果
         }
-
-        #endregion
-
-        #region 参数和类型处理
-
-        /// <summary>
-        /// 准备函数调用参数
-        /// </summary>
-        private object[] PrepareArguments(List<RuntimeValue> scriptArgs, ParameterInfo[] parameters)
-        {
-            object[] nativeArgs = new object[parameters.Length];
-
-            for (int i = 0; i < parameters.Length; i++)
-            {
-                if (i < scriptArgs.Count)
-                {
-                    // 提供了参数值，进行类型转换
-                    nativeArgs[i] = ConvertToNativeType(scriptArgs[i], parameters[i].ParameterType);
-                }
-                else if (parameters[i].HasDefaultValue)
-                {
-                    // 使用参数的默认值
-                    nativeArgs[i] = parameters[i].DefaultValue;
-                }
-                else
-                {
-                    // 使用类型的默认值
-                    nativeArgs[i] = parameters[i].ParameterType.IsValueType
-                        ? Activator.CreateInstance(parameters[i].ParameterType)
-                        : null;
-                }
-            }
-
-            return nativeArgs;
-        }
-
-        /// <summary>
-        /// 将运行时值转换为原生类型
-        /// </summary>
-        private object ConvertToNativeType(RuntimeValue value, Type targetType)
-        {
-            if (value.Type == RuntimeValue.ValueType.Null)
-            {
-                return null;
-            }
-
-            // 数值类型转换
-            if (targetType == typeof(double) || targetType == typeof(float) ||
-                targetType == typeof(int) || targetType == typeof(long))
-            {
-                if (value.Type != RuntimeValue.ValueType.Number)
-                {
-                    MLogger.Error($"期望数字类型用于 '{targetType.Name}'，但得到了{GetTypeName(value.Type)}");
-                }
-                return Convert.ChangeType(value.Value, targetType);
-            }
-            // 字符串类型转换
-            else if (targetType == typeof(string))
-            {
-                if (value.Type != RuntimeValue.ValueType.String)
-                {
-                    MLogger.Warning($"期望字符串类型用于 '{targetType.Name}'，但得到了{GetTypeName(value.Type)}");
-                }
-                return value.Value.ToString();
-            }
-            // 布尔类型转换
-            else if (targetType == typeof(bool))
-            {
-                if (value.Type != RuntimeValue.ValueType.Boolean)
-                {
-                    MLogger.Error($"期望布尔类型用于 '{targetType.Name}'，但得到了{GetTypeName(value.Type)}");
-                }
-                return Convert.ChangeType(value.Value, targetType);
-            }
-            // 引用类型和可空值类型
-            else if (targetType.IsClass || (targetType.IsValueType && Nullable.GetUnderlyingType(targetType) != null))
-            {
-                return null;
-            }
-
-            // 不支持的类型
-            MLogger.Error($"不支持的参数类型转换: {targetType.Name}");
-            // 返回类型的默认值而不是抛出异常
-            return targetType.IsValueType ? Activator.CreateInstance(targetType) : null;
-        }
-
-        /// <summary>
-        /// 获取类型名称的可读表示
-        /// </summary>
-        private string GetTypeName(RuntimeValue.ValueType type)
-        {
-            switch (type)
-            {
-                case RuntimeValue.ValueType.Number: return "数字";
-                case RuntimeValue.ValueType.String: return "字符串";
-                case RuntimeValue.ValueType.Boolean: return "布尔";
-                case RuntimeValue.ValueType.Null: return "空";
-                default: return type.ToString();
-            }
-        }
-
-        /// <summary>
-        /// 将对象转换为运行时值
-        /// </summary>
-        private RuntimeValue ConvertToRuntimeValue(object value)
-        {
-            switch (value)
-            {
-                case null:
-                    return RuntimeValue.Null;
-                case double or int or float or long:
-                    return new RuntimeValue(Convert.ToDouble(value));
-                case string strValue:
-                    return new RuntimeValue(strValue);
-                case bool boolValue:
-                    return new RuntimeValue(boolValue);
-                default:
-                    MLogger.Error($"不支持的返回值类型: {value.GetType().Name}，将返回空值");
-                    return RuntimeValue.Null;
-            }
-
-        }
-
         #endregion
 
         #region 函数注册和调用
-
         /// <summary>
         /// 扫描并注册所有标记了ScriptFunc特性的方法
         /// </summary>
@@ -328,7 +200,7 @@ namespace MookDialogueScript
                         result = method.Invoke(instance, nativeArgs);
                     }
 
-                    return ConvertToRuntimeValue(result);
+                    return Helper.ConvertToRuntimeValue(result);
                 }
                 catch (Exception ex)
                 {
@@ -364,7 +236,7 @@ namespace MookDialogueScript
 
             foreach (var method in methods)
             {
-                string funcName = $"{objectName}__{method.Name}";
+                var funcName = $"{objectName}__{method.Name}";
                 try
                 {
                     _compiledFunctions[funcName] = CompileMethod(method, instance);
@@ -421,14 +293,44 @@ namespace MookDialogueScript
             MLogger.Error($"函数 '{name}' 未找到");
             return RuntimeValue.Null; // 返回空值而不是抛出异常
         }
-
         #endregion
+        
+        /// <summary>
+        /// 准备函数调用参数
+        /// </summary>
+        private object[] PrepareArguments(List<RuntimeValue> scriptArgs, ParameterInfo[] parameters)
+        {
+            var nativeArgs = new object[parameters.Length];
+
+            for (var i = 0; i < parameters.Length; i++)
+            {
+                if (i < scriptArgs.Count)
+                {
+                    // 提供了参数值，进行类型转换
+                    nativeArgs[i] = Helper.ConvertToNativeType(scriptArgs[i], parameters[i].ParameterType);
+                }
+                else if (parameters[i].HasDefaultValue)
+                {
+                    // 使用参数的默认值
+                    nativeArgs[i] = parameters[i].DefaultValue;
+                }
+                else
+                {
+                    // 使用类型的默认值
+                    nativeArgs[i] = parameters[i].ParameterType.IsValueType
+                        ? Activator.CreateInstance(parameters[i].ParameterType)
+                        : null;
+                }
+            }
+
+            return nativeArgs;
+        }
 
         #region 内置函数
-
         /// <summary>
         /// 输出日志
         /// </summary>
+        [Preserve]
         [ScriptFunc("log")]
         public static void Log(string message, string type = "info")
         {
@@ -452,13 +354,14 @@ namespace MookDialogueScript
         /// <summary>
         /// 连接字符串
         /// </summary>
+        [Preserve]
         [ScriptFunc("concat")]
         public static string Concat(string str1, string str2 = "", string str3 = "", string str4 = "",
             string str5 = "", string str6 = "", string str7 = "", string str8 = "",
             string str9 = "", string str10 = "", string str11 = "", string str12 = "",
             string str13 = "", string str14 = "", string str15 = "", string str16 = "")
         {
-            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            var sb = new System.Text.StringBuilder();
             if (!string.IsNullOrEmpty(str1)) sb.Append(str1);
             if (!string.IsNullOrEmpty(str2)) sb.Append(str2);
             if (!string.IsNullOrEmpty(str3)) sb.Append(str3);
@@ -481,35 +384,37 @@ namespace MookDialogueScript
         /// <summary>
         /// 返回一个介于 0 和 1 之间的随机数
         /// </summary>
+        [Preserve]
         [ScriptFunc("random")]
         public static double Random(int digits = 2)
         {
-            return Math.Round(new System.Random().NextDouble(), digits);
+            return Math.Round(new Random().NextDouble(), digits);
         }
 
         /// <summary>
         /// 返回一个介于 min 和 max 之间的随机数
         /// </summary>
+        [Preserve]
         [ScriptFunc("random_range")]
         public static double Random_Range(float min, float max, int digits = 2)
         {
-            return Math.Round(new System.Random().NextDouble() * (max - min) + min, digits);
+            return Math.Round(new Random().NextDouble() * (max - min) + min, digits);
         }
 
         /// <summary>
         /// 介于 1 和 sides 之间（含 1 和 sides ）的随机整数
         /// </summary>
+        [Preserve]
         [ScriptFunc("dice")]
         public static int Dice(int sides, int count = 1)
         {
-            int total = 0;
-            for (int i = 0; i < count; i++)
+            var total = 0;
+            for (var i = 0; i < count; i++)
             {
-                total += new System.Random().Next(1, sides + 1);
+                total += new Random().Next(1, sides + 1);
             }
             return total;
         }
-
         #endregion
     }
 }

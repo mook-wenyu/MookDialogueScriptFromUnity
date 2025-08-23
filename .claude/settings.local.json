@@ -4,7 +4,13 @@
       "mcp__UnityMCP__read_console",
       "Bash(git add .)",
       "Bash(git commit -m \"$(cat <<''EOF''\n重构Parser实现新语法设计，更新文档至0.3.0版本\n\n主要更新：\n- 重新设计语法：节点元数据前置，统一命令格式<<>>\n- 实现自动行标签生成（#line:nodename1格式）  \n- 支持嵌套内容解析（对话、选项、条件的子内容）\n- 优化文本解析：支持中括号文本，移除LEFT_BRACKET截断\n- 添加错误恢复机制：自动修复缺失的---和===标记\n- 更新README.md：完整的新语法说明和向后兼容性说明\n- 新增测试文件：验证中括号和新解析器功能\n\n技术改进：\n- AST节点增加Tags属性和嵌套内容支持\n- Parser解析逻辑全面重构：统一内容解析入口\n- 实现10层嵌套深度警告机制\n- 优化代码结构：使用现代C#语法模式匹配\n\n🤖 Generated with [Claude Code](https://claude.ai/code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
-      "Bash(git push origin main)"
+      "Bash(git push origin main)",
+      "Bash(git commit -m \"$(cat <<''EOF''\n重构Parser实现新语法设计，更新文档至0.3.0版本\n\n主要更新：\n- 重新设计语法：节点元数据前置，统一命令格式<<>>\n- 实现自动行标签生成（#line:nodename1格式）  \n- 支持嵌套内容解析（对话、选项、条件的子内容）\n- 优化文本解析：支持中括号文本，移除LEFT_BRACKET截断\n- 添加错误恢复机制：自动修复缺失的---和===标记\n- 更新README.md：完整的新语法说明和向后兼容性说明\n- 新增测试文件：验证中括号和新解析器功能\n\n技术改进：\n- AST节点增加Tags属性和嵌套内容支持\n- Parser解析逻辑全面重构：统一内容解析入口\n- 实现10层嵌套深度警告机制\n- 优化代码结构：使用现代C#语法模式匹配\n\n🤖 Generated with [Claude Code](https://claude.ai/code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "mcp__UnityMCP__manage_editor",
+      "Bash(sed -n '218p' \"D:\\UnityProjects\\MookDialogueScriptFromUnity\\Assets\\Resources\\DialogueScripts\\example_dialogue.mds\")",
+      "Bash(sed -n '216,220p' \"D:\\UnityProjects\\MookDialogueScriptFromUnity\\Assets\\Resources\\DialogueScripts\\example_dialogue.mds\")",
+      "mcp__UnityMCP__execute_menu_item",
+      "mcp__UnityMCP__manage_asset"
     ],
     "deny": [],
     "ask": []

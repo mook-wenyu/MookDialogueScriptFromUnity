@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine.Scripting;
 
 namespace MookDialogueScript
 {
@@ -12,12 +13,12 @@ namespace MookDialogueScript
         /// <summary>
         /// 已访问的节点记录
         /// </summary>
-        public Dictionary<string, int> visitedNodes = new Dictionary<string, int>();
+        public Dictionary<string, int> visitedNodes = new();
 
         /// <summary>
         /// 脚本变量存储
         /// </summary>
-        public Dictionary<string, RuntimeValue> variables = new Dictionary<string, RuntimeValue>();
+        public Dictionary<string, RuntimeValue> variables = new();
 
         /// <summary>
         /// 是否正在对话中
@@ -27,6 +28,7 @@ namespace MookDialogueScript
         /// <summary>
         /// 对话的初始节点名称
         /// </summary>
+        [Preserve]
         public string initialNodeName = string.Empty;
 
         /// <summary>
@@ -55,11 +57,9 @@ namespace MookDialogueScript
         /// <param name="nodeName">初始节点名称</param>
         public void RecordInitialNode(string nodeName)
         {
-            if (!string.IsNullOrEmpty(nodeName))
-            {
-                initialNodeName = nodeName;
-                isInDialogue = true;
-            }
+            if (string.IsNullOrEmpty(nodeName)) return;
+            initialNodeName = nodeName;
+            isInDialogue = true;
         }
 
         /// <summary>
@@ -80,13 +80,9 @@ namespace MookDialogueScript
             if (string.IsNullOrEmpty(nodeName))
                 return;
 
-            if (visitedNodes.ContainsKey(nodeName))
+            if (!visitedNodes.TryAdd(nodeName, 1))
             {
                 visitedNodes[nodeName]++;
-            }
-            else
-            {
-                visitedNodes[nodeName] = 1;
             }
         }
 
@@ -107,7 +103,7 @@ namespace MookDialogueScript
         /// <returns>节点访问次数，未访问过则返回0</returns>
         public int GetNodeVisitCount(string nodeName)
         {
-            return visitedNodes.TryGetValue(nodeName, out int count) ? count : 0;
+            return visitedNodes.GetValueOrDefault(nodeName, 0);
         }
 
         /// <summary>
@@ -116,10 +112,7 @@ namespace MookDialogueScript
         /// <param name="nodeName">节点名称</param>
         public void ClearNodeVisit(string nodeName)
         {
-            if (visitedNodes.ContainsKey(nodeName))
-            {
-                visitedNodes.Remove(nodeName);
-            }
+            visitedNodes.Remove(nodeName);
         }
 
         /// <summary>
@@ -146,11 +139,8 @@ namespace MookDialogueScript
         /// <param name="context">对话上下文</param>
         public void ApplyToContext(DialogueContext context)
         {
-            if (context == null)
-                return;
-
             // 加载存储的变量到上下文
-            context.LoadScriptVariables(variables);
+            context?.LoadScriptVariables(variables);
         }
 
         /// <summary>

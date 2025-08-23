@@ -7,7 +7,8 @@ namespace MookDialogueScript
     /// <summary>
     /// 脚本运行时值
     /// </summary>
-    public class RuntimeValue
+    [Serializable]
+    public readonly struct RuntimeValue : IEquatable<RuntimeValue>
     {
         /// <summary>
         /// 脚本运行时值类型
@@ -16,8 +17,8 @@ namespace MookDialogueScript
         {
             Null,
             Number,
-            String,
-            Boolean
+            Boolean,
+            String
         }
 
         public ValueType Type { get; }
@@ -42,18 +43,9 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 创建一个空值
-        /// </summary>
-        public RuntimeValue()
-        {
-            Type = ValueType.Null;
-            Value = null;
-        }
-
-        /// <summary>
         /// 创建一个空值的静态方法
         /// </summary>
-        public static RuntimeValue Null { get; } = new RuntimeValue();
+        public static RuntimeValue Null => default;
 
         public override string ToString()
         {
@@ -61,6 +53,84 @@ namespace MookDialogueScript
                 return "null";
             return Type == ValueType.Boolean ? Value.ToString().ToLower() : Value.ToString();
         }
+
+        /// <summary>
+        /// 按“类型一致 + 值一致”的值语义比较。
+        /// 注意：
+        /// 1) 只有 Type 相同才比较具体值；
+        /// 2) Number 使用 double.Equals 进行精确相等（不引入容差）；
+        /// 3) String 使用 Ordinal 比较（区分大小写，文化无关）；
+        /// 4) Null 与 Null 相等；
+        /// 该实现需与 GetHashCode 保持一致：若 Equals(lhs, rhs) 为 true，则两者哈希必须相等。
+        /// </summary>
+        public bool Equals(RuntimeValue other)
+        {
+            // 类型不一致直接不相等
+            if (Type != other.Type) return false;
+
+            switch (Type)
+            {
+                case ValueType.Null:
+                    return true; // 两个都是 Null，视为相等
+                case ValueType.Number:
+                    return ((double)Value).Equals((double)other.Value);
+                case ValueType.Boolean:
+                    return (bool)Value == (bool)other.Value;
+                case ValueType.String:
+                    return string.Equals((string)Value, (string)other.Value, StringComparison.Ordinal);
+                default:
+                    return Equals(Value, other.Value);
+            }
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is RuntimeValue other && Equals(other);
+        }
+
+        /// <summary>
+        /// 生成与 Equals 一致的哈希值。
+        /// 规则：先混入 Type 的哈希，再根据具体类型混入对应值的哈希。
+        /// 这样保证：若两个实例 Equals 返回 true，则其哈希必然相等（满足字典/集合要求）。
+        /// 采用经典“乘以质数再相加”的方式扩散位分布，降低碰撞概率。
+        /// 特别说明：
+        /// - Number 使用 double.GetHashCode()
+        /// - String 使用其自身哈希（与 Ordinal 相等语义兼容）
+        /// - Null 仅使用类型哈希
+        /// </summary>
+        public override int GetHashCode()
+        {
+            // 组合 Type 与具体值的哈希
+            // 使用 unchecked 允许哈希混合中整数乘加的自然溢出（环绕），避免异常与不必要的溢出检查开销
+            unchecked
+            {
+                int hash = 17;
+                hash = hash * 31 + Type.GetHashCode();
+                switch (Type)
+                {
+                    case ValueType.Null:
+                        return hash;
+                    case ValueType.Number:
+                        return hash * 31 + ((double)Value).GetHashCode();
+                    case ValueType.Boolean:
+                        return hash * 31 + ((bool)Value).GetHashCode();
+                    case ValueType.String:
+                    {
+                        var s = (string)Value;
+                        return hash * 31 + (s?.GetHashCode() ?? 0);
+                    }
+                    default:
+                        return hash * 31 + (Value?.GetHashCode() ?? 0);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 运算符重载：与 Equals 一致的值语义相等/不等。
+        /// 注意必须与 Equals/GetHashCode 语义保持一致，避免集合/字典行为异常。
+        /// </summary>
+        public static bool operator ==(RuntimeValue left, RuntimeValue right) => left.Equals(right);
+        public static bool operator !=(RuntimeValue left, RuntimeValue right) => !left.Equals(right);
     }
 
     /// <summary>
@@ -68,9 +138,9 @@ namespace MookDialogueScript
     /// </summary>
     public class DialogueContext
     {
-        private VariableManager _variableManager = new VariableManager();
-        private FunctionManager _functionManager = new FunctionManager();
-        private Dictionary<string, NodeDefinitionNode> _nodes = new Dictionary<string, NodeDefinitionNode>();
+        private readonly VariableManager _variableManager = new();
+        private readonly FunctionManager _functionManager = new();
+        private readonly Dictionary<string, NodeDefinitionNode> _nodes = new();
 
         /// <summary>
         /// 创建一个新的对话上下文
@@ -101,7 +171,9 @@ namespace MookDialogueScript
         /// <returns>节点</returns>
         public NodeDefinitionNode GetNode(string name)
         {
-            if (_nodes.TryGetValue(name, out var value)) return value;
+            if (_nodes.TryGetValue(name, out var value))
+                return value;
+            
             throw new KeyNotFoundException($"找不到节点 '{name}'");
         }
 
@@ -271,12 +343,11 @@ namespace MookDialogueScript
         {
             try
             {
-                // 获取指定节点
-                if (_nodes.TryGetValue(nodeName, out var node)) return node.Metadata.GetValueOrDefault(key, null);
+                if (_nodes.TryGetValue(nodeName, out var node))
+                    return node.Metadata.GetValueOrDefault(key, null);
+                
                 MLogger.Warning($"节点 {nodeName} 不存在");
                 return null;
-
-                // 如果元数据中不包含指定键，返回null
             }
             catch (Exception ex)
             {
@@ -294,11 +365,11 @@ namespace MookDialogueScript
         {
             try
             {
-                // 获取指定节点
-                if (_nodes.TryGetValue(nodeName, out var node)) return node.Metadata;
+                if (_nodes.TryGetValue(nodeName, out var node))
+                    return node.Metadata;
+                
                 MLogger.Warning($"节点 {nodeName} 不存在");
                 return null;
-
             }
             catch (Exception ex)
             {

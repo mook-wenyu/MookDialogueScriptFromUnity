@@ -1,278 +1,579 @@
+using System;
 using System.Collections.Generic;
-using System.Text;
-using MookDialogueScript;
+using System.Linq;
 using NUnit.Framework;
 using UnityEngine;
 
-namespace Tests
+namespace MookDialogueScript.Tests
 {
+    /// <summary>
+    /// 词法分析器测试
+    /// </summary>
     public class LexerTests
     {
-        private Lexer _lexer;
-
-        [SetUp]
-        public void Setup()
+        /// <summary>
+        /// 创建词法分析器并获取Token列表
+        /// </summary>
+        private List<Token> TokenizeScript(string script)
         {
-            _lexer = null;
+            var lexer = new Lexer(script);
+            var tokens = lexer.Tokenize();
+            foreach (var token in tokens)
+            {
+                Debug.Log(token.ToString());
+            }
+            return tokens;
         }
 
-        private List<Token> Tokenize(string source)
+        /// <summary>
+        /// 验证Token序列
+        /// </summary>
+        private void AssertTokens(List<Token> tokens, params (TokenType type, string value)[] expectedTokens)
         {
-            _lexer = new Lexer(source);
-            return _lexer.Tokenize();
+            // 过滤掉NEWLINE token以简化测试
+            var filteredTokens = tokens.Where(t => t.Type != TokenType.NEWLINE).ToList();
+
+            Assert.AreEqual(expectedTokens.Length + 1, filteredTokens.Count, "Token数量不匹配（包括EOF）");
+
+            for (int i = 0; i < expectedTokens.Length; i++)
+            {
+                var expected = expectedTokens[i];
+                var actual = filteredTokens[i];
+                Assert.AreEqual(expected.type, actual.Type, $"第{i}个Token类型不匹配");
+                Assert.AreEqual(expected.value, actual.Value, $"第{i}个Token值不匹配");
+            }
+
+            // 最后一个应该是EOF
+            Assert.AreEqual(TokenType.EOF, filteredTokens.Last().Type, "最后一个Token应该是EOF");
         }
 
         [Test]
-        public void TestEmptyString()
+        public void TestBasicNodeStructure()
         {
-            var tokens = Tokenize("");
-            Assert.That(tokens.Count, Is.EqualTo(1));
-            Assert.That(tokens[0].Type, Is.EqualTo(TokenType.EOF));
-        }
+            string script = @"node: test
+---
+角色: 你好世界
+===";
 
-        [Test]
-        public void TestNodeMetadata()
-        {
-            // 测试节点元数据的词法分析
-            string source = "node: test_node\nauthor: test_author\n---";
-            var tokens = Tokenize(source);
-
-            Assert.That(tokens[0].Type, Is.EqualTo(TokenType.IDENTIFIER));
-            Assert.That(tokens[0].Value, Is.EqualTo("node"));
-            Assert.That(tokens[1].Type, Is.EqualTo(TokenType.METADATA_SEPARATOR));
-            Assert.That(tokens[2].Type, Is.EqualTo(TokenType.TEXT));
-            Assert.That(tokens[2].Value, Is.EqualTo("test_node"));
-            Assert.That(tokens[3].Type, Is.EqualTo(TokenType.NEWLINE));
-        }
-
-        [Test]
-        public void TestNodeMarkers()
-        {
-            // 测试节点开始和结束标记
-            string source = "---\n内容\n===";
-            var tokens = Tokenize(source);
-
-            Assert.That(tokens[0].Type, Is.EqualTo(TokenType.NODE_START));
-            Assert.That(tokens[0].Value, Is.EqualTo("---"));
+            var tokens = TokenizeScript(script);
             
-            // 在节点内容中，应该有NEWLINE和TEXT
-            Assert.That(tokens[1].Type, Is.EqualTo(TokenType.NEWLINE));
-            Assert.That(tokens[2].Type, Is.EqualTo(TokenType.TEXT).Or.EqualTo(TokenType.IDENTIFIER));
-            Assert.That(tokens[2].Value, Is.EqualTo("内容"));
+            AssertTokens(tokens,
+                (TokenType.IDENTIFIER, "node"),
+                (TokenType.METADATA_SEPARATOR, ":"),
+                (TokenType.TEXT, "test"),
+                (TokenType.NODE_START, "---"),
+                (TokenType.IDENTIFIER, "角色"),
+                (TokenType.COLON, ":"),
+                (TokenType.TEXT, " 你好世界"),
+                (TokenType.NODE_END, "===")
+            );
+        }
+
+        [Test]
+        public void TestVariablesAndInterpolation()
+        {
+            string script = @"---
+角色: 你好{$name}，欢迎来到{$place}
+===";
+
+            var tokens = TokenizeScript(script);
+
+            AssertTokens(tokens,
+                (TokenType.NODE_START, "---"),
+                (TokenType.IDENTIFIER, "角色"),
+                (TokenType.COLON, ":"),
+                (TokenType.IDENTIFIER, "你好"),
+                (TokenType.LEFT_BRACE, "{"),
+                (TokenType.VARIABLE, "name"),
+                (TokenType.RIGHT_BRACE, "}"),
+                (TokenType.TEXT, "，欢迎来到"),
+                (TokenType.LEFT_BRACE, "{"),
+                (TokenType.VARIABLE, "place"),
+                (TokenType.RIGHT_BRACE, "}"),
+                (TokenType.NODE_END, "===")
+            );
+        }
+
+        [Test]
+        public void TestCommands()
+        {
+            string script = @"---
+<<set $hp = 100>>
+<<var $gold 50>>
+<<wait 2.0>>
+<<jump ending>>
+===";
+
+            var tokens = TokenizeScript(script);
+
+            var expectedTokens = new List<(TokenType type, string value)>
+            {
+                (TokenType.NODE_START, "---"),
+                (TokenType.COMMAND_START, "<<"),
+                (TokenType.SET, "set"),
+                (TokenType.VARIABLE, "hp"),
+                (TokenType.ASSIGN, "="),
+                (TokenType.NUMBER, "100"),
+                (TokenType.COMMAND_END, ">>"),
+                (TokenType.COMMAND_START, "<<"),
+                (TokenType.VAR, "var"),
+                (TokenType.VARIABLE, "gold"),
+                (TokenType.NUMBER, "50"),
+                (TokenType.COMMAND_END, ">>"),
+                (TokenType.COMMAND_START, "<<"),
+                (TokenType.WAIT, "wait"),
+                (TokenType.NUMBER, "2.0"),
+                (TokenType.COMMAND_END, ">>"),
+                (TokenType.COMMAND_START, "<<"),
+                (TokenType.JUMP, "jump"),
+                (TokenType.IDENTIFIER, "ending"),
+                (TokenType.COMMAND_END, ">>"),
+                (TokenType.NODE_END, "===")
+            };
+
+            AssertTokens(tokens, expectedTokens.ToArray());
+        }
+
+        [Test]
+        public void TestChoices()
+        {
+            string script = @"---
+选择一个选项：
+-> 选项1 #tag1
+-> 选项2 <<if $hp > 50>> #tag2
+===";
+
+            var tokens = TokenizeScript(script);
             
-            // 找到节点结束标记
-            Assert.That(tokens[4].Type, Is.EqualTo(TokenType.NODE_END));
-            Assert.That(tokens[4].Value, Is.EqualTo("==="));
+
+            var expectedTokens = new List<(TokenType type, string value)>
+            {
+                (TokenType.NODE_START, "---"),
+                (TokenType.IDENTIFIER, "选择一个选项"),
+                (TokenType.TEXT, "："),
+                (TokenType.ARROW, "->"),
+                (TokenType.TEXT, " 选项1 "),
+                (TokenType.HASH, "#"),
+                (TokenType.IDENTIFIER, "tag1"),
+                (TokenType.ARROW, "->"),
+                (TokenType.TEXT, " 选项2 "),
+                (TokenType.COMMAND_START, "<<"),
+                (TokenType.IF, "if"),
+                (TokenType.VARIABLE, "hp"),
+                (TokenType.GREATER, ">"),
+                (TokenType.NUMBER, "50"),
+                (TokenType.COMMAND_END, ">>"),
+                (TokenType.TEXT, " "),
+                (TokenType.HASH, "#"),
+                (TokenType.IDENTIFIER, "tag2"),
+                (TokenType.NODE_END, "===")
+            };
+
+            AssertTokens(tokens, expectedTokens.ToArray());
         }
 
         [Test]
-        public void TestCommandMarkers()
+        public void TestConditions()
         {
-            // 测试新的统一命令格式 <<>>
-            string source = "---\n<<if $test>>\n内容\n<<endif>>\n===";
-            var tokens = Tokenize(source);
+            string script = @"---
+<<if $hp > 0>>
+你还活着
+<<elif $hp == 0>>
+你死了
+<<else>>
+状态未知
+<<endif>>
+===";
 
-            var commandStartTokens = tokens.FindAll(t => t.Type == TokenType.COMMAND_START);
-            var commandEndTokens = tokens.FindAll(t => t.Type == TokenType.COMMAND_END);
-            
-            Assert.That(commandStartTokens.Count, Is.EqualTo(2));
-            Assert.That(commandEndTokens.Count, Is.EqualTo(2));
-            
-            Assert.That(commandStartTokens[0].Value, Is.EqualTo("<<"));
-            Assert.That(commandEndTokens[0].Value, Is.EqualTo(">>"));
+            var tokens = TokenizeScript(script);
+
+            var expectedTokens = new List<(TokenType type, string value)>
+            {
+                (TokenType.NODE_START, "---"),
+                (TokenType.COMMAND_START, "<<"),
+                (TokenType.IF, "if"),
+                (TokenType.VARIABLE, "hp"),
+                (TokenType.GREATER, ">"),
+                (TokenType.NUMBER, "0"),
+                (TokenType.COMMAND_END, ">>"),
+                (TokenType.IDENTIFIER, "你还活着"),
+                (TokenType.COMMAND_START, "<<"),
+                (TokenType.ELIF, "elif"),
+                (TokenType.VARIABLE, "hp"),
+                (TokenType.EQUALS, "=="),
+                (TokenType.NUMBER, "0"),
+                (TokenType.COMMAND_END, ">>"),
+                (TokenType.IDENTIFIER, "你死了"),
+                (TokenType.COMMAND_START, "<<"),
+                (TokenType.ELSE, "else"),
+                (TokenType.COMMAND_END, ">>"),
+                (TokenType.IDENTIFIER, "状态未知"),
+                (TokenType.COMMAND_START, "<<"),
+                (TokenType.ENDIF, "endif"),
+                (TokenType.COMMAND_END, ">>"),
+                (TokenType.NODE_END, "===")
+            };
+
+            AssertTokens(tokens, expectedTokens.ToArray());
         }
 
         [Test]
-        public void TestDialogue()
+        public void TestStringLiterals()
         {
-            // 测试角色对话
-            string source = "---\n角色: 你好世界\n===";
-            var tokens = Tokenize(source);
-            
-            Assert.That(tokens[2].Value, Is.EqualTo("角色"));
-            Assert.That(tokens[3].Type, Is.EqualTo(TokenType.COLON));
-            Assert.That(tokens[4].Value, Is.EqualTo(" 你好世界"));
+            string script = @"---
+<<set $message = ""Hello World"">>
+<<set $name = 'John Doe'>>
+===";
+
+            var tokens = TokenizeScript(script);
+
+            var expectedTokens = new List<(TokenType type, string value)>
+            {
+                (TokenType.NODE_START, "---"),
+                (TokenType.COMMAND_START, "<<"),
+                (TokenType.SET, "set"),
+                (TokenType.VARIABLE, "message"),
+                (TokenType.ASSIGN, "="),
+                (TokenType.QUOTE, "\""),
+                (TokenType.TEXT, "Hello World"),
+                (TokenType.QUOTE, "\""),
+                (TokenType.COMMAND_END, ">>"),
+                (TokenType.COMMAND_START, "<<"),
+                (TokenType.SET, "set"),
+                (TokenType.VARIABLE, "name"),
+                (TokenType.ASSIGN, "="),
+                (TokenType.QUOTE, "'"),
+                (TokenType.TEXT, "John Doe"),
+                (TokenType.QUOTE, "'"),
+                (TokenType.COMMAND_END, ">>"),
+                (TokenType.NODE_END, "===")
+            };
+
+            AssertTokens(tokens, expectedTokens.ToArray());
         }
 
         [Test]
-        public void TestNarration()
+        public void TestStringWithInterpolation()
         {
-            // 测试旁白文本（包括冒号前缀格式）
-            string source = "---\n:这是旁白文本\n普通旁白\n===";
-            var tokens = Tokenize(source);
-            
-            Assert.That(tokens[2].Type, Is.EqualTo(TokenType.COLON));
-            Assert.That(tokens[3].Value, Is.EqualTo("这是旁白文本"));
-            Assert.That(tokens[5].Value, Is.EqualTo("普通旁白"));
+            string script = @"---
+<<set $greeting = ""Hello {$name}, welcome to {$place}!"">>
+===";
+
+            var tokens = TokenizeScript(script);
+
+            var expectedTokens = new List<(TokenType type, string value)>
+            {
+                (TokenType.NODE_START, "---"),
+                (TokenType.COMMAND_START, "<<"),
+                (TokenType.SET, "set"),
+                (TokenType.VARIABLE, "greeting"),
+                (TokenType.ASSIGN, "="),
+                (TokenType.QUOTE, "\""),
+                (TokenType.TEXT, "Hello "),
+                (TokenType.LEFT_BRACE, "{"),
+                (TokenType.VARIABLE, "name"),
+                (TokenType.RIGHT_BRACE, "}"),
+                (TokenType.TEXT, ", welcome to "),
+                (TokenType.LEFT_BRACE, "{"),
+                (TokenType.VARIABLE, "place"),
+                (TokenType.RIGHT_BRACE, "}"),
+                (TokenType.TEXT, "!"),
+                (TokenType.QUOTE, "\""),
+                (TokenType.COMMAND_END, ">>"),
+                (TokenType.NODE_END, "===")
+            };
+
+            AssertTokens(tokens, expectedTokens.ToArray());
         }
 
         [Test]
-        public void TestChoice()
+        public void TestOperators()
         {
-            // 测试选项
-            string source = "---\n-> 选项文本\n===";
-            var tokens = Tokenize(source);
+            string script = @"---
+<<if $a + $b * $c >= $d && $e or not $f>>
+测试
+<<endif>>
+===";
 
-            var arrowToken = tokens.Find(t => t.Type == TokenType.ARROW);
-            Assert.That(arrowToken, Is.Not.Null);
-            Assert.That(arrowToken.Value, Is.EqualTo("->"));
+            var tokens = TokenizeScript(script);
+
+            var expectedTokens = new List<(TokenType type, string value)>
+            {
+                (TokenType.NODE_START, "---"),
+                (TokenType.COMMAND_START, "<<"),
+                (TokenType.IF, "if"),
+                (TokenType.VARIABLE, "a"),
+                (TokenType.PLUS, "+"),
+                (TokenType.VARIABLE, "b"),
+                (TokenType.MULTIPLY, "*"),
+                (TokenType.VARIABLE, "c"),
+                (TokenType.GREATER_EQUALS, ">="),
+                (TokenType.VARIABLE, "d"),
+                (TokenType.AND, "&&"),
+                (TokenType.VARIABLE, "e"),
+                (TokenType.OR, "or"),
+                (TokenType.NOT, "not"),
+                (TokenType.VARIABLE, "f"),
+                (TokenType.COMMAND_END, ">>"),
+                (TokenType.TEXT, "测试"),
+                (TokenType.COMMAND_START, "<<"),
+                (TokenType.ENDIF, "endif"),
+                (TokenType.COMMAND_END, ">>"),
+                (TokenType.NODE_END, "===")
+            };
+
+            AssertTokens(tokens, expectedTokens.ToArray());
         }
 
         [Test]
-        public void TestVariableInterpolation()
+        public void TestFunctionCalls()
         {
-            // 测试变量插值 {$var}
-            string source = "---\n你好{$name}\n===";
-            var tokens = Tokenize(source);
+            string script = @"---
+<<if visited(""node1"") && random(0, 10) > 5>>
+测试函数调用
+<<endif>>
+===";
 
-            var braceTokens = tokens.FindAll(t => t.Type == TokenType.LEFT_BRACE || t.Type == TokenType.RIGHT_BRACE);
-            var variableTokens = tokens.FindAll(t => t.Type == TokenType.VARIABLE);
-            
-            Assert.That(braceTokens.Count, Is.EqualTo(2));
-            Assert.That(variableTokens.Count, Is.EqualTo(1));
-            Assert.That(variableTokens[0].Value, Is.EqualTo("name"));
+            var tokens = TokenizeScript(script);
+
+            var expectedTokens = new List<(TokenType type, string value)>
+            {
+                (TokenType.NODE_START, "---"),
+                (TokenType.COMMAND_START, "<<"),
+                (TokenType.IF, "if"),
+                (TokenType.IDENTIFIER, "visited"),
+                (TokenType.LEFT_PAREN, "("),
+                (TokenType.QUOTE, "\""),
+                (TokenType.TEXT, "node1"),
+                (TokenType.QUOTE, "\""),
+                (TokenType.RIGHT_PAREN, ")"),
+                (TokenType.AND, "&&"),
+                (TokenType.IDENTIFIER, "random"),
+                (TokenType.LEFT_PAREN, "("),
+                (TokenType.NUMBER, "0"),
+                (TokenType.COMMA, ","),
+                (TokenType.NUMBER, "10"),
+                (TokenType.RIGHT_PAREN, ")"),
+                (TokenType.GREATER, ">"),
+                (TokenType.NUMBER, "5"),
+                (TokenType.COMMAND_END, ">>"),
+                (TokenType.TEXT, "测试函数调用"),
+                (TokenType.COMMAND_START, "<<"),
+                (TokenType.ENDIF, "endif"),
+                (TokenType.COMMAND_END, ">>"),
+                (TokenType.NODE_END, "===")
+            };
+
+            AssertTokens(tokens, expectedTokens.ToArray());
         }
 
         [Test]
-        public void TestTags()
+        public void TestNarrationWithColon()
         {
-            // 测试标签
-            string source = "---\n对话内容 #tag1 #tag2\n===";
-            var tokens = Tokenize(source);
+            string script = @"---
+:这是旁白文本
+普通文本
+===";
 
-            var hashTokens = tokens.FindAll(t => t.Type == TokenType.HASH);
-            Assert.That(hashTokens.Count, Is.EqualTo(2));
-        }
+            var tokens = TokenizeScript(script);
 
-        [Test]
-        public void TestExpressions()
-        {
-            // 测试表达式中的各种Token
-            string source = "---\n<<set $var 10 + 5 * 2>>\n===";
-            var tokens = Tokenize(source);
-
-            var numberTokens = tokens.FindAll(t => t.Type == TokenType.NUMBER);
-            var operatorTokens = tokens.FindAll(t => t.Type == TokenType.PLUS || t.Type == TokenType.MULTIPLY);
-            
-            Assert.That(numberTokens.Count, Is.EqualTo(3));
-            Assert.That(operatorTokens.Count, Is.EqualTo(2));
-        }
-
-        [Test]
-        public void TestBooleanValues()
-        {
-            // 测试布尔值
-            string source = "---\n<<set $flag true>>\n<<set $other false>>\n===";
-            var tokens = Tokenize(source);
-
-            var trueToken = tokens.Find(t => t.Type == TokenType.TRUE);
-            var falseToken = tokens.Find(t => t.Type == TokenType.FALSE);
-            
-            Assert.That(trueToken, Is.Not.Null);
-            Assert.That(falseToken, Is.Not.Null);
-        }
-
-        [Test]
-        public void TestKeywords()
-        {
-            // 测试各种关键字
-            string source = "---\n<<if $x eq 5 and $y gt 10>>\n<<set $z add 1>>\n<<endif>>\n===";
-            var tokens = Tokenize(source);
-
-            var ifToken = tokens.Find(t => t.Type == TokenType.IF);
-            var equalsToken = tokens.Find(t => t.Type == TokenType.EQUALS);
-            var andToken = tokens.Find(t => t.Type == TokenType.AND);
-            var greaterToken = tokens.Find(t => t.Type == TokenType.GREATER);
-            var setToken = tokens.Find(t => t.Type == TokenType.SET);
-            var addToken = tokens.Find(t => t.Type == TokenType.ADD);
-            var endifToken = tokens.Find(t => t.Type == TokenType.ENDIF);
-
-            Assert.That(ifToken, Is.Not.Null);
-            Assert.That(equalsToken, Is.Not.Null);
-            Assert.That(andToken, Is.Not.Null);
-            Assert.That(greaterToken, Is.Not.Null);
-            Assert.That(setToken, Is.Not.Null);
-            Assert.That(addToken, Is.Not.Null);
-            Assert.That(endifToken, Is.Not.Null);
-        }
-
-        [Test]
-        public void TestStringQuotes()
-        {
-            // 测试字符串引号
-            string source = "---\n<<set $str \"Hello World\">>\n===";
-            var tokens = Tokenize(source);
-
-            var quoteTokens = tokens.FindAll(t => t.Type == TokenType.QUOTE);
-            Assert.That(quoteTokens.Count, Is.EqualTo(2));
+            AssertTokens(tokens,
+                (TokenType.NODE_START, "---"),
+                (TokenType.TEXT, ":这是旁白文本"),
+                (TokenType.TEXT, "普通文本"),
+                (TokenType.NODE_END, "===")
+            );
         }
 
         [Test]
         public void TestComments()
         {
-            // 测试注释（注释应该被跳过）
-            string source = "// 这是注释\n---\n内容\n===";
-            var tokens = Tokenize(source);
+            string script = @"// 这是注释
+node: test
+---
+// 这是另一个注释
+角色: 对话内容
+===";
 
-            // 注释应该被完全跳过，不会生成任何Token
-            var firstNonEofToken = tokens.Find(t => t.Type != TokenType.EOF);
-            Assert.That(firstNonEofToken.Type, Is.EqualTo(TokenType.NEWLINE));
+            var tokens = TokenizeScript(script);
+
+            AssertTokens(tokens,
+                (TokenType.IDENTIFIER, "node"),
+                (TokenType.METADATA_SEPARATOR, ":"),
+                (TokenType.TEXT, " test"),
+                (TokenType.NODE_START, "---"),
+                (TokenType.IDENTIFIER, "角色"),
+                (TokenType.COLON, ":"),
+                (TokenType.TEXT, " 对话内容"),
+                (TokenType.NODE_END, "===")
+            );
         }
 
         [Test]
-        public void TestIndentation()
+        public void TestEscapedCharacters()
         {
-            // 测试缩进处理（仅在节点内容中生效）
-            string source = "---\n对话\n    嵌套内容\n        更深嵌套\n===";
-            var tokens = Tokenize(source);
+            string script = @"---
+角色: 这是\:转义冒号，这是\#转义标签，这是\\转义反斜杠
+===";
 
-            var indentTokens = tokens.FindAll(t => t.Type == TokenType.INDENT);
-            var dedentTokens = tokens.FindAll(t => t.Type == TokenType.DEDENT);
-            
-            // 应该有缩进和取消缩进的Token
-            Assert.That(indentTokens.Count, Is.GreaterThanOrEqualTo(1));
-        }
+            var tokens = TokenizeScript(script);
 
-        [Test]
-        public void TestNewSyntaxBrackets()
-        {
-            // 测试中括号文本支持（新语法特性）
-            string source = "---\n文本[中括号内容]文本\n===";
-            var tokens = Tokenize(source);
-
-            var textTokens = tokens.FindAll(t => t.Type == TokenType.TEXT);
-            // 中括号应该作为文本的一部分被处理
-            var bracketText = textTokens.Find(t => t.Value.Contains("[") || t.Value.Contains("]"));
-            Assert.That(bracketText, Is.Not.Null);
+            AssertTokens(tokens,
+                (TokenType.NODE_START, "---"),
+                (TokenType.IDENTIFIER, "角色"),
+                (TokenType.COLON, ":"),
+                (TokenType.TEXT, " 这是:转义冒号，这是#转义标签，这是\\转义反斜杠"),
+                (TokenType.NODE_END, "===")
+            );
         }
 
         [Test]
         public void TestComplexExpression()
         {
-            // 测试复杂表达式
-            string source = "---\n<<if ($level >= 5 and $gold > 100) or $vip>>\n内容\n<<endif>>\n===";
-            var tokens = Tokenize(source);
+            string script = @"---
+<<set $result = ($a + $b) * ($c - $d) / (2 + 3.14)>>
+===";
 
-            var parenTokens = tokens.FindAll(t => t.Type == TokenType.LEFT_PAREN || t.Type == TokenType.RIGHT_PAREN);
-            var comparisonTokens = tokens.FindAll(t => t.Type == TokenType.GREATER_EQUALS || t.Type == TokenType.GREATER);
-            var logicalTokens = tokens.FindAll(t => t.Type == TokenType.AND || t.Type == TokenType.OR);
-            
-            Assert.That(parenTokens.Count, Is.EqualTo(2));
-            Assert.That(comparisonTokens.Count, Is.EqualTo(2));
-            Assert.That(logicalTokens.Count, Is.EqualTo(2));
+            var tokens = TokenizeScript(script);
+
+            var expectedTokens = new List<(TokenType type, string value)>
+            {
+                (TokenType.NODE_START, "---"),
+                (TokenType.COMMAND_START, "<<"),
+                (TokenType.SET, "set"),
+                (TokenType.VARIABLE, "result"),
+                (TokenType.ASSIGN, "="),
+                (TokenType.LEFT_PAREN, "("),
+                (TokenType.VARIABLE, "a"),
+                (TokenType.PLUS, "+"),
+                (TokenType.VARIABLE, "b"),
+                (TokenType.RIGHT_PAREN, ")"),
+                (TokenType.MULTIPLY, "*"),
+                (TokenType.LEFT_PAREN, "("),
+                (TokenType.VARIABLE, "c"),
+                (TokenType.MINUS, "-"),
+                (TokenType.VARIABLE, "d"),
+                (TokenType.RIGHT_PAREN, ")"),
+                (TokenType.DIVIDE, "/"),
+                (TokenType.LEFT_PAREN, "("),
+                (TokenType.NUMBER, "2"),
+                (TokenType.PLUS, "+"),
+                (TokenType.NUMBER, "3.14"),
+                (TokenType.RIGHT_PAREN, ")"),
+                (TokenType.COMMAND_END, ">>"),
+                (TokenType.NODE_END, "===")
+            };
+
+            AssertTokens(tokens, expectedTokens.ToArray());
         }
 
         [Test]
-        public void TestOutsideNodeContentValidation()
+        public void TestBooleanLiterals()
         {
-            // 测试集合外内容验证（新语法特性）
-            string source = "node: test\n-> 这应该被忽略\n---\n正常内容\n===";
-            var tokens = Tokenize(source);
+            string script = @"---
+<<set $isAlive = true>>
+<<set $isDead = false>>
+===";
 
-            // 集合外的箭头应该被忽略或标记为错误
-            // 但EOF和其他合法Token应该存在
-            var eofToken = tokens.Find(t => t.Type == TokenType.EOF);
-            Assert.That(eofToken, Is.Not.Null);
+            var tokens = TokenizeScript(script);
+
+            var expectedTokens = new List<(TokenType type, string value)>
+            {
+                (TokenType.NODE_START, "---"),
+                (TokenType.COMMAND_START, "<<"),
+                (TokenType.SET, "set"),
+                (TokenType.VARIABLE, "isAlive"),
+                (TokenType.ASSIGN, "="),
+                (TokenType.TRUE, "true"),
+                (TokenType.COMMAND_END, ">>"),
+                (TokenType.COMMAND_START, "<<"),
+                (TokenType.SET, "set"),
+                (TokenType.VARIABLE, "isDead"),
+                (TokenType.ASSIGN, "="),
+                (TokenType.FALSE, "false"),
+                (TokenType.COMMAND_END, ">>"),
+                (TokenType.NODE_END, "===")
+            };
+
+            AssertTokens(tokens, expectedTokens.ToArray());
+        }
+
+        [Test]
+        public void TestMultipleNodes()
+        {
+            string script = @"node: first
+---
+第一个节点
+===
+
+node: second  
+---
+第二个节点
+===";
+
+            var tokens = TokenizeScript(script);
+
+            var expectedTokens = new List<(TokenType type, string value)>
+            {
+                (TokenType.IDENTIFIER, "node"),
+                (TokenType.METADATA_SEPARATOR, ":"),
+                (TokenType.TEXT, " first"),
+                (TokenType.NODE_START, "---"),
+                (TokenType.TEXT, "第一个节点"),
+                (TokenType.NODE_END, "==="),
+                (TokenType.IDENTIFIER, "node"),
+                (TokenType.METADATA_SEPARATOR, ":"),
+                (TokenType.TEXT, " second  "),
+                (TokenType.NODE_START, "---"),
+                (TokenType.TEXT, "第二个节点"),
+                (TokenType.NODE_END, "===")
+            };
+
+            AssertTokens(tokens, expectedTokens.ToArray());
+        }
+
+        [Test]
+        public void TestIndentationTokens()
+        {
+            string script = @"---
+-> 选项1
+    嵌套内容1
+    嵌套内容2
+-> 选项2
+===";
+
+            var tokens = TokenizeScript(script);
+
+            // 这个测试专门检查缩进Token
+            var indentTokens = tokens.Where(t => t.Type == TokenType.INDENT || t.Type == TokenType.DEDENT).ToList();
+
+            // 应该有一个INDENT和一个DEDENT
+            Assert.AreEqual(2, indentTokens.Count, "应该有2个缩进相关的Token");
+            Assert.AreEqual(TokenType.INDENT, indentTokens[0].Type, "第一个应该是INDENT");
+            Assert.AreEqual(TokenType.DEDENT, indentTokens[1].Type, "第二个应该是DEDENT");
+        }
+
+        [Test]
+        public void TestEmptyScript()
+        {
+            string script = "";
+
+            var tokens = TokenizeScript(script);
+
+            Assert.AreEqual(1, tokens.Count, "空脚本应该只有EOF Token");
+            Assert.AreEqual(TokenType.EOF, tokens[0].Type, "应该是EOF Token");
+        }
+
+        [Test]
+        public void TestOnlyComments()
+        {
+            string script = @"// 只有注释的脚本
+// 另一行注释";
+
+            var tokens = TokenizeScript(script);
+
+            Assert.AreEqual(1, tokens.Count, "只有注释的脚本应该只有EOF Token");
+            Assert.AreEqual(TokenType.EOF, tokens[0].Type, "应该是EOF Token");
         }
     }
 }

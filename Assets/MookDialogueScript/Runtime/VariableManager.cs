@@ -32,18 +32,14 @@ namespace MookDialogueScript
     public class VariableManager
     {
         #region 字段和属性
-
         // 脚本定义的变量字典
-        private Dictionary<string, RuntimeValue> _scriptVariables = new Dictionary<string, RuntimeValue>(StringComparer.OrdinalIgnoreCase);
+        private Dictionary<string, RuntimeValue> _scriptVariables = new(StringComparer.OrdinalIgnoreCase);
 
         // 内置变量字典：变量名 -> (getter, setter)
-        private Dictionary<string, (Func<object> getter, Action<object> setter)> _builtinVariables =
-            new Dictionary<string, (Func<object> getter, Action<object> setter)>(StringComparer.OrdinalIgnoreCase);
-
+        private readonly Dictionary<string, (Func<object> getter, Action<object> setter)> _builtinVariables = new(StringComparer.OrdinalIgnoreCase);
         #endregion
 
         #region 变量注册
-
         /// <summary>
         /// 扫描并注册所有标记了ScriptVar特性的静态属性和字段
         /// </summary>
@@ -137,7 +133,7 @@ namespace MookDialogueScript
             // 创建setter
             Action<object> setter = !property.CanWrite
                 ? (obj) => { MLogger.Error($"变量 '{varName}' 是只读的"); }
-            : (obj) => property.SetValue(null, obj);
+                : (obj) => property.SetValue(null, obj);
 
             _builtinVariables[varName] = (getter, setter);
         }
@@ -153,7 +149,7 @@ namespace MookDialogueScript
             // 创建setter
             Action<object> setter = isReadOnly
                 ? (obj) => { MLogger.Error($"变量 '{varName}' 是只读的"); }
-            : (obj) => field.SetValue(null, obj);
+                : (obj) => field.SetValue(null, obj);
 
             // 注册变量
             RegisterBuiltinVariable(varName, getter, setter);
@@ -176,7 +172,7 @@ namespace MookDialogueScript
             var properties = instance.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
             foreach (var property in properties)
             {
-                string varName = $"{objectName}__{property.Name}";
+                var varName = $"{objectName}__{property.Name}";
                 RegisterInstancePropertyAsVariable(property, instance, varName);
             }
 
@@ -184,7 +180,7 @@ namespace MookDialogueScript
             var fields = instance.GetType().GetFields(BindingFlags.Public | BindingFlags.Instance);
             foreach (var field in fields)
             {
-                string varName = $"{objectName}__{field.Name}";
+                var varName = $"{objectName}__{field.Name}";
                 RegisterInstanceFieldAsVariable(field, instance, varName);
             }
         }
@@ -217,16 +213,14 @@ namespace MookDialogueScript
             // 创建setter
             Action<object> setter = !property.CanWrite
                 ? (obj) => { MLogger.Error($"属性 '{varName}' 是只读的"); }
-            : (obj) => property.SetValue(instance, obj);
+                : (obj) => property.SetValue(instance, obj);
 
             // 注册变量
             RegisterBuiltinVariable(varName, getter, setter);
         }
-
         #endregion
 
         #region 变量管理
-
         /// <summary>
         /// 获取所有脚本变量（用于保存状态）
         /// </summary>
@@ -254,7 +248,7 @@ namespace MookDialogueScript
             var result = new Dictionary<string, RuntimeValue>();
             foreach (var pair in _builtinVariables)
             {
-                result[pair.Key] = ConvertToRuntimeValue(pair.Value.getter());
+                result[pair.Key] = Helper.ConvertToRuntimeValue(pair.Value.getter());
             }
             return result;
         }
@@ -270,7 +264,7 @@ namespace MookDialogueScript
             // 添加内置变量
             foreach (var pair in _builtinVariables)
             {
-                result[pair.Key] = ConvertToRuntimeValue(pair.Value.getter());
+                result[pair.Key] = Helper.ConvertToRuntimeValue(pair.Value.getter());
             }
 
             // 添加脚本变量
@@ -292,7 +286,7 @@ namespace MookDialogueScript
         {
             _builtinVariables[name] = (getter, setter);
         }
-        
+
         /// <summary>
         /// 注册脚本变量
         /// </summary>
@@ -312,7 +306,7 @@ namespace MookDialogueScript
         {
             if (_builtinVariables.TryGetValue(name, out var handlers))
             {
-                handlers.setter(ConvertToNativeType(value));
+                handlers.setter(Helper.ConvertToNativeType(value));
             }
             else
             {
@@ -329,7 +323,7 @@ namespace MookDialogueScript
         {
             if (_builtinVariables.TryGetValue(name, out var handlers))
             {
-                return ConvertToRuntimeValue(handlers.getter());
+                return Helper.ConvertToRuntimeValue(handlers.getter());
             }
 
             if (_scriptVariables.TryGetValue(name, out var value))
@@ -351,77 +345,7 @@ namespace MookDialogueScript
         {
             return _scriptVariables.ContainsKey(name) || _builtinVariables.ContainsKey(name);
         }
-
         #endregion
 
-        #region 类型转换
-
-        /// <summary>
-        /// 将脚本运行时值转换为C#对象
-        /// </summary>
-        private object ConvertToNativeType(RuntimeValue value)
-        {
-            switch (value.Type)
-            {
-                case RuntimeValue.ValueType.Number:
-                    return ConvertNumberToNativeType((double)value.Value);
-
-                case RuntimeValue.ValueType.String:
-                    return value.Value;
-
-                case RuntimeValue.ValueType.Boolean:
-                    return value.Value;
-
-                case RuntimeValue.ValueType.Null:
-                    return null;
-
-                default:
-                    MLogger.Error($"不支持的运行时值类型: {value.Type}");
-                    return null; // 返回空值而不是抛出异常
-            }
-        }
-
-        /// <summary>
-        /// 将数字转换为最合适的原生类型
-        /// </summary>
-        private object ConvertNumberToNativeType(double number)
-        {
-            // 检查是否是整数
-            if (Math.Abs(number - Math.Round(number)) < double.Epsilon)
-            {
-                // 如果是整数且在int范围内
-                if (number >= int.MinValue && number <= int.MaxValue)
-                    return (int)number;
-                // 如果是整数但超出int范围
-                return (long)number;
-            }
-
-            // 如果是小数
-            return number;
-        }
-
-        /// <summary>
-        /// 将C#对象转换为脚本运行时值
-        /// </summary>
-        private RuntimeValue ConvertToRuntimeValue(object value)
-        {
-            switch (value)
-            {
-                case null:
-                    return RuntimeValue.Null;
-                case double or int or float or long:
-                    return new RuntimeValue(Convert.ToDouble(value));
-                case string strValue:
-                    return new RuntimeValue(strValue);
-                case bool boolValue:
-                    return new RuntimeValue(boolValue);
-                default:
-                    MLogger.Error($"不支持的内置变量类型: {value.GetType().Name}");
-                    return RuntimeValue.Null; // 返回空值而不是抛出异常
-            }
-
-        }
-
-        #endregion
     }
 }
