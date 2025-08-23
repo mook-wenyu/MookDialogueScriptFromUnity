@@ -1,24 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using UnityEngine;
 
 namespace MookDialogueScript
 {
-    /// <summary>
-    /// 定义文本处理规则，包括截断字符和转义字符
-    /// </summary>
-    public readonly struct TextProcessingRules
-    {
-        public char[] TruncateChars { get; }
-        public char[] EscapeChars { get; }
-
-        public TextProcessingRules(char[] truncateChars, char[] escapeChars)
-        {
-            TruncateChars = truncateChars;
-            EscapeChars = escapeChars;
-        }
-    }
-
     public class Lexer
     {
         private readonly string _source;
@@ -29,12 +15,12 @@ namespace MookDialogueScript
         private readonly Stack<int> _indentStack;
         private int _currentIndent;
         private readonly List<Token> _tokens;
-        
-        // 新的状态标志
-        private bool _isInNodeContent;     // 是否在 --- 到 === 集合内
-        private bool _isInCommandMode;     // 是否在 << >> 命令内
-        private bool _isInStringMode;      // 是否在字符串模式中
-        private char _stringQuoteType;     // 当前字符串模式的引号类型
+
+        // 状态标志
+        private bool _isInNodeContent; // 是否在 --- 到 === 集合内
+        private bool _isInCommandMode; // 是否在 << >> 命令内
+        private bool _isInStringMode;  // 是否在字符串模式中
+        private char _stringQuoteType; // 当前字符串模式的引号类型
 
         // 关键字
         private static readonly Dictionary<string, TokenType> _keywords = new(StringComparer.OrdinalIgnoreCase)
@@ -53,7 +39,6 @@ namespace MookDialogueScript
             {"div", TokenType.DIV},
             {"mod", TokenType.MOD},
             {"jump", TokenType.JUMP},
-            {"call", TokenType.CALL},
             {"wait", TokenType.WAIT},
             {"eq", TokenType.EQUALS},
             {"is", TokenType.EQUALS},
@@ -79,7 +64,7 @@ namespace MookDialogueScript
             _indentStack.Push(0);
             _tokens = new List<Token>();
             _currentIndent = 0;
-            
+
             // 初始化新的状态标志
             _isInNodeContent = false;
             _isInCommandMode = false;
@@ -97,7 +82,7 @@ namespace MookDialogueScript
             do
             {
                 token = GetNextToken();
-                
+
                 // 验证集合外内容的合法性
                 if (ValidateOutsideContent(token))
                 {
@@ -108,7 +93,7 @@ namespace MookDialogueScript
                 {
                     // 非法的Token被忽略，但继续处理
                     MLogger.Debug($"忽略非法Token: {token}");
-                    
+
                     // 如果不是EOF，继续处理下一个Token
                     if (token.Type != TokenType.EOF)
                         continue;
@@ -118,7 +103,7 @@ namespace MookDialogueScript
                         _tokens.Add(token);
                     }
                 }
-                
+
             } while (token.Type != TokenType.EOF);
 
             return _tokens;
@@ -131,100 +116,6 @@ namespace MookDialogueScript
         private Token GetLastToken()
         {
             return _tokens.Count > 0 ? _tokens[^1] : null;
-        }
-
-        /// <summary>
-        /// 处理元数据键值对
-        /// </summary>
-        private Token HandleMetadata()
-        {
-            int startLine = _line;
-            int startColumn = _column;
-            int startPosition = _position;
-
-            // 收集键名（冒号前的内容）
-            while (_currentChar != '\0' && _currentChar != ':' && _currentChar != '：' && 
-                   _currentChar != '\n' && _currentChar != '\r')
-            {
-                Advance();
-            }
-
-            string key = GetRange(startPosition, _position).Trim();
-            
-            // 检查是否遇到冒号
-            if (_currentChar is ':' or '：')
-            {
-                // 这里暂时只验证键名格式，值的验证在后续处理中进行
-                if (string.IsNullOrWhiteSpace(key))
-                {
-                    MLogger.Warning($"词法警告: 第{startLine}行，第{startColumn}列，元数据缺少键名");
-                    // 仍然返回Token，让上层处理
-                }
-                
-                return new Token(TokenType.IDENTIFIER, key, startLine, startColumn);
-            }
-            
-            // 如果没有冒号，这不是有效的元数据格式
-            MLogger.Warning($"词法警告: 第{startLine}行，第{startColumn}列，无效的元数据格式，缺少冒号");
-            return new Token(TokenType.TEXT, key, startLine, startColumn);
-        }
-
-        /// <summary>
-        /// 验证集合外内容是否合法
-        /// </summary>
-        /// <param name="token">要验证的Token</param>
-        /// <returns>是否合法</returns>
-        private bool ValidateOutsideContent(Token token)
-        {
-            // 如果在集合内，不需要验证
-            if (_isInNodeContent)
-                return true;
-
-            // 允许的Token类型
-            switch (token.Type)
-            {
-                case TokenType.IDENTIFIER:      // 元数据键名
-                case TokenType.METADATA_SEPARATOR: // 冒号
-                case TokenType.TEXT:            // 元数据值
-                case TokenType.NEWLINE:         // 换行
-                case TokenType.EOF:             // 文件结束
-                case TokenType.INDENT:          // 缩进
-                case TokenType.DEDENT:          // 取消缩进
-                case TokenType.NODE_START:      // 节点开始 ---
-                    return true;
-
-                // 不允许的内容
-                case TokenType.ARROW:           // 选项 ->
-                    MLogger.Warning($"词法警告: 第{token.Line}行，第{token.Column}列，选项只能在集合内使用");
-                    return false;
-
-                case TokenType.COMMAND_START:   // 命令 <<
-                case TokenType.COMMAND_END:     // 命令 >>
-                    MLogger.Warning($"词法警告: 第{token.Line}行，第{token.Column}列，命令只能在集合内使用");
-                    return false;
-
-                case TokenType.HASH:            // 标签 #
-                    MLogger.Warning($"词法警告: 第{token.Line}行，第{token.Column}列，标签只能在集合内使用");
-                    return false;
-
-                case TokenType.VARIABLE:        // 变量 $var
-                    MLogger.Warning($"词法警告: 第{token.Line}行，第{token.Column}列，变量只能在集合内使用");
-                    return false;
-
-                case TokenType.LEFT_BRACE:      // 变量插值 {
-                case TokenType.RIGHT_BRACE:     // 变量插值 }
-                    MLogger.Warning($"词法警告: 第{token.Line}行，第{token.Column}列，变量插值只能在集合内使用");
-                    return false;
-
-                case TokenType.COLON:           // 普通冒号（非元数据分隔符）
-                    MLogger.Warning($"词法警告: 第{token.Line}行，第{token.Column}列，对话格式只能在集合内使用");
-                    return false;
-
-                default:
-                    // 其他不明确的内容也警告
-                    MLogger.Warning($"词法警告: 第{token.Line}行，第{token.Column}列，此内容只能在集合内使用: {token.Type}");
-                    return false;
-            }
         }
 
         /// <summary>
@@ -270,6 +161,10 @@ namespace MookDialogueScript
         /// </summary>
         private void Advance()
         {
+            #if UNITY_EDITOR
+            Debug.Log(_currentChar);
+            #endif
+
             _position++;
             _column++;
             UpdateCurrentChar();
@@ -387,7 +282,7 @@ namespace MookDialogueScript
                 MLogger.Error($"词法错误: 第{_line}行，第{_column}列，命令未闭合就遇到了换行");
                 _isInCommandMode = false;
             }
-            
+
             // 如果在字符串模式下遇到换行，这通常是一个错误，但我们仍然退出该模式
             if (_isInStringMode)
             {
@@ -551,6 +446,101 @@ namespace MookDialogueScript
 
             return null;
         }
+        
+        /// <summary>
+        /// 处理元数据键值对
+        /// </summary>
+        private Token HandleMetadata()
+        {
+            int startLine = _line;
+            int startColumn = _column;
+            int startPosition = _position;
+
+            // 收集键名（冒号前的内容）
+            while (_currentChar != '\0' && _currentChar != ':' && _currentChar != '：' &&
+                   _currentChar != '\n' && _currentChar != '\r')
+            {
+                Advance();
+            }
+
+            string key = GetRange(startPosition, _position).Trim();
+
+            // 检查是否遇到冒号
+            if (_currentChar is ':' or '：')
+            {
+                // 这里暂时只验证键名格式，值的验证在后续处理中进行
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    MLogger.Warning($"词法警告: 第{startLine}行，第{startColumn}列，元数据缺少键名");
+                    // 仍然返回Token，让上层处理
+                }
+
+                return new Token(TokenType.IDENTIFIER, key, startLine, startColumn);
+            }
+
+            // 如果没有冒号，这不是有效的元数据格式
+            MLogger.Warning($"词法警告: 第{startLine}行，第{startColumn}列，无效的元数据格式，缺少冒号");
+            return new Token(TokenType.TEXT, key, startLine, startColumn);
+        }
+
+        /// <summary>
+        /// 验证集合外内容是否合法
+        /// </summary>
+        /// <param name="token">要验证的Token</param>
+        /// <returns>是否合法</returns>
+        private bool ValidateOutsideContent(Token token)
+        {
+            // 如果在集合内，不需要验证
+            if (_isInNodeContent)
+                return true;
+
+            // 允许的Token类型
+            switch (token.Type)
+            {
+                case TokenType.IDENTIFIER:         // 元数据键名
+                case TokenType.METADATA_SEPARATOR: // 冒号
+                case TokenType.TEXT:               // 元数据值
+                case TokenType.NEWLINE:            // 换行
+                case TokenType.EOF:                // 文件结束
+                case TokenType.INDENT:             // 缩进
+                case TokenType.DEDENT:             // 取消缩进
+                case TokenType.NODE_START:         // 节点开始 ---
+                case TokenType.NODE_END:           // 节点结束 ===
+                    return true;
+
+                // 不允许的内容
+                case TokenType.ARROW: // 选项 ->
+                    MLogger.Warning($"词法警告: 第{token.Line}行，第{token.Column}列，选项只能在集合内使用");
+                    return false;
+
+                case TokenType.COMMAND_START: // 命令 <<
+                case TokenType.COMMAND_END:   // 命令 >>
+                    MLogger.Warning($"词法警告: 第{token.Line}行，第{token.Column}列，命令只能在集合内使用");
+                    return false;
+
+                case TokenType.HASH: // 标签 #
+                    MLogger.Warning($"词法警告: 第{token.Line}行，第{token.Column}列，标签只能在集合内使用");
+                    return false;
+
+                case TokenType.VARIABLE: // 变量 $var
+                    MLogger.Warning($"词法警告: 第{token.Line}行，第{token.Column}列，变量只能在集合内使用");
+                    return false;
+
+                case TokenType.LEFT_BRACE:  // 变量插值 {
+                case TokenType.RIGHT_BRACE: // 变量插值 }
+                    MLogger.Warning($"词法警告: 第{token.Line}行，第{token.Column}列，变量插值只能在集合内使用");
+                    return false;
+
+                case TokenType.COLON: // 普通冒号（非元数据分隔符）
+                    MLogger.Warning($"词法警告: 第{token.Line}行，第{token.Column}列，对话格式只能在集合内使用");
+                    return false;
+
+                default:
+                    // 其他不明确的内容也警告
+                    MLogger.Warning($"词法警告: 第{token.Line}行，第{token.Column}列，此内容只能在集合内使用: {token.Type}");
+                    return false;
+            }
+        }
 
         /// <summary>
         /// 处理数字
@@ -617,7 +607,7 @@ namespace MookDialogueScript
                     // 遇到命令开始，停止文本处理
                     break;
                 }
-                
+
                 if (_currentChar == '#')
                 {
                     // 遇到标签，停止文本处理
@@ -636,33 +626,7 @@ namespace MookDialogueScript
             }
 
             string result = resultBuilder.ToString();
-            
-            // 处理角色名判断（冒号前无空格）
-            if (!_isInCommandMode && !_isInStringMode && result.Contains(':'))
-            {
-                int colonIndex = result.IndexOf(':');
-                if (colonIndex > 0)
-                {
-                    string beforeColon = result[..colonIndex];
-                    // 检查冒号前是否有空格
-                    if (!beforeColon.EndsWith(' ') && !beforeColon.EndsWith('\t'))
-                    {
-                        // 这是角色名，只返回冒号前的部分
-                        string characterName = beforeColon.Trim();
-                        // 调整位置到冒号处
-                        int rollbackCount = result.Length - colonIndex;
-                        for (int i = 0; i < rollbackCount; i++)
-                        {
-                            _position--;
-                            _column--;
-                        }
-                        UpdateCurrentChar();
-                        
-                        return new Token(TokenType.TEXT, characterName, startLine, startColumn);
-                    }
-                }
-            }
-            
+
             return new Token(TokenType.TEXT, result, startLine, startColumn);
         }
 
@@ -740,7 +704,7 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 处理命令内容（<< >> 之间的表达式）
+        /// 处理命令内容（《《 >> 之间的表达式）
         /// </summary>
         private Token HandleCommand()
         {
@@ -764,7 +728,7 @@ namespace MookDialogueScript
                 _isInCommandMode = false;
                 return new Token(TokenType.COMMAND_END, ">>", startLine, startColumn);
             }
-            
+
             return null;
         }
 
@@ -824,37 +788,14 @@ namespace MookDialogueScript
                     return commandToken;
                 }
 
-                // 5. 处理节点标记 --- 和 ===
-                if (_currentChar == '-' && Peek() == '-')
-                {
-                    int startPosition = _position;
-                    int startLine = _line;
-                    int startColumn = _column;
-                    
-                    Advance();
-                    Advance();
-                    if (_currentChar == '-')
-                    {
-                        Advance();
-                        _isInNodeContent = true;
-                        return new Token(TokenType.NODE_START, "---", startLine, startColumn);
-                    }
-                    else
-                    {
-                        // 不是三个减号，回退并当做文本处理
-                        _position = startPosition;
-                        _column = startColumn;
-                        UpdateCurrentChar();
-                        return HandleText();
-                    }
-                }
+                // 5. 处理节点标记 ===
 
                 if (_currentChar == '=' && Peek() == '=')
                 {
                     int startPosition = _position;
                     int startLine = _line;
                     int startColumn = _column;
-                    
+
                     Advance();
                     Advance();
                     if (_currentChar == '=')
@@ -882,25 +823,58 @@ namespace MookDialogueScript
                     int startLine = _line;
                     int startColumn = _column;
                     Advance();
-                    
+
                     // 在元数据模式下，这是分隔符
                     if (!_isInNodeContent)
                     {
                         return new Token(TokenType.METADATA_SEPARATOR, ":", startLine, startColumn);
                     }
-                    
+
                     // 在集合内，这是普通冒号
                     return new Token(TokenType.COLON, ":", startLine, startColumn);
                 }
 
-                // 7. 处理选项箭头 ->
-                if (_currentChar == '-' && Peek() == '>')
+                // 7. 处理减号 -
+                if (_currentChar == '-')
                 {
                     int startLine = _line;
                     int startColumn = _column;
-                    Advance();
-                    Advance();
-                    return new Token(TokenType.ARROW, "->", startLine, startColumn);
+
+                    if (_isInNodeContent)
+                    {
+                        // 在集合内：所有减号都按字面意思处理
+                        if (Peek() == '>')
+                        {
+                            // -> 识别为 ARROW
+                            Advance();
+                            Advance();
+                            return new Token(TokenType.ARROW, "->", startLine, startColumn);
+                        }
+                        else
+                        {
+                            // 单个 - 识别为 MINUS
+                            Advance();
+                            return new Token(TokenType.MINUS, "-", startLine, startColumn);
+                        }
+                    }
+                    else
+                    {
+                        // 在集合外：检查是否是节点标记 ---
+                        if (Peek() == '-' && GetCharAt(_position + 2) == '-')
+                        {
+                            // --- 识别为 NODE_START
+                            Advance();
+                            Advance();
+                            Advance();
+                            _isInNodeContent = true;
+                            return new Token(TokenType.NODE_START, "---", startLine, startColumn);
+                        }
+                        else
+                        {
+                            // 其他情况作为文本处理
+                            return HandleText();
+                        }
+                    }
                 }
 
                 // 8. 处理变量
@@ -953,153 +927,153 @@ namespace MookDialogueScript
                 {
                     case '(':
                     case '（':
-                        {
-                            int startLine = _line;
-                            int startColumn = _column;
-                            Advance();
-                            return new Token(TokenType.LEFT_PAREN, "(", startLine, startColumn);
-                        }
+                    {
+                        int startLine = _line;
+                        int startColumn = _column;
+                        Advance();
+                        return new Token(TokenType.LEFT_PAREN, "(", startLine, startColumn);
+                    }
                     case ')':
                     case '）':
-                        {
-                            int startLine = _line;
-                            int startColumn = _column;
-                            Advance();
-                            return new Token(TokenType.RIGHT_PAREN, ")", startLine, startColumn);
-                        }
+                    {
+                        int startLine = _line;
+                        int startColumn = _column;
+                        Advance();
+                        return new Token(TokenType.RIGHT_PAREN, ")", startLine, startColumn);
+                    }
                     case '{':
-                        {
-                            int startLine = _line;
-                            int startColumn = _column;
-                            Advance();
-                            return new Token(TokenType.LEFT_BRACE, "{", startLine, startColumn);
-                        }
+                    {
+                        int startLine = _line;
+                        int startColumn = _column;
+                        Advance();
+                        return new Token(TokenType.LEFT_BRACE, "{", startLine, startColumn);
+                    }
                     case '}':
-                        {
-                            int startLine = _line;
-                            int startColumn = _column;
-                            Advance();
-                            return new Token(TokenType.RIGHT_BRACE, "}", startLine, startColumn);
-                        }
+                    {
+                        int startLine = _line;
+                        int startColumn = _column;
+                        Advance();
+                        return new Token(TokenType.RIGHT_BRACE, "}", startLine, startColumn);
+                    }
                     case '#':
-                        {
-                            int startLine = _line;
-                            int startColumn = _column;
-                            Advance();
-                            return new Token(TokenType.HASH, "#", startLine, startColumn);
-                        }
+                    {
+                        int startLine = _line;
+                        int startColumn = _column;
+                        Advance();
+                        return new Token(TokenType.HASH, "#", startLine, startColumn);
+                    }
                     case ',':
                     case '，':
-                        {
-                            int startLine = _line;
-                            int startColumn = _column;
-                            Advance();
-                            return new Token(TokenType.COMMA, ",", startLine, startColumn);
-                        }
+                    {
+                        int startLine = _line;
+                        int startColumn = _column;
+                        Advance();
+                        return new Token(TokenType.COMMA, ",", startLine, startColumn);
+                    }
                     case '+':
-                        {
-                            int startLine = _line;
-                            int startColumn = _column;
-                            Advance();
-                            return new Token(TokenType.PLUS, "+", startLine, startColumn);
-                        }
+                    {
+                        int startLine = _line;
+                        int startColumn = _column;
+                        Advance();
+                        return new Token(TokenType.PLUS, "+", startLine, startColumn);
+                    }
                     case '*':
-                        {
-                            int startLine = _line;
-                            int startColumn = _column;
-                            Advance();
-                            return new Token(TokenType.MULTIPLY, "*", startLine, startColumn);
-                        }
+                    {
+                        int startLine = _line;
+                        int startColumn = _column;
+                        Advance();
+                        return new Token(TokenType.MULTIPLY, "*", startLine, startColumn);
+                    }
                     case '/':
-                        {
-                            int startLine = _line;
-                            int startColumn = _column;
-                            Advance();
-                            return new Token(TokenType.DIVIDE, "/", startLine, startColumn);
-                        }
+                    {
+                        int startLine = _line;
+                        int startColumn = _column;
+                        Advance();
+                        return new Token(TokenType.DIVIDE, "/", startLine, startColumn);
+                    }
                     case '%':
-                        {
-                            int startLine = _line;
-                            int startColumn = _column;
-                            Advance();
-                            return new Token(TokenType.MODULO, "%", startLine, startColumn);
-                        }
+                    {
+                        int startLine = _line;
+                        int startColumn = _column;
+                        Advance();
+                        return new Token(TokenType.MODULO, "%", startLine, startColumn);
+                    }
                     case '=':
-                        {
-                            int startLine = _line;
-                            int startColumn = _column;
-                            Advance();
-                            return new Token(TokenType.ASSIGN, "=", startLine, startColumn);
-                        }
+                    {
+                        int startLine = _line;
+                        int startColumn = _column;
+                        Advance();
+                        return new Token(TokenType.ASSIGN, "=", startLine, startColumn);
+                    }
                     case '!':
                     case '！':
+                    {
+                        int startLine = _line;
+                        int startColumn = _column;
+                        Advance();
+                        if (_currentChar == '=')
                         {
-                            int startLine = _line;
-                            int startColumn = _column;
                             Advance();
-                            if (_currentChar == '=')
-                            {
-                                Advance();
-                                return new Token(TokenType.NOT_EQUALS, "!=", startLine, startColumn);
-                            }
-                            return new Token(TokenType.NOT, "!", startLine, startColumn);
+                            return new Token(TokenType.NOT_EQUALS, "!=", startLine, startColumn);
                         }
+                        return new Token(TokenType.NOT, "!", startLine, startColumn);
+                    }
                     case '>':
+                    {
+                        int startLine = _line;
+                        int startColumn = _column;
+                        Advance();
+                        if (_currentChar == '=')
                         {
-                            int startLine = _line;
-                            int startColumn = _column;
                             Advance();
-                            if (_currentChar == '=')
-                            {
-                                Advance();
-                                return new Token(TokenType.GREATER_EQUALS, ">=", startLine, startColumn);
-                            }
-                            return new Token(TokenType.GREATER, ">", startLine, startColumn);
+                            return new Token(TokenType.GREATER_EQUALS, ">=", startLine, startColumn);
                         }
+                        return new Token(TokenType.GREATER, ">", startLine, startColumn);
+                    }
                     case '<':
+                    {
+                        int startLine = _line;
+                        int startColumn = _column;
+                        Advance();
+                        if (_currentChar == '=')
                         {
-                            int startLine = _line;
-                            int startColumn = _column;
                             Advance();
-                            if (_currentChar == '=')
-                            {
-                                Advance();
-                                return new Token(TokenType.LESS_EQUALS, "<=", startLine, startColumn);
-                            }
-                            return new Token(TokenType.LESS, "<", startLine, startColumn);
+                            return new Token(TokenType.LESS_EQUALS, "<=", startLine, startColumn);
                         }
+                        return new Token(TokenType.LESS, "<", startLine, startColumn);
+                    }
                     case '&':
+                    {
+                        int startLine = _line;
+                        int startColumn = _column;
+                        Advance();
+                        if (_currentChar == '&')
                         {
-                            int startLine = _line;
-                            int startColumn = _column;
                             Advance();
-                            if (_currentChar == '&')
-                            {
-                                Advance();
-                                return new Token(TokenType.AND, "&&", startLine, startColumn);
-                            }
-                            // 单个&作为文本处理
-                            _position--;
-                            _column--;
-                            UpdateCurrentChar();
-                            return HandleText();
+                            return new Token(TokenType.AND, "&&", startLine, startColumn);
                         }
+                        // 单个&作为文本处理
+                        _position--;
+                        _column--;
+                        UpdateCurrentChar();
+                        return HandleText();
+                    }
                     case '|':
+                    {
+                        int startLine = _line;
+                        int startColumn = _column;
+                        Advance();
+                        if (_currentChar == '|')
                         {
-                            int startLine = _line;
-                            int startColumn = _column;
                             Advance();
-                            if (_currentChar == '|')
-                            {
-                                Advance();
-                                return new Token(TokenType.OR, "||", startLine, startColumn);
-                            }
-                            // 单个|作为文本处理
-                            _position--;
-                            _column--;
-                            UpdateCurrentChar();
-                            return HandleText();
+                            return new Token(TokenType.OR, "||", startLine, startColumn);
                         }
+                        // 单个|作为文本处理
+                        _position--;
+                        _column--;
+                        UpdateCurrentChar();
+                        return HandleText();
+                    }
                 }
 
                 // 13. 如果在集合内且不在命令模式，当做文本处理

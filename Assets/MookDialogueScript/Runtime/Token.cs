@@ -7,16 +7,12 @@ namespace MookDialogueScript
         /// 文件结束
         /// </summary>
         EOF,
-
+        
         // 符号标记
         /// <summary>
-        /// 选项标记 箭头 ->
+        /// 元数据键值对分隔符 :
         /// </summary>
-        ARROW,
-        /// <summary>
-        /// 节点标记 双冒号 ::
-        /// </summary>
-        DOUBLE_COLON,
+        METADATA_SEPARATOR,
         /// <summary>
         /// 节点开始标记 三重减号 ---
         /// </summary>
@@ -26,7 +22,7 @@ namespace MookDialogueScript
         /// </summary>
         NODE_END,
         /// <summary>
-        /// 命令开始标记 <<
+        /// 命令开始标记 《《
         /// </summary>
         COMMAND_START,
         /// <summary>
@@ -34,9 +30,9 @@ namespace MookDialogueScript
         /// </summary>
         COMMAND_END,
         /// <summary>
-        /// 元数据键值对分隔符 :
+        /// 选项标记 箭头 ->
         /// </summary>
-        METADATA_SEPARATOR,
+        ARROW,
 
         // 标点符号
         /// <summary>
@@ -168,12 +164,7 @@ namespace MookDialogueScript
         /// </summary>
         FALSE,
 
-
         // 命令
-        /// <summary>
-        /// 命令关键字
-        /// </summary>
-        COMMAND,
         /// <summary>
         /// 声明变量
         /// </summary>
@@ -203,13 +194,9 @@ namespace MookDialogueScript
         /// </summary>
         MOD,
         /// <summary>
-        /// 跳转 => or jump
+        /// 跳转 jump
         /// </summary>
         JUMP,
-        /// <summary>
-        /// 调用 call
-        /// </summary>
-        CALL,
         /// <summary>
         /// 等待 wait
         /// </summary>

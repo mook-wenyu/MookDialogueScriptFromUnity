@@ -68,14 +68,6 @@ namespace MookDialogueScript
         /// </summary>
         public List<ContentNode> Content { get; }
 
-        public NodeDefinitionNode(string nodeName, List<ContentNode> content, int line, int column)
-            : base(line, column)
-        {
-            NodeName = nodeName;
-            Content = content;
-            Metadata = new Dictionary<string, string>();
-        }
-        
         public NodeDefinitionNode(string nodeName, Dictionary<string, string> metadata, List<ContentNode> content, int line, int column)
             : base(line, column)
         {
@@ -133,31 +125,19 @@ namespace MookDialogueScript
         /// <summary>
         /// 标签列表
         /// </summary>
-        public List<string> Labels { get; }
+        public List<string> Tags { get; }
 
         /// <summary>
         /// 内容列表，用于支持嵌套内容
         /// </summary>
         public List<ContentNode> Content { get; }
 
-        public DialogueNode(string speaker, List<TextSegmentNode> text, List<string> labels, List<ContentNode> content, int line, int column)
+        public DialogueNode(string speaker, List<TextSegmentNode> text, List<string> tags, List<ContentNode> content, int line, int column)
             : base(line, column)
         {
             Speaker = speaker;
             Text = text;
-            Labels = labels;
-            Content = content ?? new List<ContentNode>();
-        }
-
-        /// <summary>
-        /// 创建旁白节点的便捷构造函数，带嵌套内容
-        /// </summary>
-        public DialogueNode(List<TextSegmentNode> text, List<string> labels, List<ContentNode> content, int line, int column)
-            : base(line, column)
-        {
-            Speaker = null;
-            Text = text;
-            Labels = labels;
+            Tags = tags;
             Content = content ?? new List<ContentNode>();
         }
 
@@ -169,9 +149,9 @@ namespace MookDialogueScript
                 sb.Append($"{Speaker}: ");
             }
             sb.Append(string.Join("", Text));
-            if (Labels is {Count: > 0})
+            if (Tags is {Count: > 0})
             {
-                sb.Append($" {string.Join(" ", Labels.Select(l => $"#{l}"))}");
+                sb.Append($" {string.Join(" ", Tags.Select(l => $"#{l}"))}");
             }
             sb.AppendLine();
             if (Content is {Count: > 0})

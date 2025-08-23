@@ -26,11 +26,11 @@ namespace MookDialogueScript
         private readonly List<Token> _tokens;
         private int _tokenIndex;
         private Token _currentToken;
-        
+
         // 自动标签生成
         private int _lineCounter = 0;
         private string _currentNodeName = "";
-        
+
         // 嵌套层数警告
         private const int MAX_SAFE_NESTING_LEVEL = 10;
         private int _currentNestingLevel = 0;
@@ -125,18 +125,10 @@ namespace MookDialogueScript
 
             while (!IsEOF())
             {
-                try
+                var node = ParseNodeDefinition();
+                if (node != null)
                 {
-                    var node = ParseNodeDefinition();
-                    if (node != null)
-                    {
-                        nodes.Add(node);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MLogger.Error($"解析节点错误: {ex.Message}");
-                    RecoverToNextNode();
+                    nodes.Add(node);
                 }
             }
 
@@ -150,23 +142,21 @@ namespace MookDialogueScript
         {
             // 解析节点元数据
             var metadata = ParseNodeMetadata();
-            
+
             // 需要有节点开始标记
             if (!Check(TokenType.NODE_START))
             {
-                MLogger.Error($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，缺少节点开始标记 ---");
-                // 自动修复：插入 ---
-                InsertToken(TokenType.NODE_START, "---");
+                throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，缺少节点开始标记 ---");
             }
-            
+
             int line = _currentToken.Line;
             int column = _currentToken.Column;
             Consume(TokenType.NODE_START);
-            
+
             // 重置行计数器并设置当前节点名
             _lineCounter = 0;
             _currentNodeName = metadata.GetValueOrDefault("node", "unnamed");
-            
+
             var content = new List<ContentNode>();
             while (!Check(TokenType.NODE_END) && !IsEOF())
             {
@@ -175,30 +165,20 @@ namespace MookDialogueScript
                     Consume(TokenType.NEWLINE);
                     continue;
                 }
-                
-                try
+
+                var node = ParseCollectionContent();
+                if (node != null && !IsEmptyContentNode(node))
                 {
-                    var node = ParseCollectionContent();
-                    if (node != null && !IsEmptyContentNode(node))
-                    {
-                        content.Add(node);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MLogger.Error($"解析内容错误: {ex.Message}");
-                    RecoverToSafePoint();
+                    content.Add(node);
                 }
             }
-            
+
             if (!Check(TokenType.NODE_END))
             {
-                MLogger.Error($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，缺少节点结束标记 ===");
-                // 自动修复：插入 ===
-                InsertToken(TokenType.NODE_END, "===");
+                throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，缺少节点结束标记 ===");
             }
             Consume(TokenType.NODE_END);
-            
+
             return new NodeDefinitionNode(_currentNodeName, metadata, content, line, column);
         }
 
@@ -208,7 +188,7 @@ namespace MookDialogueScript
         private Dictionary<string, string> ParseNodeMetadata()
         {
             var metadata = new Dictionary<string, string>();
-            
+
             // 解析节点元数据（key: value 格式）
             while (!Check(TokenType.NODE_START) && !IsEOF())
             {
@@ -217,22 +197,22 @@ namespace MookDialogueScript
                     Consume(TokenType.NEWLINE);
                     continue;
                 }
-                
+
                 if (Check(TokenType.IDENTIFIER) && CheckNext(TokenType.METADATA_SEPARATOR))
                 {
                     string key = _currentToken.Value;
                     Consume(TokenType.IDENTIFIER);
                     Consume(TokenType.METADATA_SEPARATOR);
-                    
+
                     string value = "";
                     if (Check(TokenType.TEXT))
                     {
                         value = _currentToken.Value;
                         Consume(TokenType.TEXT);
                     }
-                    
+
                     metadata[key] = value;
-                    
+
                     if (Check(TokenType.NEWLINE))
                     {
                         Consume(TokenType.NEWLINE);
@@ -243,10 +223,10 @@ namespace MookDialogueScript
                     break;
                 }
             }
-            
+
             return metadata;
         }
-        
+
         /// <summary>
         /// 检查内容节点是否为空
         /// </summary>
@@ -291,22 +271,22 @@ namespace MookDialogueScript
             return _currentToken.Type switch
             {
                 // 角色对话：角色名:
-                TokenType.TEXT when CheckNext(TokenType.COLON) => ParseDialogue(),
-                
+                TokenType.IDENTIFIER when CheckNext(TokenType.COLON) => ParseDialogue(),
+
                 // 选项：-> 文本
                 TokenType.ARROW => ParseChoice(),
-                
+
                 // 条件：<<if>>
                 TokenType.COMMAND_START when CheckNextCommand(TokenType.IF) => ParseCondition(),
-                
+
                 // 其他命令：<<command>>
                 TokenType.COMMAND_START => ParseCommand(),
-                
+
                 // 旁白：所有其他情况（包括:文本和普通文本）
                 _ => ParseNarration()
             };
         }
-        
+
         /// <summary>
         /// 解析条件（新设计）
         /// </summary>
@@ -314,15 +294,15 @@ namespace MookDialogueScript
         {
             int line = _currentToken.Line;
             int column = _currentToken.Column;
-            
+
             Consume(TokenType.COMMAND_START);
             Consume(TokenType.IF);
             var condition = ParseExpression();
             Consume(TokenType.COMMAND_END);
-            
+
             // 解析then分支
             var thenBranch = ParseConditionalBranch(TokenType.ELIF, TokenType.ELSE, TokenType.ENDIF);
-            
+
             // 解析elif分支
             var elifBranches = new List<(ExpressionNode Condition, List<ContentNode> Content)>();
             while (Check(TokenType.COMMAND_START) && CheckNextCommand(TokenType.ELIF))
@@ -331,11 +311,11 @@ namespace MookDialogueScript
                 Consume(TokenType.ELIF);
                 var elifCondition = ParseExpression();
                 Consume(TokenType.COMMAND_END);
-                
+
                 var elifContent = ParseConditionalBranch(TokenType.ELIF, TokenType.ELSE, TokenType.ENDIF);
                 elifBranches.Add((elifCondition, elifContent));
             }
-            
+
             // 解析else分支
             List<ContentNode> elseBranch = null;
             if (Check(TokenType.COMMAND_START) && CheckNextCommand(TokenType.ELSE))
@@ -343,38 +323,30 @@ namespace MookDialogueScript
                 Consume(TokenType.COMMAND_START);
                 Consume(TokenType.ELSE);
                 Consume(TokenType.COMMAND_END);
-                
+
                 elseBranch = ParseConditionalBranch(TokenType.ENDIF);
             }
-            
+
             // 消耗endif
             if (!Check(TokenType.COMMAND_START) || !CheckNextCommand(TokenType.ENDIF))
             {
-                MLogger.Error($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，缺少条件结束标记 <<endif>>");
-                // 自动修复：插入 <<endif>>
-                InsertToken(TokenType.COMMAND_START, "<<");
-                GetNextToken();
-                InsertToken(TokenType.ENDIF, "endif");
-                GetNextToken();
-                InsertToken(TokenType.COMMAND_END, ">>");
+                throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，缺少条件结束标记 <<endif>>");
             }
-            else
-            {
-                Consume(TokenType.COMMAND_START);
-                Consume(TokenType.ENDIF);
-                Consume(TokenType.COMMAND_END);
-            }
-            
+
+            Consume(TokenType.COMMAND_START);
+            Consume(TokenType.ENDIF);
+            Consume(TokenType.COMMAND_END);
+
             return new ConditionNode(condition, thenBranch, elifBranches, elseBranch, line, column);
         }
-        
+
         /// <summary>
         /// 解析条件分支内容
         /// </summary>
         private List<ContentNode> ParseConditionalBranch(params TokenType[] endTokens)
         {
             var content = new List<ContentNode>();
-            
+
             while (!IsConditionalEnd(endTokens) && !IsEOF())
             {
                 if (Check(TokenType.NEWLINE))
@@ -382,32 +354,24 @@ namespace MookDialogueScript
                     Consume(TokenType.NEWLINE);
                     continue;
                 }
-                
-                try
+
+                var node = ParseCollectionContent();
+                if (node != null && !IsEmptyContentNode(node))
                 {
-                    var node = ParseCollectionContent();
-                    if (node != null && !IsEmptyContentNode(node))
-                    {
-                        content.Add(node);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MLogger.Error($"解析条件分支错误: {ex.Message}");
-                    RecoverToSafePoint();
+                    content.Add(node);
                 }
             }
-            
+
             return content;
         }
-        
+
         /// <summary>
         /// 检查是否到达条件结束
         /// </summary>
         private bool IsConditionalEnd(TokenType[] endTokens)
         {
             if (!Check(TokenType.COMMAND_START)) return false;
-            
+
             foreach (var endToken in endTokens)
             {
                 if (CheckNextCommand(endToken))
@@ -415,7 +379,7 @@ namespace MookDialogueScript
                     return true;
                 }
             }
-            
+
             return false;
         }
 
@@ -427,7 +391,7 @@ namespace MookDialogueScript
             _lineCounter++;
             return $"line:{_currentNodeName.ToLower()}{_lineCounter}";
         }
-        
+
         /// <summary>
         /// 解析旁白（统一处理:文本和普通文本）
         /// </summary>
@@ -435,17 +399,17 @@ namespace MookDialogueScript
         {
             int line = _currentToken.Line;
             int column = _currentToken.Column;
-            
+
             // 不特殊处理冒号，让ParseText()自然处理所有文本内容
             var text = ParseText();
             var tags = ParseTags();
             tags.Add(GenerateLineTag());
-            
+
             var content = ParseNestedContent();
-            
+
             return new DialogueNode(null, text, tags, content, line, column);
         }
-        
+
         /// <summary>
         /// 解析对话
         /// </summary>
@@ -455,7 +419,7 @@ namespace MookDialogueScript
             int column = _currentToken.Column;
 
             string speaker = _currentToken.Value;
-            Consume(TokenType.TEXT);
+            Consume(TokenType.IDENTIFIER);
             Consume(TokenType.COLON);
 
             var text = ParseText();
@@ -476,6 +440,7 @@ namespace MookDialogueScript
             StringBuilder textBuilder = new StringBuilder(128);
 
             while (_currentToken.Type != TokenType.NEWLINE &&
+                   _currentToken.Type != TokenType.COMMAND_START &&
                    _currentToken.Type != TokenType.HASH &&
                    _currentToken.Type != TokenType.QUOTE)
             {
@@ -533,48 +498,48 @@ namespace MookDialogueScript
         private List<string> ParseTags()
         {
             var tags = new List<string>();
-            
+
             while (Check(TokenType.HASH))
             {
                 Consume(TokenType.HASH);
-                
+
                 var tagBuilder = new StringBuilder();
-                
+
                 // 读取直到遇到下一个标签符号或换行
                 while (!Check(TokenType.NEWLINE) && !Check(TokenType.HASH) && !IsEOF())
                 {
                     tagBuilder.Append(_currentToken.Value);
                     GetNextToken();
                 }
-                
+
                 string tag = tagBuilder.ToString().TrimEnd();
                 if (!string.IsNullOrEmpty(tag))
                 {
                     tags.Add(tag);
                 }
             }
-            
+
             return tags;
         }
-        
+
         /// <summary>
         /// 解析嵌套内容
         /// </summary>
         private List<ContentNode> ParseNestedContent()
         {
             var content = new List<ContentNode>();
-            
+
             if (Check(TokenType.NEWLINE) && CheckNext(TokenType.INDENT))
             {
                 Consume(TokenType.NEWLINE);
                 Consume(TokenType.INDENT);
-                
+
                 _currentNestingLevel++;
                 if (_currentNestingLevel > MAX_SAFE_NESTING_LEVEL)
                 {
                     MLogger.Warning($"警告: 第{_currentToken.Line}行，嵌套层数过深（{_currentNestingLevel}层），可能影响性能");
                 }
-                
+
                 while (!Check(TokenType.DEDENT) && !IsEOF() && !IsCollectionEnd())
                 {
                     if (Check(TokenType.NEWLINE))
@@ -582,32 +547,24 @@ namespace MookDialogueScript
                         Consume(TokenType.NEWLINE);
                         continue;
                     }
-                    
-                    try
+
+                    var node = ParseCollectionContent();
+                    if (node != null && !IsEmptyContentNode(node))
                     {
-                        var node = ParseCollectionContent();
-                        if (node != null && !IsEmptyContentNode(node))
-                        {
-                            content.Add(node);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        MLogger.Error($"解析嵌套内容错误: {ex.Message}");
-                        RecoverToSafePoint();
+                        content.Add(node);
                     }
                 }
-                
+
                 if (Check(TokenType.DEDENT))
                 {
                     Consume(TokenType.DEDENT);
                 }
                 _currentNestingLevel--;
             }
-            
+
             return content;
         }
-        
+
         private ChoiceNode ParseChoice()
         {
             int line = _currentToken.Line;
@@ -618,7 +575,7 @@ namespace MookDialogueScript
 
             ExpressionNode condition = null;
             var tags = new List<string>();
-            
+
             // 解析 <<if 条件>> 语法
             if (Check(TokenType.COMMAND_START))
             {
@@ -630,16 +587,27 @@ namespace MookDialogueScript
                 }
                 Consume(TokenType.COMMAND_END);
             }
-            
+
             // 解析其他标签
             tags.AddRange(ParseTags());
-            
+
             // 添加自动生成的行号标签
             tags.Add(GenerateLineTag());
-            
+
             var content = ParseNestedContent();
 
             return new ChoiceNode(text, condition, tags, content, line, column);
+        }
+
+        /// <summary>
+        /// 解析函数调用命令
+        /// </summary>
+        private CallCommandNode ParseFunctionCallCommand(string functionName, int line, int column)
+        {
+            Consume(TokenType.LEFT_PAREN);
+            var parameters = ParseParameterList();
+            Consume(TokenType.RIGHT_PAREN);
+            return new CallCommandNode(functionName, parameters, line, column);
         }
 
         /// <summary>
@@ -649,6 +617,8 @@ namespace MookDialogueScript
         {
             int line = _currentToken.Line;
             int column = _currentToken.Column;
+
+            Consume(TokenType.COMMAND_START); // 先消耗 <<
 
             string commandValue = _currentToken.Value.ToLower();
             TokenType commandType = _currentToken.Type;
@@ -662,25 +632,45 @@ namespace MookDialogueScript
                 case TokenType.MUL:
                 case TokenType.DIV:
                 case TokenType.MOD:
-                    return ParseVarOperation(commandValue, line, column);
-
-                case TokenType.CALL:
-                    return ParseFunctionCall(line, column);
+                {
+                    var result = ParseVarOperation(commandValue, line, column);
+                    Consume(TokenType.COMMAND_END);
+                    return result;
+                }
 
                 case TokenType.WAIT:
-                    return ParseWaitCommand(line, column);
+                {
+                    var result = ParseWaitCommand(line, column);
+                    Consume(TokenType.COMMAND_END);
+                    return result;
+                }
 
                 case TokenType.VAR:
-                    return ParseVarDeclaration(line, column);
+                {
+                    var result = ParseVarDeclaration(line, column);
+                    Consume(TokenType.COMMAND_END);
+                    return result;
+                }
 
                 case TokenType.JUMP:
-                    return ParseJumpCommand(line, column);
+                {
+                    var result = ParseJumpCommand(line, column);
+                    Consume(TokenType.COMMAND_END);
+                    return result;
+                }
 
-                case TokenType.COMMAND:
-                    throw new InvalidOperationException($"未知命令 {commandValue}");
+                case TokenType.IDENTIFIER:
+                    // 检查是否是函数调用
+                    if (Check(TokenType.LEFT_PAREN))
+                    {
+                        var result = ParseFunctionCallCommand(commandValue, line, column);
+                        Consume(TokenType.COMMAND_END);
+                        return result;
+                    }
+                    throw new InvalidOperationException($"语法错误: 第{line}行，第{column}列，未知的标识符 {commandValue}");
 
                 default:
-                    throw new InvalidOperationException($"未知命令类型 {commandType}");
+                    throw new InvalidOperationException($"语法错误: 第{line}行，第{column}列，未知命令 {commandValue}");
             }
         }
 
@@ -699,27 +689,10 @@ namespace MookDialogueScript
             }
 
             var value = ParseExpression();
-            ConsumeNewlineOrEof();
 
             return new VarCommandNode(variable, value, operation, line, column);
         }
 
-        /// <summary>
-        /// 解析函数调用命令
-        /// </summary>
-        private CallCommandNode ParseFunctionCall(int line, int column)
-        {
-            string functionName = _currentToken.Value;
-            Consume(TokenType.IDENTIFIER);
-            Consume(TokenType.LEFT_PAREN);
-
-            var parameters = ParseParameterList();
-
-            Consume(TokenType.RIGHT_PAREN);
-            ConsumeNewlineOrEof();
-
-            return new CallCommandNode(functionName, parameters, line, column);
-        }
 
         /// <summary>
         /// 解析参数列表
@@ -746,7 +719,6 @@ namespace MookDialogueScript
         private WaitCommandNode ParseWaitCommand(int line, int column)
         {
             var duration = ParseExpression();
-            ConsumeNewlineOrEof();
             return new WaitCommandNode(duration, line, column);
         }
 
@@ -765,7 +737,6 @@ namespace MookDialogueScript
             }
 
             var initialValue = ParseExpression();
-            ConsumeNewlineOrEof();
 
             return new VarCommandNode(varName, initialValue, "var", line, column);
         }
@@ -777,7 +748,6 @@ namespace MookDialogueScript
         {
             string targetNode = _currentToken.Value;
             Consume(TokenType.IDENTIFIER);
-            ConsumeNewlineOrEof();
             return new JumpCommandNode(targetNode, line, column);
         }
 
@@ -1019,7 +989,7 @@ namespace MookDialogueScript
         {
             return _currentToken.Type == TokenType.EOF;
         }
-        
+
         /// <summary>
         /// 检查是否到达集合结束
         /// </summary>
@@ -1027,7 +997,7 @@ namespace MookDialogueScript
         {
             return Check(TokenType.NODE_END) || Check(TokenType.NODE_START);
         }
-        
+
         /// <summary>
         /// 检查下一个命令Token类型
         /// </summary>
@@ -1039,41 +1009,8 @@ namespace MookDialogueScript
             }
             return false;
         }
-        
-        /// <summary>
-        /// 插入Token（错误修复用）
-        /// </summary>
-        private void InsertToken(TokenType type, string value)
-        {
-            var token = new Token(type, value, _currentToken.Line, _currentToken.Column);
-            _tokens.Insert(_tokenIndex, token);
-            _currentToken = token;
-        }
-        
-        /// <summary>
-        /// 恢复到下一个节点
-        /// </summary>
-        private void RecoverToNextNode()
-        {
-            while (!IsEOF() && !Check(TokenType.NODE_START))
-            {
-                GetNextToken();
-            }
-        }
-        
-        /// <summary>
-        /// 恢复到安全点
-        /// </summary>
-        private void RecoverToSafePoint()
-        {
-            while (!IsEOF() && 
-                   !Check(TokenType.NODE_START) && 
-                   !Check(TokenType.NODE_END) &&
-                   !Check(TokenType.NEWLINE))
-            {
-                GetNextToken();
-            }
-        }
+
+
 
     }
 }

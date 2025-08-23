@@ -68,9 +68,9 @@ public class NormalDialogueUI : MonoBehaviour
         string text = await DialogueMgr.Instance.RunMgrs.BuildDialogueText(dialogue);
         speakerText.text = !string.IsNullOrEmpty(dialogue.Speaker) ? dialogue.Speaker : "";
         contentText.text = text;
-        if (dialogue.Labels != null && dialogue.Labels.Count > 0)
+        if (dialogue.Tags != null && dialogue.Tags.Count > 0)
         {
-            foreach (var label in dialogue.Labels)
+            foreach (var label in dialogue.Tags)
             {
                 Debug.Log($"标签：{label}");
             }
