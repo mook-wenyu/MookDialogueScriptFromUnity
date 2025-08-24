@@ -75,6 +75,10 @@ namespace MookDialogueScript
         /// 井号 #
         /// </summary>
         HASH,
+        /// <summary>
+        /// 点号 .
+        /// </summary>
+        DOT,
 
         // 运算符
         /// <summary>

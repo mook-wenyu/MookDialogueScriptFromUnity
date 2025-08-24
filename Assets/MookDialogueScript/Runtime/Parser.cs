@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Linq;
-using UnityEngine;
 
 namespace MookDialogueScript
 {
@@ -256,7 +255,7 @@ namespace MookDialogueScript
             return _currentToken.Type switch
             {
                 // 角色对话：角色名:
-                TokenType.IDENTIFIER when CheckNext(TokenType.COLON) => ParseDialogue(),
+                TokenType.TEXT when CheckNext(TokenType.COLON) => ParseDialogue(),
 
                 // 选项：-> 文本
                 TokenType.ARROW => ParseChoice(),
@@ -340,10 +339,39 @@ namespace MookDialogueScript
                     continue;
                 }
 
+                // 忽略缩进控制符：条件分支的边界由 <<elif/else/endif>> 决定，缩进仅为排版用
+                if (Check(TokenType.INDENT))
+                {
+                    Consume(TokenType.INDENT);
+                    continue;
+                }
+                if (Check(TokenType.DEDENT))
+                {
+                    Consume(TokenType.DEDENT);
+                    continue;
+                }
+
+                // 边界保护：如果遇到节点边界，说明缺失了期望的 <<endif>> / <<elif>> / <<else>>，需提前退出避免死循环
+                if (Check(TokenType.NODE_END) || Check(TokenType.NODE_START))
+                {
+                    // 记录错误但不中断整个脚本解析流程
+                    MLogger.Error($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，在条件块内遇到节点边界但未找到结束标记（可能缺少 <<endif>>）");
+                    break;
+                }
+
+                // 记录当前位置用于无前进保护
+                int beforeIndex = _tokenIndex;
+
                 var node = ParseCollectionContent();
                 if (node != null && !IsEmptyContentNode(node))
                 {
                     content.Add(node);
+                }
+
+                // 无前进保护：若本轮未消耗任何Token，抛出异常避免死循环
+                if (beforeIndex == _tokenIndex)
+                {
+                    throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，无法在条件分支内前进（可能缺少 <<endif>> 或存在无法识别的结构）");
                 }
             }
 
@@ -404,7 +432,7 @@ namespace MookDialogueScript
             int column = _currentToken.Column;
 
             string speaker = _currentToken.Value;
-            Consume(TokenType.IDENTIFIER);
+            Consume(TokenType.TEXT);
             Consume(TokenType.COLON);
 
             var text = ParseText();
@@ -487,6 +515,14 @@ namespace MookDialogueScript
         {
             var tags = new List<string>();
 
+            // 跳过空字符
+            while (string.IsNullOrEmpty(_currentToken.Value.Trim())
+                   && _currentToken.Type != TokenType.NEWLINE
+                   && _currentToken.Type != TokenType.EOF)
+            {
+                Consume(_currentToken.Type);
+            }
+
             while (Check(TokenType.HASH))
             {
                 Consume(TokenType.HASH);
@@ -497,7 +533,7 @@ namespace MookDialogueScript
                 while (!Check(TokenType.NEWLINE) && !Check(TokenType.HASH) && !IsEOF())
                 {
                     tagBuilder.Append(_currentToken.Value);
-                    GetNextToken();
+                    Consume(_currentToken.Type);
                 }
 
                 string tag = tagBuilder.ToString().TrimEnd();
@@ -882,7 +918,7 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 解析表达式项（一元运算或基本表达式）
+        /// 解析表达式项（一元运算或基本表达式 + 后缀链）
         /// </summary>
         private ExpressionNode ParseExpressionTerm()
         {
@@ -899,8 +935,170 @@ namespace MookDialogueScript
                 return new UnaryOpNode(op, operand, line, column);
             }
 
-            // 否则解析基本表达式
-            return ParsePrimary();
+            // 解析基本表达式
+            var baseExpr = ParsePrimary();
+            
+            // 应用后缀链循环
+            return ParsePostfixChain(baseExpr);
+        }
+
+        /// <summary>
+        /// 解析后缀链（函数调用、成员访问、索引访问）
+        /// </summary>
+        private ExpressionNode ParsePostfixChain(ExpressionNode baseExpr)
+        {
+            var current = baseExpr;
+            
+            while (true)
+            {
+                // 前进保护：记录当前位置
+                int beforeIndex = _tokenIndex;
+                
+                switch (_currentToken.Type)
+                {
+                    case TokenType.LEFT_PAREN:
+                        // 函数调用：expr(args)
+                        var line = _currentToken.Line;
+                        var column = _currentToken.Column;
+                        Consume(TokenType.LEFT_PAREN);
+                        
+                        List<ExpressionNode> parameters;
+                        try
+                        {
+                            parameters = ParseParameterList();
+                            
+                            // 错误恢复：处理缺失的右括号
+                            if (_currentToken.Type != TokenType.RIGHT_PAREN)
+                            {
+                                // 尝试同步到右括号或其他停止符号
+                                SynchronizeToTokens(TokenType.RIGHT_PAREN, TokenType.COMMA, TokenType.COMMAND_END, 
+                                                  TokenType.NEWLINE, TokenType.NODE_END, TokenType.NODE_START);
+                                
+                                if (_currentToken.Type == TokenType.RIGHT_PAREN)
+                                {
+                                    MLogger.Warning($"语法警告: 第{line}行，第{column}列，自动修复缺失的右括号");
+                                    Consume(TokenType.RIGHT_PAREN);
+                                }
+                                else
+                                {
+                                    throw new InvalidOperationException($"语法错误: 第{line}行，第{column}列，期望 )，但得到 {_currentToken.Type}");
+                                }
+                            }
+                            else
+                            {
+                                Consume(TokenType.RIGHT_PAREN);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            MLogger.Error($"函数调用解析错误: {ex.Message}");
+                            // 返回当前节点，结束后缀链解析
+                            return current;
+                        }
+                        
+                        current = new CallExpressionNode(current, parameters, line, column);
+                        break;
+                        
+                    case TokenType.DOT:
+                        // 成员访问：expr.member
+                        line = _currentToken.Line;
+                        column = _currentToken.Column;
+                        Consume(TokenType.DOT);
+                        
+                        if (_currentToken.Type != TokenType.IDENTIFIER)
+                        {
+                            // 统一错误策略：尝试同步并返回当前节点
+                            MLogger.Error($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望标识符，但得到 {_currentToken.Type}");
+                            SynchronizeToTokens(TokenType.IDENTIFIER, TokenType.DOT, TokenType.LEFT_PAREN, 
+                                              TokenType.LEFT_BRACKET, TokenType.COMMAND_END, TokenType.NEWLINE, 
+                                              TokenType.NODE_END, TokenType.NODE_START);
+                            return current;
+                        }
+                        
+                        var memberName = _currentToken.Value;
+                        Consume(TokenType.IDENTIFIER);
+                        current = new MemberAccessNode(current, memberName, line, column);
+                        break;
+                        
+                    case TokenType.LEFT_BRACKET:
+                        // 索引访问：expr[index]
+                        line = _currentToken.Line;
+                        column = _currentToken.Column;
+                        Consume(TokenType.LEFT_BRACKET);
+                        
+                        ExpressionNode indexExpr;
+                        try
+                        {
+                            indexExpr = ParseExpression();
+                            
+                            // 错误恢复：处理缺失的右中括号
+                            if (_currentToken.Type != TokenType.RIGHT_BRACKET)
+                            {
+                                // 尝试同步到右中括号或其他停止符号
+                                SynchronizeToTokens(TokenType.RIGHT_BRACKET, TokenType.COMMA, TokenType.COMMAND_END, 
+                                                  TokenType.NEWLINE, TokenType.NODE_END, TokenType.NODE_START);
+                                
+                                if (_currentToken.Type == TokenType.RIGHT_BRACKET)
+                                {
+                                    MLogger.Warning($"语法警告: 第{line}行，第{column}列，自动修复缺失的右中括号");
+                                    Consume(TokenType.RIGHT_BRACKET);
+                                }
+                                else
+                                {
+                                    throw new InvalidOperationException($"语法错误: 第{line}行，第{column}列，期望 ]，但得到 {_currentToken.Type}");
+                                }
+                            }
+                            else
+                            {
+                                Consume(TokenType.RIGHT_BRACKET);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            MLogger.Error($"索引访问解析错误: {ex.Message}");
+                            // 返回当前节点，结束后缀链解析
+                            return current;
+                        }
+                        
+                        current = new IndexAccessNode(current, indexExpr, line, column);
+                        break;
+                        
+                    default:
+                        // 没有更多后缀操作，返回当前表达式
+                        return current;
+                }
+                
+                // 前进保护：检查是否前进
+                if (_tokenIndex <= beforeIndex)
+                {
+                    throw new InvalidOperationException($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，无法在后缀链内前进，可能存在死循环");
+                }
+            }
+        }
+
+        /// <summary>
+        /// 同步到指定的Token类型（用于错误恢复）
+        /// </summary>
+        /// <param name="tokens">目标Token类型数组</param>
+        private void SynchronizeToTokens(params TokenType[] tokens)
+        {
+            int maxAdvance = 50; // 防止无限循环
+            int advance = 0;
+            
+            while (_currentToken.Type != TokenType.EOF && advance < maxAdvance)
+            {
+                if (tokens.Contains(_currentToken.Type))
+                {
+                    return; // 找到目标Token
+                }
+                GetNextToken();
+                advance++;
+            }
+            
+            if (advance >= maxAdvance)
+            {
+                MLogger.Warning($"错误恢复: 第{_currentToken.Line}行，第{_currentToken.Column}列，达到最大前进限制，停止同步");
+            }
         }
 
         /// <summary>
@@ -938,16 +1136,6 @@ namespace MookDialogueScript
                     line = _currentToken.Line;
                     column = _currentToken.Column;
                     Consume(TokenType.IDENTIFIER);
-
-                    // 检查是否是函数调用
-                    if (Check(TokenType.LEFT_PAREN))
-                    {
-                        Consume(TokenType.LEFT_PAREN);
-                        var parameters = ParseParameterList();
-                        Consume(TokenType.RIGHT_PAREN);
-                        return new FunctionCallNode(identifierValue, parameters, line, column);
-                    }
-
                     return new IdentifierNode(identifierValue, line, column);
 
                 case TokenType.LEFT_PAREN:

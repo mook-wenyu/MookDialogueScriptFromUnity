@@ -18,7 +18,8 @@ namespace MookDialogueScript
             Null,
             Number,
             Boolean,
-            String
+            String,
+            Object
         }
 
         public ValueType Type { get; }
@@ -39,6 +40,12 @@ namespace MookDialogueScript
         public RuntimeValue(bool value)
         {
             Type = ValueType.Boolean;
+            Value = value;
+        }
+
+        public RuntimeValue(object value)
+        {
+            Type = ValueType.Object;
             Value = value;
         }
 
@@ -141,6 +148,10 @@ namespace MookDialogueScript
         private readonly VariableManager _variableManager = new();
         private readonly FunctionManager _functionManager = new();
         private readonly Dictionary<string, NodeDefinitionNode> _nodes = new();
+        
+        // 对象注册映射
+        private readonly Dictionary<string, object> _nameToObject = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<object, string> _objectToName = new();
 
         /// <summary>
         /// 创建一个新的对话上下文
@@ -376,6 +387,136 @@ namespace MookDialogueScript
                 MLogger.Error($"获取元数据时出错: {ex}");
                 return null;
             }
+        }
+
+        /// <summary>
+        /// 获取对象成员值
+        /// </summary>
+        /// <param name="target">目标对象</param>
+        /// <param name="memberName">成员名称</param>
+        /// <returns>成员值</returns>
+        public async Task<RuntimeValue> GetObjectMember(RuntimeValue target, string memberName)
+        {
+            // 优先通过注册对象查找（委托优先策略）
+            if (target.Type == RuntimeValue.ValueType.Object && target.Value != null)
+            {
+                // 检查是否为已注册对象
+                if (TryGetObjectName(target.Value, out var objectName))
+                {
+                    // 尝试通过函数管理器获取预编译的委托
+                    string functionKey = $"{objectName}.{memberName}";
+                    if (_functionManager.TryGet(functionKey, out var func))
+                    {
+                        // 返回可调用的方法委托
+                        return new RuntimeValue(func);
+                    }
+                }
+            }
+            
+            // 回退到VariableManager的处理
+            return await Task.FromResult(_variableManager.GetObjectMember(target, memberName, this));
+        }
+
+        /// <summary>
+        /// 注册对象实例，使其可以通过名称访问
+        /// </summary>
+        /// <param name="name">对象名称</param>
+        /// <param name="instance">对象实例</param>
+        public void RegisterObject(string name, object instance)
+        {
+            if (instance == null)
+            {
+                MLogger.Warning($"试图注册空对象: {name}");
+                return;
+            }
+
+            // 移除旧的映射
+            if (_nameToObject.TryGetValue(name, out var oldInstance))
+            {
+                _objectToName.Remove(oldInstance);
+            }
+            if (_objectToName.TryGetValue(instance, out var oldName))
+            {
+                _nameToObject.Remove(oldName);
+            }
+
+            // 添加新的映射
+            _nameToObject[name] = instance;
+            _objectToName[instance] = name;
+
+            // 同时注册对象的方法到函数管理器
+            RegisterObjectFunctions(name, instance);
+            
+            MLogger.Debug($"注册对象: {name} -> {instance.GetType().Name}");
+        }
+
+        /// <summary>
+        /// 尝试通过名称获取对象实例
+        /// </summary>
+        /// <param name="name">对象名称</param>
+        /// <param name="instance">对象实例</param>
+        /// <returns>是否找到对象</returns>
+        public bool TryGetObjectByName(string name, out object instance)
+        {
+            return _nameToObject.TryGetValue(name, out instance);
+        }
+
+        /// <summary>
+        /// 尝试通过对象实例获取名称
+        /// </summary>
+        /// <param name="instance">对象实例</param>
+        /// <param name="name">对象名称</param>
+        /// <returns>是否找到名称</returns>
+        public bool TryGetObjectName(object instance, out string name)
+        {
+            return _objectToName.TryGetValue(instance, out name);
+        }
+
+        /// <summary>
+        /// 获取所有已注册的对象信息
+        /// </summary>
+        /// <returns>对象名称到类型名称的映射</returns>
+        public Dictionary<string, string> GetRegisteredObjects()
+        {
+            var result = new Dictionary<string, string>();
+            foreach (var kvp in _nameToObject)
+            {
+                result[kvp.Key] = kvp.Value.GetType().Name;
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// 清理所有缓存（包括Helper缓存和本地缓存）
+        /// </summary>
+        public void ClearAllCaches()
+        {
+            Helper.ClearCache();
+            MLogger.Info("DialogueContext: 所有缓存已清理");
+        }
+
+        /// <summary>
+        /// 获取系统性能统计信息
+        /// </summary>
+        /// <returns>性能统计字典</returns>
+        public Dictionary<string, object> GetPerformanceStatistics()
+        {
+            var stats = new Dictionary<string, object>
+            {
+                ["RegisteredNodes"] = _nodes.Count,
+                ["RegisteredObjects"] = _nameToObject.Count,
+                ["RegisteredFunctions"] = _functionManager.GetRegisteredScriptFunctions().Count,
+                ["AllVariables"] = GetAllVariables().Count
+            };
+
+            // 添加Helper缓存统计
+            var cacheStats = Helper.GetCacheStatistics();
+            foreach (var kvp in cacheStats)
+            {
+                stats[$"Cache_{kvp.Key}"] = kvp.Value;
+            }
+
+            return stats;
         }
     }
 }

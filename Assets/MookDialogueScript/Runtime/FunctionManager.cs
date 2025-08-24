@@ -147,10 +147,30 @@ namespace MookDialogueScript
                 foreach (var method in staticMethods)
                 {
                     var attribute = method.GetCustomAttribute<ScriptFuncAttribute>();
-                    string funcName = attribute.Name ?? method.Name;
+                    // 修复命名bug：ScriptFuncAttribute构造函数默认name=""，需要用IsNullOrEmpty判断
+                    string funcName = string.IsNullOrEmpty(attribute.Name) ? method.Name : attribute.Name;
 
                     try
                     {
+                        // 严格禁止重名：检查是否已存在同名函数（忽略大小写）
+                        if (_compiledFunctions.ContainsKey(funcName))
+                        {
+                            var existingKey = _compiledFunctions.Keys.FirstOrDefault(k => 
+                                string.Equals(k, funcName, StringComparison.OrdinalIgnoreCase));
+                            
+                            // 检查是否为大小写冲突
+                            bool isCaseConflict = !string.Equals(existingKey, funcName, StringComparison.Ordinal);
+                            string conflictType = isCaseConflict ? "大小写冲突" : "重名";
+                            
+                            string errorMsg = $"脚本函数名 '{funcName}' 重复定义（{conflictType}）。" +
+                                            $"已存在函数：'{existingKey}'，尝试注册：'{funcName}' " +
+                                            $"（类型：{method.DeclaringType?.Name}，方法：{method.Name}）。" +
+                                            $"系统不支持重名/重载，请重命名。";
+                            
+                            MLogger.Error(errorMsg);
+                            continue; // 跳过此函数，继续处理其他函数
+                        }
+
                         _compiledFunctions[funcName] = CompileMethod(method, null);
                     }
                     catch (Exception ex)
@@ -184,19 +204,22 @@ namespace MookDialogueScript
                     // 调用并处理结果
                     object result = null;
 
-                    if (returnType.IsAssignableFrom(typeof(Task<object>)) ||
-                        returnType.IsGenericType && returnType.GetGenericTypeDefinition() == typeof(Task<>))
+                    if (returnType == typeof(Task))
                     {
+                        // 无返回值的异步方法
+                        var task = (Task)method.Invoke(instance, nativeArgs);
+                        await task.ConfigureAwait(false);
+                        result = null;
+                    }
+                    else if (returnType.IsGenericType && returnType.GetGenericTypeDefinition() == typeof(Task<>))
+                    {
+                        // 有返回值的异步方法
                         var task = (Task)method.Invoke(instance, nativeArgs);
                         result = await GetTaskResultAsync(task);
                     }
-                    else if (returnType == typeof(Task))
-                    {
-                        var task = (Task)method.Invoke(instance, nativeArgs);
-                        await task.ConfigureAwait(false);
-                    }
                     else
                     {
+                        // 同步方法
                         result = method.Invoke(instance, nativeArgs);
                     }
 
@@ -215,6 +238,25 @@ namespace MookDialogueScript
         /// </summary>
         public void RegisterFunction(string name, Delegate function)
         {
+            // 严格禁止重名：检查是否已存在同名函数（忽略大小写）
+            if (_compiledFunctions.ContainsKey(name))
+            {
+                var existingKey = _compiledFunctions.Keys.FirstOrDefault(k => 
+                    string.Equals(k, name, StringComparison.OrdinalIgnoreCase));
+                
+                // 检查是否为大小写冲突
+                bool isCaseConflict = !string.Equals(existingKey, name, StringComparison.Ordinal);
+                string conflictType = isCaseConflict ? "大小写冲突" : "重名";
+                
+                string errorMsg = $"脚本函数名 '{name}' 重复定义（{conflictType}）。" +
+                                $"已存在函数：'{existingKey}'，尝试注册：'{name}' " +
+                                $"（委托类型：{function.Method.DeclaringType?.Name}，方法：{function.Method.Name}）。" +
+                                $"系统不支持重名/重载，请重命名。";
+                
+                MLogger.Error(errorMsg);
+                return; // 拒绝覆盖，直接返回
+            }
+
             _compiledFunctions[name] = CompileMethod(function.Method, function.Target);
         }
 
@@ -229,16 +271,46 @@ namespace MookDialogueScript
                 return;
             }
 
-            // 获取所有非Object基类的公共实例方法
+            // 获取所有非Object基类的公共实例方法，排除属性、事件等特殊方法
             var methods = instance.GetType()
                 .GetMethods(BindingFlags.Public | BindingFlags.Instance)
-                .Where(m => m.DeclaringType != typeof(object));
+                .Where(m => m.DeclaringType != typeof(object) && !m.IsSpecialName);
 
-            foreach (var method in methods)
+            var methodGroups = methods.GroupBy(m => m.Name);
+            
+            foreach (var methodGroup in methodGroups)
             {
-                var funcName = $"{objectName}__{method.Name}";
+                var methodArray = methodGroup.ToArray();
+                if (methodArray.Length > 1)
+                {
+                    // 处理方法重载：警告并选择第一个
+                    MLogger.Warning($"对象 '{objectName}' 的方法 '{methodGroup.Key}' 存在重载，将使用第一个重载");
+                }
+                
+                var method = methodArray[0]; // 使用第一个重载
+                var funcName = $"{objectName}.{method.Name}";
+                
                 try
                 {
+                    // 严格禁止重名：检查是否已存在同名函数（忽略大小写）
+                    if (_compiledFunctions.ContainsKey(funcName))
+                    {
+                        var existingKey = _compiledFunctions.Keys.FirstOrDefault(k => 
+                            string.Equals(k, funcName, StringComparison.OrdinalIgnoreCase));
+                        
+                        // 检查是否为大小写冲突
+                        bool isCaseConflict = !string.Equals(existingKey, funcName, StringComparison.Ordinal);
+                        string conflictType = isCaseConflict ? "大小写冲突" : "重名";
+                        
+                        string errorMsg = $"脚本函数名 '{funcName}' 重复定义（{conflictType}）。" +
+                                        $"已存在函数：'{existingKey}'，尝试注册：'{funcName}' " +
+                                        $"（对象类型：{instance.GetType().Name}，方法：{method.Name}）。" +
+                                        $"系统不支持重名/重载，请重命名。";
+                        
+                        MLogger.Error(errorMsg);
+                        continue; // 跳过此函数，继续处理其他函数
+                    }
+
                     _compiledFunctions[funcName] = CompileMethod(method, instance);
                 }
                 catch (Exception ex)
@@ -273,9 +345,20 @@ namespace MookDialogueScript
         }
 
         /// <summary>
+        /// 尝试获取已注册的函数
+        /// </summary>
+        /// <param name="name">函数名</param>
+        /// <param name="func">函数委托</param>
+        /// <returns>是否找到函数</returns>
+        public bool TryGet(string name, out Func<List<RuntimeValue>, Task<RuntimeValue>> func)
+        {
+            return _compiledFunctions.TryGetValue(name, out func);
+        }
+
+        /// <summary>
         /// 调用已注册的函数
         /// </summary>
-        public async Task<RuntimeValue> CallFunction(string name, List<RuntimeValue> args)
+        public async Task<RuntimeValue> CallFunction(string name, List<RuntimeValue> args, int line = 0, int column = 0)
         {
             if (_compiledFunctions.TryGetValue(name, out var func))
             {
@@ -285,13 +368,31 @@ namespace MookDialogueScript
                 }
                 catch (Exception ex)
                 {
-                    MLogger.Error($"调用函数 '{name}' 时出错: {ex}");
+                    // 统一错误信息格式：运行时错误
+                    string errorMsg = line > 0 && column > 0 
+                        ? $"运行时错误: 第{line}行，第{column}列，函数 '{name}' 调用失败: {ex.Message}"
+                        : $"函数 '{name}' 调用失败: {ex.Message}";
+                    
+                    MLogger.Error(errorMsg);
                     return RuntimeValue.Null; // 返回空值
                 }
             }
 
-            MLogger.Error($"函数 '{name}' 未找到");
+            // 统一错误信息格式：运行时错误  
+            string notFoundMsg = line > 0 && column > 0
+                ? $"运行时错误: 第{line}行，第{column}列，函数 '{name}' 未找到"
+                : $"函数 '{name}' 未找到";
+                
+            MLogger.Error(notFoundMsg);
             return RuntimeValue.Null; // 返回空值而不是抛出异常
+        }
+
+        /// <summary>
+        /// 调用已注册的函数（向后兼容的重载）
+        /// </summary>
+        public async Task<RuntimeValue> CallFunction(string name, List<RuntimeValue> args)
+        {
+            return await CallFunction(name, args, 0, 0);
         }
         #endregion
         
@@ -327,6 +428,10 @@ namespace MookDialogueScript
         }
 
         #region 内置函数
+        // 单例随机数生成器，避免重复种子问题
+        private static readonly Random _sharedRandom = new Random();
+        private static readonly object _randomLock = new object();
+
         /// <summary>
         /// 输出日志
         /// </summary>
@@ -388,7 +493,10 @@ namespace MookDialogueScript
         [ScriptFunc("random")]
         public static double Random(int digits = 2)
         {
-            return Math.Round(new Random().NextDouble(), digits);
+            lock (_randomLock)
+            {
+                return Math.Round(_sharedRandom.NextDouble(), digits);
+            }
         }
 
         /// <summary>
@@ -398,7 +506,10 @@ namespace MookDialogueScript
         [ScriptFunc("random_range")]
         public static double Random_Range(float min, float max, int digits = 2)
         {
-            return Math.Round(new Random().NextDouble() * (max - min) + min, digits);
+            lock (_randomLock)
+            {
+                return Math.Round(_sharedRandom.NextDouble() * (max - min) + min, digits);
+            }
         }
 
         /// <summary>
@@ -408,12 +519,15 @@ namespace MookDialogueScript
         [ScriptFunc("dice")]
         public static int Dice(int sides, int count = 1)
         {
-            var total = 0;
-            for (var i = 0; i < count; i++)
+            lock (_randomLock)
             {
-                total += new Random().Next(1, sides + 1);
+                var total = 0;
+                for (var i = 0; i < count; i++)
+                {
+                    total += _sharedRandom.Next(1, sides + 1);
+                }
+                return total;
             }
-            return total;
         }
         #endregion
     }

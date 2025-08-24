@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
-using UnityEngine;
 
 namespace MookDialogueScript
 {
@@ -92,9 +91,10 @@ namespace MookDialogueScript
 
             // 跳过前导空白并检测混合缩进
             char c = GetCharAt(p);
-            while (c == ' ' || c == '\t')
+            while (c is ' ' or '\t')
             {
-                if (c == ' ') sawSpace = true; else sawTab = true;
+                if (c == ' ') sawSpace = true;
+                else sawTab = true;
                 p++;
                 c = GetCharAt(p);
             }
@@ -102,7 +102,7 @@ namespace MookDialogueScript
             hasMixedIndent = sawSpace && sawTab;
 
             // 空行或到达文件末尾
-            if (c == '\n' || c == '\r' || c == '\0')
+            if (c is '\n' or '\r' or '\0')
             {
                 isEmptyOrCommentLine = true;
                 return;
@@ -112,7 +112,6 @@ namespace MookDialogueScript
             if (c == '/' && GetCharAt(p + 1) == '/')
             {
                 isEmptyOrCommentLine = true;
-                return;
             }
         }
 
@@ -335,40 +334,76 @@ namespace MookDialogueScript
         {
             int currentLine = _line;
 
-            // 处理多行注释和空行：允许前导空白（无回溯）
+            // 思路：推进“当前所在这一行”的行尾（含注释），并折叠后续的纯空行/纯注释行为一个 NEWLINE；
+            // 但遇到第一行“内容行”时，停在该行列首（不吞其前导空白），让缩进处理在列首发生。
+
+            // 1) 先推进到当前行的换行位置（保留列首给后续行）
+            if (_currentChar == '/' && Peek() == '/')
+            {
+                // 跳过当前行注释内容
+                while (_currentChar != '\0' && _currentChar != '\n' && _currentChar != '\r')
+                {
+                    Advance();
+                }
+            }
+
+            // 2) 如果是 CRLF，先吃掉 \r 再由统一逻辑推进
+            if (_currentChar == '\r' && Peek() == '\n')
+            {
+                Advance();
+            }
+            if (_currentChar is '\n' or '\r')
+            {
+                Advance();
+                _line++;
+                _column = 1;
+            }
+
+            // 3) 折叠连续的“仅空白+注释+换行”的行
             while (true)
             {
-                // 跳过行首空白
+                // 使用只读游标预判下一行是否为空/注释行
+                int p = _position;
+
+                // 跳过前导空白（仅预读，不改变真实位置）
+                char c = GetCharAt(p);
+                while (c == ' ' || c == '\t')
+                {
+                    p++;
+                    c = GetCharAt(p);
+                }
+
+                bool isCommentLine = c == '/' && GetCharAt(p + 1) == '/';
+                bool isEmptyLine = c is '\n' or '\r' or '\0';
+
+                if (!(isCommentLine || isEmptyLine))
+                {
+                    // 下一行是内容行：停止折叠，保持指针在该行列首（不吃空白）
+                    break;
+                }
+
+                // 将“预读到的这一行”（注释行或空行）整体消耗掉到换行符末尾
+                // 真正推进：跳过前导空白
                 while (_currentChar is ' ' or '\t')
                 {
                     Advance();
                 }
 
-                // 注释行
+                // 注释内容
                 if (_currentChar == '/' && Peek() == '/')
                 {
-                    // 跳过当前行注释内容
                     while (_currentChar != '\0' && _currentChar != '\n' && _currentChar != '\r')
                     {
                         Advance();
                     }
                 }
-                // 空行（或空白后直接换行）
-                else if (_currentChar is '\n' or '\r')
-                {
-                    // nothing, 交由下面统一换行推进
-                }
-                else
-                {
-                    // 非注释/非空行，结束批量跳过
-                    break;
-                }
 
-                // 统一推进一个换行
+                // CRLF 处理
                 if (_currentChar == '\r' && Peek() == '\n')
                 {
                     Advance();
                 }
+
                 if (_currentChar is '\n' or '\r')
                 {
                     Advance();
@@ -377,12 +412,12 @@ namespace MookDialogueScript
                 }
                 else
                 {
-                    // 已到达文件末尾或无换行字符
+                    // EOF 或没有换行可推进
                     break;
                 }
             }
 
-            // 如果处理完换行和注释后到达了文件末尾，优先补齐所有未关闭的缩进
+            // 4) EOF 时优先补齐 DEDENT，再返回 EOF
             if (_currentChar == '\0')
             {
                 if (_pendingDedent > 0)
@@ -399,7 +434,7 @@ namespace MookDialogueScript
                 return new Token(TokenType.EOF, string.Empty, _line, _column);
             }
 
-            // 返回一个NEWLINE token，无论有几个连续的换行和注释
+            // 5) 折叠结果统一返回一个 NEWLINE
             return new Token(TokenType.NEWLINE, "\n", currentLine, _column);
         }
 
@@ -731,6 +766,13 @@ namespace MookDialogueScript
                     {
                         return indentToken;
                     }
+
+                    // 缩进层级未变化（或已完成变化后的下一次进入）：
+                    // 消费本行与当前缩进对应的前导空白，使后续能从第一个非空白字符开始识别（例如 '->' 识别为 ARROW）。
+                    while (_currentChar is ' ' or '\t')
+                    {
+                        Advance();
+                    }
                 }
 
                 // 2. 跳过空白字符（非文本模式下或在插值表达式内）
@@ -772,8 +814,9 @@ namespace MookDialogueScript
                     }
                 }
 
-                // 处理节点标记 ===
-                if (_currentChar == '=' && Peek() == '=' && GetCharAt(_position + 2) == '=')
+                // 处理节点标记 ===（仅在节点内容内，且不在命令/插值/字符串模式）
+                if (_isInNodeContent && !_isInCommandMode && !_isInInterpolation && !_isInStringMode
+                    && _currentChar == '=' && Peek() == '=' && GetCharAt(_position + 2) == '=')
                 {
                     int startLine = _line;
                     int startColumn = _column;
@@ -798,7 +841,8 @@ namespace MookDialogueScript
                     && _currentChar != ':'
                     && _currentChar != '#'
                     && _currentChar != '{'
-                    && !(_currentChar == '<' && Peek() == '<'))
+                    && !(_currentChar == '<' && Peek() == '<')
+                    && !(_currentChar == '-' && Peek() == '>'))
                 {
                     return HandleText();
                 }
@@ -819,8 +863,8 @@ namespace MookDialogueScript
                     return new Token(TokenType.COLON, ":", startLine, startColumn);
                 }
 
-                // 在集合外
-                if (!_isInNodeContent)
+                // 在集合外，处理节点标记 ---（且不在命令/插值/字符串模式）
+                if (!_isInNodeContent && !_isInCommandMode && !_isInInterpolation && !_isInStringMode)
                 {
                     // 检查是否是节点标记 ---
                     if (_currentChar == '-' && Peek() == '-' && GetCharAt(_position + 2) == '-')
@@ -922,12 +966,36 @@ namespace MookDialogueScript
                         _isInInterpolation = false;
                         return new Token(TokenType.RIGHT_BRACE, "}", startLine, startColumn);
                     }
+                    case '[':
+                    {
+                        int startLine = _line;
+                        int startColumn = _column;
+                        Advance();
+                        return new Token(TokenType.LEFT_BRACKET, "[", startLine, startColumn);
+                    }
+                    case ']':
+                    {
+                        int startLine = _line;
+                        int startColumn = _column;
+                        Advance();
+                        return new Token(TokenType.RIGHT_BRACKET, "]", startLine, startColumn);
+                    }
                     case '#':
                     {
                         int startLine = _line;
                         int startColumn = _column;
                         Advance();
                         return new Token(TokenType.HASH, "#", startLine, startColumn);
+                    }
+                    case '.':
+                    {
+                        // 需要区分小数点和成员访问的点号
+                        // 如果下一个字符是数字，且前面没有数字，则这可能是小数点
+                        // 但这里我们在表达式/命令模式下，简单处理为DOT token
+                        int startLine = _line;
+                        int startColumn = _column;
+                        Advance();
+                        return new Token(TokenType.DOT, ".", startLine, startColumn);
                     }
                     case ',':
                     {

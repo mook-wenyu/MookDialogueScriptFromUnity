@@ -29,6 +29,40 @@ public class DialogueMgr : MonoBehaviour
         RunMgrs.RegisterVariable("gold", new RuntimeValue(100));
         RunMgrs.RegisterVariable("has_key", new RuntimeValue(false));
     }
+
+    [ContextMenu("Show Performance Statistics")]
+    public void ShowPerformanceStatistics()
+    {
+        if (RunMgrs?.Context != null)
+        {
+            UnityEngine.Debug.Log("=== 对话系统性能统计 ===");
+            var stats = RunMgrs.Context.GetPerformanceStatistics();
+            
+            foreach (var kvp in stats)
+            {
+                UnityEngine.Debug.Log($"{kvp.Key}: {kvp.Value}");
+            }
+        }
+        else
+        {
+            UnityEngine.Debug.LogWarning("对话系统未初始化");
+        }
+    }
+
+    [ContextMenu("Clear All Caches")]
+    public void ClearAllCaches()
+    {
+        if (RunMgrs?.Context != null)
+        {
+            RunMgrs.Context.ClearAllCaches();
+            UnityEngine.Debug.Log("所有缓存已清理");
+        }
+        else
+        {
+            Helper.ClearCache();
+            UnityEngine.Debug.Log("Helper缓存已清理");
+        }
+    }
     
     /// <summary>
     /// 游戏系统类 - 只包含一些静态变量

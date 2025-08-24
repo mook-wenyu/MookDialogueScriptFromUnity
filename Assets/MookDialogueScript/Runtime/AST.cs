@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -649,6 +650,7 @@ namespace MookDialogueScript
     /// <summary>
     /// 函数调用节点
     /// </summary>
+    [Obsolete("使用CallExpressionNode替代")]
     public class FunctionCallNode : ExpressionNode
     {
         /// <summary>
@@ -678,6 +680,97 @@ namespace MookDialogueScript
             }
             sb.Append(")");
             return sb.ToString();
+        }
+    }
+
+    /// <summary>
+    /// 调用表达式节点，支持任意表达式的调用
+    /// </summary>
+    public class CallExpressionNode : ExpressionNode
+    {
+        /// <summary>
+        /// 被调用者表达式
+        /// </summary>
+        public ExpressionNode Callee { get; }
+
+        /// <summary>
+        /// 参数列表
+        /// </summary>
+        public List<ExpressionNode> Arguments { get; }
+
+        public CallExpressionNode(ExpressionNode callee, List<ExpressionNode> arguments, int line, int column)
+            : base(line, column)
+        {
+            Callee = callee;
+            Arguments = arguments ?? new List<ExpressionNode>();
+        }
+
+        public override string ToString()
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.Append($"调用表达式: {Callee}(");
+            if (Arguments is {Count: > 0})
+            {
+                sb.Append(string.Join(", ", Arguments));
+            }
+            sb.Append(")");
+            return sb.ToString();
+        }
+    }
+
+    /// <summary>
+    /// 成员访问节点
+    /// </summary>
+    public class MemberAccessNode : ExpressionNode
+    {
+        /// <summary>
+        /// 目标表达式
+        /// </summary>
+        public ExpressionNode Target { get; }
+
+        /// <summary>
+        /// 成员名称
+        /// </summary>
+        public string Member { get; }
+
+        public MemberAccessNode(ExpressionNode target, string member, int line, int column)
+            : base(line, column)
+        {
+            Target = target;
+            Member = member;
+        }
+
+        public override string ToString()
+        {
+            return $"{Target}.{Member}";
+        }
+    }
+
+    /// <summary>
+    /// 索引访问节点
+    /// </summary>
+    public class IndexAccessNode : ExpressionNode
+    {
+        /// <summary>
+        /// 目标表达式
+        /// </summary>
+        public ExpressionNode Target { get; }
+
+        /// <summary>
+        /// 索引表达式
+        /// </summary>
+        public ExpressionNode Index { get; }
+
+        public IndexAccessNode(ExpressionNode target, ExpressionNode index, int line, int column)
+            : base(line, column)
+        {
+            Target = target;
+            Index = index;
+        }
+
+        public override string ToString()
+        {
+            return $"{Target}[{Index}]";
         }
     }
 

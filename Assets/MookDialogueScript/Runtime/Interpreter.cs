@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Threading.Tasks;
-using UnityEngine.Scripting;
 
 namespace MookDialogueScript
 {
@@ -187,6 +186,21 @@ namespace MookDialogueScript
                         args.Add(await EvaluateExpression(arg));
                     }
                     return await _context.CallFunction(f.Name, args);
+
+                case CallExpressionNode call:
+                    return await EvaluateCallExpression(call);
+
+                case MemberAccessNode member:
+                    return await EvaluateMemberAccess(member);
+
+                case IndexAccessNode index:
+                    return await EvaluateIndexAccess(index);
+
+                case IdentifierNode identifier:
+                    // 标识符节点，在这里可能代表一个未绑定的函数名或其他标识符
+                    // 在后缀调用中，会被包装成CallExpressionNode
+                    MLogger.Warning($"遇到未绑定的标识符: {identifier.Name}");
+                    return RuntimeValue.Null;
 
                 default:
                     MLogger.Error($"未知的表达式类型 {node.GetType().Name}");
@@ -554,6 +568,153 @@ namespace MookDialogueScript
                     MLogger.Error($"未知的命令类型 {command.GetType().Name}");
                     return string.Empty;
             }
+        }
+
+        /// <summary>
+        /// 统一调用可调用对象的方法
+        /// </summary>
+        /// <param name="callee">被调用对象</param>
+        /// <param name="args">参数列表</param>
+        /// <param name="line">行号</param>
+        /// <param name="column">列号</param>
+        /// <returns>调用结果</returns>
+        private async Task<RuntimeValue> InvokeCallable(object callee, List<RuntimeValue> args, int line, int column)
+        {
+            try
+            {
+                switch (callee)
+                {
+                    // 函数管理器的编译委托
+                    case Func<List<RuntimeValue>, Task<RuntimeValue>> compiledFunc:
+                        return await compiledFunc(args);
+                    
+                    // 其他委托类型
+                    case Delegate del:
+                        // 可以扩展支持其他委托类型
+                        MLogger.Warning($"运行时错误: 第{line}行，第{column}列，不支持的委托类型: {del.GetType().Name}");
+                        return RuntimeValue.Null;
+                    
+                    // 字符串类型（如果被当作函数名）
+                    case string funcName:
+                        return await _context.CallFunction(funcName, args);
+                    
+                    default:
+                        throw new InvalidOperationException($"运行时错误: 第{line}行，第{column}列，目标不可调用（类型: {callee?.GetType().Name ?? "null"}）");
+                }
+            }
+            catch (Exception ex) when (!(ex is InvalidOperationException))
+            {
+                MLogger.Error($"运行时错误: 第{line}行，第{column}列，调用执行失败: {ex.Message}");
+                return RuntimeValue.Null;
+            }
+        }
+        /// <summary>
+        /// 评估调用表达式
+        /// </summary>
+        /// <param name="call">调用表达式节点</param>
+        /// <returns>调用结果</returns>
+        private async Task<RuntimeValue> EvaluateCallExpression(CallExpressionNode call)
+        {
+            // 评估参数
+            var args = new List<RuntimeValue>();
+            foreach (var arg in call.Arguments)
+            {
+                args.Add(await EvaluateExpression(arg));
+            }
+
+            // 分析被调用者
+            switch (call.Callee)
+            {
+                case IdentifierNode identifier:
+                    // 简单的函数调用：identifier(args)
+                    // 优先通过FunctionManager查找
+                    if (_context.HasFunction(identifier.Name))
+                    {
+                        return await _context.CallFunction(identifier.Name, args);
+                    }
+                    throw new InvalidOperationException($"运行时错误: 第{call.Line}行，第{call.Column}列，函数 '{identifier.Name}' 不存在");
+
+                case MemberAccessNode memberAccess:
+                    // 成员方法调用：obj.method(args)
+                    var targetValue = await EvaluateExpression(memberAccess.Target);
+                    
+                    // 检查是否为已注册对象的方法
+                    if (targetValue.Type == RuntimeValue.ValueType.Object && 
+                        _context.TryGetObjectName(targetValue.Value, out var objectName))
+                    {
+                        string functionKey = $"{objectName}.{memberAccess.Member}";
+                        if (_context.HasFunction(functionKey))
+                        {
+                            return await _context.CallFunction(functionKey, args);
+                        }
+                    }
+                    
+                    throw new InvalidOperationException($"运行时错误: 第{call.Line}行，第{call.Column}列，对象不包含可调用方法 '{memberAccess.Member}'（类型: {targetValue.Value?.GetType().Name ?? "null"}）");
+
+                case VariableNode variable:
+                    // 变量可调用：$fn(args)
+                    var varValue = _context.GetVariable(variable.Name);
+                    return await InvokeCallable(varValue.Value, args, call.Line, call.Column);
+
+                default:
+                    // 其他类型的被调用者，先求值再调用
+                    var calleeValue = await EvaluateExpression(call.Callee);
+                    return await InvokeCallable(calleeValue.Value, args, call.Line, call.Column);
+            }
+        }
+
+        /// <summary>
+        /// 评估成员访问
+        /// </summary>
+        /// <param name="member">成员访问节点</param>
+        /// <returns>成员值</returns>
+        private async Task<RuntimeValue> EvaluateMemberAccess(MemberAccessNode member)
+        {
+            try
+            {
+                var target = await EvaluateExpression(member.Target);
+                
+                // 处理对象成员访问
+                return await _context.GetObjectMember(target, member.Member);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"运行时错误: 第{member.Line}行，第{member.Column}列，成员访问失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 评估索引访问
+        /// </summary>
+        /// <param name="index">索引访问节点</param>
+        /// <returns>索引值</returns>
+        private async Task<RuntimeValue> EvaluateIndexAccess(IndexAccessNode index)
+        {
+            try
+            {
+                var target = await EvaluateExpression(index.Target);
+                var indexValue = await EvaluateExpression(index.Index);
+                
+                // 处理不同类型的索引访问
+                return GetIndexValue(target, indexValue, index.Line, index.Column);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"运行时错误: 第{index.Line}行，第{index.Column}列，索引访问失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 获取索引值（委托给Helper的高性能实现）
+        /// </summary>
+        /// <param name="target">目标对象</param>
+        /// <param name="index">索引值</param>
+        /// <param name="line">行号</param>
+        /// <param name="column">列号</param>
+        /// <returns>索引结果</returns>
+        private RuntimeValue GetIndexValue(RuntimeValue target, RuntimeValue index, int line, int column)
+        {
+            return Helper.GetIndexValue(target, index, line, column);
         }
     }
 }

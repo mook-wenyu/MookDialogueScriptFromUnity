@@ -41,6 +41,12 @@ namespace MookDialogueScript
         public DialogueStorage Storage { get; private set; }
 
         /// <summary>
+        /// 获取对话上下文（用于访问性能统计等功能）
+        /// </summary>
+        [Preserve]
+        public DialogueContext Context => _context;
+
+        /// <summary>
         /// 对话开始事件，需要存储对话状态并存档，对话结束前禁止存档
         /// </summary>
         public event Func<Task> OnDialogueStarted;

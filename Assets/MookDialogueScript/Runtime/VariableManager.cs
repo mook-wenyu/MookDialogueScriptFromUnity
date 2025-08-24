@@ -345,6 +345,90 @@ namespace MookDialogueScript
         {
             return _scriptVariables.ContainsKey(name) || _builtinVariables.ContainsKey(name);
         }
+
+        /// <summary>
+        /// 获取对象成员值
+        /// </summary>
+        /// <param name="target">目标对象</param>
+        /// <param name="memberName">成员名称</param>
+        /// <param name="context">对话上下文（可选，用于高级成员解析）</param>
+        /// <returns>成员值</returns>
+        public RuntimeValue GetObjectMember(RuntimeValue target, string memberName, object context = null)
+        {
+            // 在这里可以实现对象成员访问逻辑
+            // 例如：访问字典键、对象属性等
+            switch (target.Type)
+            {
+                case RuntimeValue.ValueType.Object when target.Value is System.Collections.Generic.Dictionary<string, object> dict:
+                    if (dict.TryGetValue(memberName, out var value))
+                    {
+                        return Helper.ConvertToRuntimeValue(value);
+                    }
+                    MLogger.Warning($"字典中不存在键: {memberName}");
+                    return RuntimeValue.Null;
+
+                case RuntimeValue.ValueType.Object when target.Value != null:
+                    // 尝试通过反射访问成员（受控方式）
+                    return GetMemberThroughReflection(target.Value, memberName);
+
+                default:
+                    MLogger.Warning($"暂不支持对象成员访问: {target.Type}.{memberName}");
+                    return RuntimeValue.Null;
+            }
+        }
+
+        /// <summary>
+        /// 通过高性能缓存反射获取成员值
+        /// </summary>
+        /// <param name="target">目标对象</param>
+        /// <param name="memberName">成员名称</param>
+        /// <returns>成员值</returns>
+        private RuntimeValue GetMemberThroughReflection(object target, string memberName)
+        {
+            try
+            {
+                var type = target.GetType();
+                
+                // 使用缓存的成员访问器
+                var accessor = Helper.GetMemberAccessor(type, memberName);
+                if (accessor != null)
+                {
+                    switch (accessor.Type)
+                    {
+                        case MemberAccessor.AccessorType.Property:
+                        case MemberAccessor.AccessorType.Field:
+                            if (accessor.Getter != null)
+                            {
+                                var value = accessor.Getter(target);
+                                return Helper.ConvertToRuntimeValue(value);
+                            }
+                            break;
+                            
+                        case MemberAccessor.AccessorType.Method:
+                            // 返回方法的绑定委托（用于后续调用）
+                            var method = accessor.Method;
+                            var boundMethod = Helper.GetBoundMethod(target, memberName);
+                            if (boundMethod != null)
+                            {
+                                return new RuntimeValue(boundMethod);
+                            }
+                            else
+                            {
+                                // 如果无法创建绑定委托，返回MethodInfo以供FunctionManager处理
+                                return new RuntimeValue(method);
+                            }
+                    }
+                }
+                
+                MLogger.Warning($"对象 {type.Name} 中不存在可访问的成员: {memberName}");
+                return RuntimeValue.Null;
+            }
+            catch (Exception ex)
+            {
+                MLogger.Error($"缓存反射访问成员时出错: {ex.Message}");
+                return RuntimeValue.Null;
+            }
+        }
         #endregion
 
     }

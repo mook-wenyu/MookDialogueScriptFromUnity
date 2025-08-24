@@ -10,7 +10,13 @@
       "Bash(sed -n '218p' \"D:\\UnityProjects\\MookDialogueScriptFromUnity\\Assets\\Resources\\DialogueScripts\\example_dialogue.mds\")",
       "Bash(sed -n '216,220p' \"D:\\UnityProjects\\MookDialogueScriptFromUnity\\Assets\\Resources\\DialogueScripts\\example_dialogue.mds\")",
       "mcp__UnityMCP__execute_menu_item",
-      "mcp__UnityMCP__manage_asset"
+      "mcp__UnityMCP__manage_asset",
+      "Bash(git commit -m \"$(cat <<''EOF''\n性能优化与代码重构，完善文档说明\n\n主要改进：\n- 重构RuntimeValue为只读结构体，实现高性能值语义比较\n- 新增Helper工具类，优化类型转换逻辑\n- 优化DialogueContext和DialogueStorage代码结构\n- 重构FunctionManager，提升函数调用性能\n- 添加Preserve特性支持Unity代码剥离\n- 使用现代C#语法模式匹配，提升代码可读性\n- 更新README文档，增加性能优化说明\n\n技术改进：\n- RuntimeValue实现IEquatable接口，优化相等比较和哈希计算\n- 简化字典操作逻辑，使用现代C#集合方法\n- 统一错误处理机制，减少异常抛出\n- 优化内存分配，减少GC压力\n\n🤖 Generated with [Claude Code](https://claude.ai/code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Read(/D:\\UnityProjects\\MookDialogueScript\\Tests/**)",
+      "Bash(timeout:*)",
+      "mcp__UnityMCP__manage_gameobject",
+      "Bash(sed:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []
