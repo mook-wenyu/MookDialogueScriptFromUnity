@@ -257,19 +257,19 @@ enabled: true
 <<mul $experience 1.5>>
 <<div $gold 2>>
 
-// 对象变量访问（属性和字段）
-$player.name
-$player.health
-$player.level
+// 对象成员访问（属性和字段）
+player.name
+player.health
+player.level
 
 // 变量插值
-这是{$player.name}的属性，等级为{$player.level}
+这是{player.name}的属性，等级为{player.level}
 ```
 
 变量访问说明：
 - 变量以 `$` 开头
 - 所有变量操作必须在 `<<>>` 命令块内
-- 对象变量使用 `$objectName.propertyName` 格式访问
+- 对象成员使用 `objectName.propertyName` 格式访问
 - 在文本中可以使用 `{$variable}` 进行插值
 
 #### 函数系统
@@ -521,19 +521,19 @@ var player = new Player("二狗");
 RunMgrs.RegisterObject("player", player);
 
 // 在脚本中访问对象成员
-// 属性访问：$player.name, $player.level
-// 字段访问：$player.health, $player.isAlive
+// 属性访问：player.name, player.level
+// 字段访问：player.health, player.isAlive
 // 方法调用：player.get_status(), player.take_damage(10)
 ```
 
 示例：
 ```mds
 // 访问对象属性和字段
-商人: 欢迎你，{$player.name}！你的生命值是{$player.health}。
+商人: 欢迎你，{player.name}！你的生命值是{player.health}。
 
 // 修改对象属性或字段（会直接修改C#对象的值）
-<<set $player.name "张三">>
-<<set $player.health 100>>
+<<set player.name "张三">>
+<<set player.health 100>>
 
 // 调用对象方法
 商人: 让我看看你的状态... {player.get_status()}
@@ -686,7 +686,7 @@ endif
 var $full_name concat($first_name, " ", $last_name)
 
 // 在插值中使用
-商人: 你好，{concat($title, " ", $player.name)}！
+商人: 你好，{concat($title, " ", player.name)}！
 ```
 
 #### random(int digits = 2)
