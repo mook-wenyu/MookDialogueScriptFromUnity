@@ -258,18 +258,18 @@ enabled: true
 <<div $gold 2>>
 
 // 对象变量访问（属性和字段）
-$player__name
-$player__health
-$player__level
+$player.name
+$player.health
+$player.level
 
 // 变量插值
-这是{$player__name}的属性，等级为{$player__level}
+这是{$player.name}的属性，等级为{$player.level}
 ```
 
 变量访问说明：
 - 变量以 `$` 开头
 - 所有变量操作必须在 `<<>>` 命令块内
-- 对象变量使用 `$objectName__propertyName` 格式访问
+- 对象变量使用 `$objectName.propertyName` 格式访问
 - 在文本中可以使用 `{$variable}` 进行插值
 
 #### 函数系统
@@ -277,7 +277,7 @@ $player__level
 ```mds
 // 函数调用（必须在命令块内）
 <<call log("这是一条日志")>>
-<<call player__take_damage(10)>>
+<<call player.take_damage(10)>>
 
 // 在表达式中调用函数（不需要call关键字）
 <<if random() > 0.5>>
@@ -285,12 +285,12 @@ $player__level
 <<endif>>
 
 // 在插值中调用函数
-商人: 你的状态是：{player__get_status()}
+商人: 你的状态是：{player.get_status()}
 ```
 
 函数调用说明：
 - 直接调用函数时必须在 `<<call>>` 命令块内
-- 对象函数使用 `objectName__methodName()` 格式调用
+- 对象函数使用 `objectName.methodName()` 格式调用
 - 在表达式或插值中使用函数时，不需要 `call` 关键字
 
 #### 等待控制
@@ -511,7 +511,7 @@ var $damage calculate_damage(10, 1.5)
 
 ### 注册对象
 
-对象注册会同时注册对象的属性、字段和方法，使它们在脚本中可用。属性和字段会以 `objectName__propertyName` 或 `objectName__fieldName` 的形式注册。注册的对象属性和字段都支持双向绑定，可以在脚本中修改C#对象的值。
+对象注册会同时注册对象的属性、字段和方法，使它们在脚本中可用。属性和字段会以 `objectName.propertyName` 或 `objectName.fieldName` 的形式注册。注册的对象属性和字段都支持双向绑定，可以在脚本中修改C#对象的值。
 
 ```csharp
 // 创建对象实例
@@ -521,25 +521,25 @@ var player = new Player("二狗");
 RunMgrs.RegisterObject("player", player);
 
 // 在脚本中访问对象成员
-// 属性访问：$player__name, $player__level
-// 字段访问：$player__health, $player__isAlive
-// 方法调用：player__get_status(), player__take_damage(10)
+// 属性访问：$player.name, $player.level
+// 字段访问：$player.health, $player.isAlive
+// 方法调用：player.get_status(), player.take_damage(10)
 ```
 
 示例：
 ```mds
 // 访问对象属性和字段
-商人: 欢迎你，{$player__name}！你的生命值是{$player__health}。
+商人: 欢迎你，{$player.name}！你的生命值是{$player.health}。
 
 // 修改对象属性或字段（会直接修改C#对象的值）
-set $player__name "张三"
-set $player__health 100
+<<set $player.name "张三">>
+<<set $player.health 100>>
 
 // 调用对象方法
-商人: 让我看看你的状态... {player__get_status()}
+商人: 让我看看你的状态... {player.get_status()}
 
 // 在命令中调用方法
-call player__take_damage(10)
+<<call player.take_damage(10)>>
 ```
 
 ### 创建自定义加载器
@@ -686,7 +686,7 @@ endif
 var $full_name concat($first_name, " ", $last_name)
 
 // 在插值中使用
-商人: 你好，{concat($title, " ", $player__name)}！
+商人: 你好，{concat($title, " ", $player.name)}！
 ```
 
 #### random(int digits = 2)

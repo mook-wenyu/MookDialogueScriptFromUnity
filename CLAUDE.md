@@ -62,7 +62,7 @@ MookDialogueScript 是为 Unity 游戏开发设计的轻量级对话脚本系统
 
 ### 关键语言特性
 - 变量插值: `{$变量名}`
-- 对象属性: `$对象__属性名`
+- 对象属性: `$对象.属性名`
 - 条件选择: `-> 文本 [if $条件]`
 - 内置函数: `visited()`、`visit_count()`、`random()`、`concat()`
 - 通过 `[ScriptVar]` 和 `[ScriptFunc]` 特性与 C# 集成
@@ -73,7 +73,7 @@ MookDialogueScript 是为 Unity 游戏开发设计的轻量级对话脚本系统
 ```csharp
 // 注册完整对象（属性、字段、方法）
 runner.RegisterObject("player", playerInstance);
-// 访问方式：$player__name、$player__health、player__method()
+// 访问方式：$player.name、$player.health、player.method()
 ```
 
 ### 变量绑定
