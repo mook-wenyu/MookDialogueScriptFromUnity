@@ -6,7 +6,7 @@
 
 MookDialogueScript 是为 Unity 游戏开发设计的轻量级对话脚本系统。它提供了一种自定义脚本语言，用于创建复杂的对话系统和分支叙事。
 
-当前版本：**0.5.2**，包含解析器性能优化。
+当前版本：**0.5.3**，包含异常处理系统和语义分析器。
 
 ## 架构
 
@@ -17,6 +17,8 @@ MookDialogueScript 是为 Unity 游戏开发设计的轻量级对话脚本系统
 - **词法分析器** (`Assets/MookDialogueScript/Runtime/Lexer.cs`): 对 `.mds` 脚本文件进行词法分析
 - **语法解析器** (`Assets/MookDialogueScript/Runtime/Parser.cs`): 从标记构建抽象语法树 (AST)
 - **解释器** (`Assets/MookDialogueScript/Runtime/Interpreter.cs`): 执行 AST 节点
+- **异常处理** (`Assets/MookDialogueScript/Runtime/ParseException.cs`): 完整的异常类层次结构
+- **语义分析器** (`Assets/MookDialogueScript/Runtime/SemanticAnalyzer.cs`): 语义分析和验证
 - **运行器** (`Assets/MookDialogueScript/Runtime/Runner.cs`): 对话执行的主入口点
 - **抽象语法树** (`Assets/MookDialogueScript/Runtime/AST.cs`): 定义所有 AST 节点类型
 
@@ -113,7 +115,7 @@ runner.RegisterFunction("calculate", (int a, int b) => a + b);
 
 ## 包信息
 
-- **版本**: 0.5.2 (在 `Assets/MookDialogueScript/package.json` 中定义)
+- **版本**: 0.5.3 (在 `Assets/MookDialogueScript/package.json` 中定义)
 - **Unity 版本**: 2021.4+
 - **许可证**: Apache-2.0
 - **包名**: `com.wenyu.dialoguescript`
