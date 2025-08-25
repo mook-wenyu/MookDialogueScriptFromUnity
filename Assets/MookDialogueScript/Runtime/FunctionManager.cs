@@ -155,18 +155,18 @@ namespace MookDialogueScript
                         // 严格禁止重名：检查是否已存在同名函数（忽略大小写）
                         if (_compiledFunctions.ContainsKey(funcName))
                         {
-                            var existingKey = _compiledFunctions.Keys.FirstOrDefault(k => 
+                            var existingKey = _compiledFunctions.Keys.FirstOrDefault(k =>
                                 string.Equals(k, funcName, StringComparison.OrdinalIgnoreCase));
-                            
+
                             // 检查是否为大小写冲突
                             bool isCaseConflict = !string.Equals(existingKey, funcName, StringComparison.Ordinal);
                             string conflictType = isCaseConflict ? "大小写冲突" : "重名";
-                            
+
                             string errorMsg = $"脚本函数名 '{funcName}' 重复定义（{conflictType}）。" +
-                                            $"已存在函数：'{existingKey}'，尝试注册：'{funcName}' " +
-                                            $"（类型：{method.DeclaringType?.Name}，方法：{method.Name}）。" +
-                                            $"系统不支持重名/重载，请重命名。";
-                            
+                                              $"已存在函数：'{existingKey}'，尝试注册：'{funcName}' " +
+                                              $"（类型：{method.DeclaringType?.Name}，方法：{method.Name}）。" +
+                                              $"系统不支持重名/重载，请重命名。";
+
                             MLogger.Error(errorMsg);
                             continue; // 跳过此函数，继续处理其他函数
                         }
@@ -241,18 +241,18 @@ namespace MookDialogueScript
             // 严格禁止重名：检查是否已存在同名函数（忽略大小写）
             if (_compiledFunctions.ContainsKey(name))
             {
-                var existingKey = _compiledFunctions.Keys.FirstOrDefault(k => 
+                var existingKey = _compiledFunctions.Keys.FirstOrDefault(k =>
                     string.Equals(k, name, StringComparison.OrdinalIgnoreCase));
-                
+
                 // 检查是否为大小写冲突
                 bool isCaseConflict = !string.Equals(existingKey, name, StringComparison.Ordinal);
                 string conflictType = isCaseConflict ? "大小写冲突" : "重名";
-                
+
                 string errorMsg = $"脚本函数名 '{name}' 重复定义（{conflictType}）。" +
-                                $"已存在函数：'{existingKey}'，尝试注册：'{name}' " +
-                                $"（委托类型：{function.Method.DeclaringType?.Name}，方法：{function.Method.Name}）。" +
-                                $"系统不支持重名/重载，请重命名。";
-                
+                                  $"已存在函数：'{existingKey}'，尝试注册：'{name}' " +
+                                  $"（委托类型：{function.Method.DeclaringType?.Name}，方法：{function.Method.Name}）。" +
+                                  $"系统不支持重名/重载，请重命名。";
+
                 MLogger.Error(errorMsg);
                 return; // 拒绝覆盖，直接返回
             }
@@ -277,7 +277,7 @@ namespace MookDialogueScript
                 .Where(m => m.DeclaringType != typeof(object) && !m.IsSpecialName);
 
             var methodGroups = methods.GroupBy(m => m.Name);
-            
+
             foreach (var methodGroup in methodGroups)
             {
                 var methodArray = methodGroup.ToArray();
@@ -286,27 +286,27 @@ namespace MookDialogueScript
                     // 处理方法重载：警告并选择第一个
                     MLogger.Warning($"对象 '{objectName}' 的方法 '{methodGroup.Key}' 存在重载，将使用第一个重载");
                 }
-                
+
                 var method = methodArray[0]; // 使用第一个重载
                 var funcName = $"{objectName}.{method.Name}";
-                
+
                 try
                 {
                     // 严格禁止重名：检查是否已存在同名函数（忽略大小写）
                     if (_compiledFunctions.ContainsKey(funcName))
                     {
-                        var existingKey = _compiledFunctions.Keys.FirstOrDefault(k => 
+                        var existingKey = _compiledFunctions.Keys.FirstOrDefault(k =>
                             string.Equals(k, funcName, StringComparison.OrdinalIgnoreCase));
-                        
+
                         // 检查是否为大小写冲突
                         bool isCaseConflict = !string.Equals(existingKey, funcName, StringComparison.Ordinal);
                         string conflictType = isCaseConflict ? "大小写冲突" : "重名";
-                        
+
                         string errorMsg = $"脚本函数名 '{funcName}' 重复定义（{conflictType}）。" +
-                                        $"已存在函数：'{existingKey}'，尝试注册：'{funcName}' " +
-                                        $"（对象类型：{instance.GetType().Name}，方法：{method.Name}）。" +
-                                        $"系统不支持重名/重载，请重命名。";
-                        
+                                          $"已存在函数：'{existingKey}'，尝试注册：'{funcName}' " +
+                                          $"（对象类型：{instance.GetType().Name}，方法：{method.Name}）。" +
+                                          $"系统不支持重名/重载，请重命名。";
+
                         MLogger.Error(errorMsg);
                         continue; // 跳过此函数，继续处理其他函数
                     }
@@ -369,10 +369,10 @@ namespace MookDialogueScript
                 catch (Exception ex)
                 {
                     // 统一错误信息格式：运行时错误
-                    string errorMsg = line > 0 && column > 0 
+                    string errorMsg = line > 0 && column > 0
                         ? $"运行时错误: 第{line}行，第{column}列，函数 '{name}' 调用失败: {ex.Message}"
                         : $"函数 '{name}' 调用失败: {ex.Message}";
-                    
+
                     MLogger.Error(errorMsg);
                     return RuntimeValue.Null; // 返回空值
                 }
@@ -382,7 +382,7 @@ namespace MookDialogueScript
             string notFoundMsg = line > 0 && column > 0
                 ? $"运行时错误: 第{line}行，第{column}列，函数 '{name}' 未找到"
                 : $"函数 '{name}' 未找到";
-                
+
             MLogger.Error(notFoundMsg);
             return RuntimeValue.Null; // 返回空值而不是抛出异常
         }
@@ -395,7 +395,7 @@ namespace MookDialogueScript
             return await CallFunction(name, args, 0, 0);
         }
         #endregion
-        
+
         /// <summary>
         /// 准备函数调用参数
         /// </summary>

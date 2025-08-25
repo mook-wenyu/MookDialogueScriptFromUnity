@@ -14,12 +14,12 @@ namespace MookDialogueScript
         /// 脚本文件扩展名
         /// </summary>
         public string Extension { get; }
-        
+
         /// <summary>
         /// 加载脚本
         /// </summary>
         /// <param name="runner">对话引擎运行器</param>
         public void LoadScripts(Runner runner);
     }
-    
+
 }

@@ -19,7 +19,8 @@ namespace MookDialogueScript.Tests
         {
             try
             {
-                var lexer = new Lexer(script);
+                var lexer = new Lexer();
+                lexer.Reset(script);
                 var tokens = lexer.Tokenize();
                 Debug.Log($"Tokens generated: {tokens.Count}");
                 foreach (var token in tokens)

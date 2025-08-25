@@ -148,7 +148,7 @@ namespace MookDialogueScript
         private readonly VariableManager _variableManager = new();
         private readonly FunctionManager _functionManager = new();
         private readonly Dictionary<string, NodeDefinitionNode> _nodes = new();
-        
+
         // 对象注册映射
         private readonly Dictionary<string, object> _nameToObject = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<object, string> _objectToName = new();
@@ -184,7 +184,7 @@ namespace MookDialogueScript
         {
             if (_nodes.TryGetValue(name, out var value))
                 return value;
-            
+
             throw new KeyNotFoundException($"找不到节点 '{name}'");
         }
 
@@ -367,7 +367,7 @@ namespace MookDialogueScript
             {
                 if (_nodes.TryGetValue(nodeName, out var node))
                     return node.Metadata.GetValueOrDefault(key, null);
-                
+
                 MLogger.Warning($"节点 {nodeName} 不存在");
                 return null;
             }
@@ -389,7 +389,7 @@ namespace MookDialogueScript
             {
                 if (_nodes.TryGetValue(nodeName, out var node))
                     return node.Metadata;
-                
+
                 MLogger.Warning($"节点 {nodeName} 不存在");
                 return null;
             }
@@ -460,8 +460,6 @@ namespace MookDialogueScript
             // 注册对象的所有成员
             RegisterObjectOnlyFunctions(name, instance);           // 注册方法（函数）
             RegisterObjectOnlyPropertiesAndFields(name, instance); // 注册属性和字段
-
-            MLogger.Debug($"注册对象: {name} -> {instance.GetType().Name} (包含方法、属性和字段)");
         }
 
         /// <summary>
@@ -506,7 +504,6 @@ namespace MookDialogueScript
         public void ClearAllCaches()
         {
             Helper.ClearCache();
-            MLogger.Info("DialogueContext: 所有缓存已清理");
         }
 
         /// <summary>

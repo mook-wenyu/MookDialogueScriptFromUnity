@@ -16,7 +16,8 @@ namespace MookDialogueScript.Tests
         /// </summary>
         private List<Token> TokenizeScript(string script)
         {
-            var lexer = new Lexer(script);
+            var lexer = new Lexer();
+            lexer.Reset(script);
             var tokens = lexer.Tokenize();
             foreach (var token in tokens)
             {

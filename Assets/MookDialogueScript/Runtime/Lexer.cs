@@ -1,21 +1,34 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace MookDialogueScript
 {
     public class Lexer
     {
-        private readonly string _source;
+        // 高性能数据结构：使用字符数组替代字符串
+        private char[] _sourceChars;
+        private int _sourceLength;
+
+        // 三字符缓存：消除重复的数组访问
         private int _position;
+        private char _currentChar;
+        private char _nextChar;
+        private char _prevChar;
+
+        // 位置信息
         private int _line;
         private int _column;
-        private char _currentChar;
         private readonly Stack<int> _indentStack;
         private int _currentIndent;
         private readonly List<Token> _tokens;
         // 待输出的连续DEDENT数量（用于多级缩进回退时逐个发出）
         private int _pendingDedent;
+
+
+        // 同步锁：用于在重置与词法分析之间提供最小线程安全保障
+        private readonly object _syncLock = new object();
 
         // 状态标志
         private bool _isInNodeContent;   // 是否在 --- 到 === 集合内
@@ -23,6 +36,12 @@ namespace MookDialogueScript
         private bool _isInStringMode;    // 是否在字符串模式中
         private bool _isInInterpolation; // 是否在 { } 插值表达式内
         private char _stringQuoteType;   // 当前字符串模式的引号类型
+
+        // 预计算查找表：避免重复的字符分类计算
+        private static readonly bool[] IsWhitespaceTable = new bool[128];
+        private static readonly bool[] IsLetterTable = new bool[128];
+        private static readonly bool[] IsDigitTable = new bool[128];
+        private static readonly bool[] IsLetterOrDigitTable = new bool[128];
 
         // 关键字
         private static readonly Dictionary<string, TokenType> _keywords = new(StringComparer.OrdinalIgnoreCase)
@@ -55,20 +74,39 @@ namespace MookDialogueScript
             {"xor", TokenType.XOR},
         };
 
-        public Lexer(string source)
+        static Lexer()
         {
-            _source = source;
+            // 预计算 ASCII 字符的分类，避免运行时计算
+            for (int i = 0; i < 128; i++)
+            {
+                char c = (char)i;
+                IsWhitespaceTable[i] = char.IsWhiteSpace(c);
+                IsLetterTable[i] = char.IsLetter(c);
+                IsDigitTable[i] = char.IsDigit(c);
+                IsLetterOrDigitTable[i] = char.IsLetterOrDigit(c);
+            }
+        }
+
+        public Lexer()
+        {
+            // 初始化位置信息（源代码将通过 Reset 方法设置）
             _position = 0;
             _line = 1;
             _column = 1;
-            UpdateCurrentChar();
+
+            // 初始化字符缓存为空状态
+            _currentChar = '\0';
+            _nextChar = '\0';
+            _prevChar = '\0';
+
+            // 初始化集合
             _indentStack = new Stack<int>();
             _indentStack.Push(0);
             _tokens = new List<Token>();
             _currentIndent = 0;
             _pendingDedent = 0;
 
-            // 初始化新的状态标志
+            // 初始化状态标志
             _isInNodeContent = false;
             _isInCommandMode = false;
             _isInStringMode = false;
@@ -77,9 +115,260 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 只读预判：在列首判断该行是否为空行或注释行（允许前导空白）；同时检测是否混合缩进。
-        /// 不改变 _position/_column，仅基于 GetCharAt/Peek 读取。
+        /// 重置当前 Lexer 实例以复用对象处理新的源代码字符串。
+        /// - 复用内部集合（List/Stack），避免不必要的 GC 分配
+        /// - 重置所有状态（位置、行列、缩进栈、模式标志、字符缓存等）
+        /// - 线程安全：使用最小锁保护 Reset/Tokenize 互斥执行
         /// </summary>
+        /// <param name="source">新的源代码字符串</param>
+        public void Reset(string source)
+        {
+            lock (_syncLock)
+            {
+                // 防御式编程：允许传入 null
+                source ??= string.Empty;
+
+                // 1) 更新源字符缓冲（新建字符数组，但复用其他集合）
+                _sourceChars = source.ToCharArray();
+                _sourceLength = _sourceChars.Length;
+
+                // 2) 重置位置与位置信息
+                _position = 0;
+                _line = 1;
+                _column = 1;
+
+                // 3) 重置字符缓存（三字符缓存）
+                _currentChar = '\0';
+                _nextChar = '\0';
+                _prevChar = '\0';
+                UpdateCharacterCache();
+
+                // 4) 重置缩进状态（复用栈实例）
+                _indentStack.Clear();
+                _indentStack.Push(0);
+                _currentIndent = 0;
+                _pendingDedent = 0;
+
+                // 5) 重置模式标志
+                _isInNodeContent = false;
+                _isInCommandMode = false;
+                _isInStringMode = false;
+                _isInInterpolation = false;
+                _stringQuoteType = '\0';
+
+                // 6) 清空已生成 Token（复用 List 实例）
+                _tokens.Clear();
+            }
+        }
+
+
+        /// <summary>
+        /// 更新字符缓存：一次性更新三个字符，最大化缓存效率
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void UpdateCharacterCache()
+        {
+            // 批量边界检查，减少分支预测失败
+            if (_position < _sourceLength)
+            {
+                _currentChar = _sourceChars[_position];
+                _nextChar = _position + 1 < _sourceLength ? _sourceChars[_position + 1] : '\0';
+            }
+            else
+            {
+                _currentChar = '\0';
+                _nextChar = '\0';
+            }
+
+            _prevChar = _position > 0 ? _sourceChars[_position - 1] : '\0';
+        }
+
+        /// <summary>
+        /// 高性能字符访问：直接返回缓存的字符，零开销
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private char GetCharAt(int position)
+        {
+            // 优化常见情况：访问当前位置或相邻位置
+            if (position == _position) return _currentChar;
+            if (position == _position + 1) return _nextChar;
+            if (position == _position - 1) return _prevChar;
+
+            // 非缓存位置的快速访问
+            return position < _sourceLength ? _sourceChars[position] : '\0';
+        }
+
+        /// <summary>
+        /// 零开销的 Peek 操作：直接返回缓存的下一个字符
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private char Peek() => _nextChar;
+
+        /// <summary>
+        /// 零开销的 Previous 操作：直接返回缓存的前一个字符
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private char Previous() => _prevChar;
+
+        /// <summary>
+        /// 高性能前进操作：更新位置和缓存
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void Advance()
+        {
+            _position++;
+            _column++;
+
+            // 优化的缓存更新：利用已有的 _nextChar
+            _prevChar = _currentChar;
+            _currentChar = _nextChar;
+            _nextChar = _position + 1 < _sourceLength ? _sourceChars[_position + 1] : '\0';
+        }
+
+        /// <summary>
+        /// 高性能空白字符检查：使用预计算查找表
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool IsWhitespaceFast(char c)
+        {
+            return c < 128 ? IsWhitespaceTable[c] : char.IsWhiteSpace(c);
+        }
+
+        /// <summary>
+        /// 高性能字母检查：使用预计算查找表
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool IsLetterFast(char c)
+        {
+            return c < 128 ? IsLetterTable[c] : char.IsLetter(c);
+        }
+
+        /// <summary>
+        /// 高性能数字检查：使用预计算查找表
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool IsDigitFast(char c)
+        {
+            return c < 128 ? IsDigitTable[c] : char.IsDigit(c);
+        }
+
+        /// <summary>
+        /// 高性能字母或数字检查：使用预计算查找表
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool IsLetterOrDigitFast(char c)
+        {
+            return c < 128 ? IsLetterOrDigitTable[c] : char.IsLetterOrDigit(c);
+        }
+
+        /// <summary>
+        /// 优化的标识符起始字符检查
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool IsIdentifierStart(char c)
+        {
+            return IsLetterFast(c) || c == '_';
+        }
+
+        /// <summary>
+        /// 优化的标识符组成字符检查
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool IsIdentifierPart(char c)
+        {
+            return IsLetterOrDigitFast(c) || c == '_';
+        }
+
+        /// <summary>
+        /// 高性能字符串范围获取：使用 Span 避免不必要的分配
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private string GetRange(int start, int end)
+        {
+            int length = end - start;
+            if (length <= 0) return string.Empty;
+
+            // 边界检查
+            if (start < 0 || end > _sourceLength || start > end)
+            {
+                throw new ArgumentOutOfRangeException($"Invalid range: start={start}, end={end}, sourceLength={_sourceLength}");
+            }
+
+            // 使用 Span 进行高效的字符串创建
+            return new string(_sourceChars.AsSpan(start, length));
+        }
+
+        /// <summary>
+        /// 批量字符比较：一次性检查多个字符模式
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool IsSequence(string sequence)
+        {
+            int seqLength = sequence.Length;
+            if (_position + seqLength > _sourceLength) return false;
+
+            // 使用 Span 进行高效比较
+            var sourceSpan = _sourceChars.AsSpan(_position, seqLength);
+            var sequenceSpan = sequence.AsSpan();
+            return sourceSpan.SequenceEqual(sequenceSpan);
+        }
+
+        /// <summary>
+        /// 优化的命令开始检查
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool IsCommandStart()
+        {
+            return _currentChar == '<' && _nextChar == '<';
+        }
+
+        /// <summary>
+        /// 优化的命令结束检查
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool IsCommandEnd()
+        {
+            return _currentChar == '>' && _nextChar == '>';
+        }
+
+        /// <summary>
+        /// 优化的换行字符检查
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool IsNewlineChar(char c)
+        {
+            // 简单直接的比较，编译器会优化
+            return c == '\n' || c == '\r';
+        }
+
+        /// <summary>
+        /// 优化的引号检查：避免重复的 switch 语句
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool IsQuoteChar(char c)
+        {
+            return c == '\'' || c == '"';
+        }
+
+        /// <summary>
+        /// 批量字符序列检查：优化的节点标记检测
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool IsNodeStart()
+        {
+            return _currentChar == '-' && _nextChar == '-' &&
+                   GetCharAt(_position + 2) == '-';
+        }
+
+        /// <summary>
+        /// 批量字符序列检查：优化的节点结束检测
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool IsNodeEnd()
+        {
+            return _currentChar == '=' && _nextChar == '=' &&
+                   GetCharAt(_position + 2) == '=';
+        }
         private void ClassifyLineAtColumn1(out bool isEmptyOrCommentLine, out bool hasMixedIndent)
         {
             isEmptyOrCommentLine = false;
@@ -118,35 +407,33 @@ namespace MookDialogueScript
         /// <summary>
         /// 获取所有Token
         /// </summary>
-        /// <returns>所有Token</returns>
+        /// <returns>Token列表的独立副本，避免外部引用受Reset影响</returns>
         public List<Token> Tokenize()
         {
-            Token token;
-            do
+            lock (_syncLock)
             {
-                token = GetNextToken();
-                _tokens.Add(token);
-            } while (token.Type != TokenType.EOF);
+                Token token;
+                do
+                {
+                    token = GetNextToken();
+                    _tokens.Add(token);
+                } while (token.Type != TokenType.EOF);
 
-            return _tokens;
+                // 返回独立副本，防止外部代码持有内部_tokens引用
+                return new List<Token>(_tokens);
+            }
         }
 
         /// <summary>
-        /// 获取指定位置的字符，如果位置超出范围则返回'\0'
+        /// 优化的空白字符跳过：使用缓存字符和快速检查
         /// </summary>
-        /// <param name="position">要获取字符的位置</param>
-        /// <returns>指定位置的字符，或者'\0'（如果位置超出范围）</returns>
-        private char GetCharAt(int position)
+        private void SkipWhitespace()
         {
-            return position < _source.Length ? _source[position] : '\0';
-        }
-
-        /// <summary>
-        /// 获取指定范围的字符串
-        /// </summary>
-        private string GetRange(int start, int end)
-        {
-            return _source[start..end];
+            while (_currentChar != '\0' && IsWhitespaceFast(_currentChar) &&
+                   _currentChar != '\n' && _currentChar != '\r')
+            {
+                Advance();
+            }
         }
 
         /// <summary>
@@ -173,59 +460,6 @@ namespace MookDialogueScript
             return backslashCount % 2 == 1;
         }
 
-        /// <summary>
-        /// 更新当前字符
-        /// </summary>
-        private void UpdateCurrentChar()
-        {
-            _currentChar = GetCharAt(_position);
-        }
-
-        /// <summary>
-        /// 前进一个字符
-        /// </summary>
-        private void Advance()
-        {
-            // #if UNITY_EDITOR
-            // Debug.Log(_currentChar);
-            // #endif
-
-            _position++;
-            _column++;
-            UpdateCurrentChar();
-        }
-
-        /// <summary>
-        /// 查看下一个字符
-        /// </summary>
-        private char Peek()
-        {
-            return GetCharAt(_position + 1);
-        }
-
-        /// <summary>
-        /// </summary>
-        private char Previous()
-        {
-            int pre = _position - 1;
-            return pre >= 0 ? GetCharAt(pre) : '\0';
-        }
-
-        /// <summary>
-        /// 判断字符是否为标识符起始字符（字母或下划线）
-        /// </summary>
-        private bool IsIdentifierStart(char c)
-        {
-            return char.IsLetter(c) || c == '_';
-        }
-
-        /// <summary>
-        /// 判断字符是否为标识符组成部分（字母、数字或下划线）
-        /// </summary>
-        private bool IsIdentifierPart(char c)
-        {
-            return char.IsLetterOrDigit(c) || c == '_';
-        }
 
         /// <summary>
         /// 判断是否需要跳过缩进处理
@@ -311,16 +545,23 @@ namespace MookDialogueScript
             // 仅在集合内处理缩进
             if (!_isInNodeContent) return null;
 
-            // 保存当前位置用于缩进计算后的恢复
+            // 保存完整状态用于缩进计算后的恢复
             int savedPosition = _position;
             int savedColumn = _column;
+            int savedLine = _line;
+            char savedCurrentChar = _currentChar;
+            char savedNextChar = _nextChar;
+            char savedPrevChar = _prevChar;
 
             int indent = CountIndentation();
 
-            // 恢复位置
+            // 完整恢复状态
             _position = savedPosition;
             _column = savedColumn;
-            UpdateCurrentChar();
+            _line = savedLine;
+            _currentChar = savedCurrentChar;
+            _nextChar = savedNextChar;
+            _prevChar = savedPrevChar;
 
             if (ShouldSkipIndentation())
                 return null;
@@ -339,16 +580,6 @@ namespace MookDialogueScript
             return null;
         }
 
-        /// <summary>
-        /// 跳过空白字符
-        /// </summary>
-        private void SkipWhitespace()
-        {
-            while (_currentChar != '\0' && char.IsWhiteSpace(_currentChar) && _currentChar != '\n' && _currentChar != '\r')
-            {
-                Advance();
-            }
-        }
 
         /// <summary>
         /// 处理换行字符、跳过连续地换行和注释行
@@ -523,30 +754,28 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 处理数字
+        /// 优化的数字处理：减少重复的字符分类检查
         /// </summary>
         private Token HandleNumber()
         {
-            if (!char.IsDigit(_currentChar)) return null;
+            if (!IsDigitFast(_currentChar)) return null;
 
             int startPosition = _position;
             int startLine = _line;
             int startColumn = _column;
-            var hasDecimalPoint = false;
+            bool hasDecimalPoint = false;
 
-            while (_currentChar != '\0' &&
-                   (char.IsDigit(_currentChar) || _currentChar == '.'))
+            // 使用缓存字符进行快速处理
+            while (_currentChar != '\0' && (IsDigitFast(_currentChar) || _currentChar == '.'))
             {
                 if (_currentChar == '.')
                 {
-                    if (hasDecimalPoint)
-                        break;
+                    if (hasDecimalPoint) break;
                     hasDecimalPoint = true;
                 }
                 Advance();
             }
 
-            // 直接从源字符串切片，避免创建新字符串
             return new Token(TokenType.NUMBER, GetRange(startPosition, _position), startLine, startColumn);
         }
 
@@ -636,12 +865,12 @@ namespace MookDialogueScript
 
                     // 检查截断字符
                     char pre = Previous();
-                    if (_currentChar == ':' && pre != '\0' && !char.IsWhiteSpace(pre))
+                    if (_currentChar == ':' && pre != '\0' && !IsWhitespaceFast(pre))
                     {
                         break;
                     }
                     // 在集合内，文本会被 << >> # 等字符截断
-                    if (_currentChar is '<' && Peek() == '<')
+                    if (IsCommandStart())
                     {
                         // 遇到命令开始，停止文本处理
                         break;
@@ -702,7 +931,7 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 处理标识符或关键字
+        /// 优化的标识符处理：使用快速字符分类
         /// </summary>
         private Token HandleIdentifierOrKeyword()
         {
@@ -712,27 +941,22 @@ namespace MookDialogueScript
             int startLine = _line;
             int startColumn = _column;
 
-            // 确保第一个字符是有效的标识符起始字符
-            if (_currentChar != '\0' && IsIdentifierStart(_currentChar))
+            // 快速处理标识符字符
+            Advance(); // 跳过第一个字符（已验证）
+
+            while (_currentChar != '\0' && IsIdentifierPart(_currentChar))
             {
                 Advance();
-
-                // 收集剩余的标识符字符
-                while (_currentChar != '\0' && IsIdentifierPart(_currentChar))
-                {
-                    Advance();
-                }
             }
 
             string text = GetRange(startPosition, _position);
 
-            // 检查是否是关键字（忽略大小写）
+            // 检查是否是关键字
             if (_keywords.TryGetValue(text, out var type))
             {
                 return new Token(type, text, startLine, startColumn);
             }
 
-            // 所有非关键字的标识符都作为IDENTIFIER处理
             return new Token(TokenType.IDENTIFIER, text, startLine, startColumn);
         }
 
@@ -743,7 +967,7 @@ namespace MookDialogueScript
         {
             if (!_isInNodeContent) return null;
 
-            if (_currentChar == '<' && Peek() == '<')
+            if (IsCommandStart())
             {
                 // 处理命令开始
                 int startLine = _line;
@@ -753,7 +977,7 @@ namespace MookDialogueScript
                 _isInCommandMode = true;
                 return new Token(TokenType.COMMAND_START, "<<", startLine, startColumn);
             }
-            if (_currentChar == '>' && Peek() == '>')
+            if (IsCommandEnd())
             {
                 // 处理命令结束
                 int startLine = _line;
@@ -825,7 +1049,7 @@ namespace MookDialogueScript
                 // 2. 跳过空白字符（非文本模式下或在插值表达式内）
                 if (!_isInNodeContent || _isInCommandMode || _isInInterpolation)
                 {
-                    if (char.IsWhiteSpace(_currentChar) && _currentChar != '\n' && _currentChar != '\r')
+                    if (IsWhitespaceFast(_currentChar) && _currentChar != '\n' && _currentChar != '\r')
                     {
                         SkipWhitespace();
                         continue;
@@ -863,7 +1087,7 @@ namespace MookDialogueScript
 
                 // 处理节点标记 ===（仅在节点内容内，且不在命令/插值/字符串模式）
                 if (_isInNodeContent && !_isInCommandMode && !_isInInterpolation && !_isInStringMode
-                    && _currentChar == '=' && Peek() == '=' && GetCharAt(_position + 2) == '=')
+                    && IsNodeEnd())
                 {
                     // 检查是否被转义（前面有反斜杠）
                     if (!IsEscaped())
@@ -892,7 +1116,7 @@ namespace MookDialogueScript
                     && _currentChar != ':'
                     && _currentChar != '#'
                     && _currentChar != '{'
-                    && !(_currentChar == '<' && Peek() == '<')
+                    && !IsCommandStart()
                     && !(_currentChar == '-' && Peek() == '>'))
                 {
                     return HandleText();
@@ -918,7 +1142,7 @@ namespace MookDialogueScript
                 if (!_isInNodeContent && !_isInCommandMode && !_isInInterpolation && !_isInStringMode)
                 {
                     // 检查是否是节点标记 ---
-                    if (_currentChar == '-' && Peek() == '-' && GetCharAt(_position + 2) == '-')
+                    if (IsNodeStart())
                     {
                         // 检查是否被转义（前面有反斜杠）
                         if (!IsEscaped())

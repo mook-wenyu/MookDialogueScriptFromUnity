@@ -81,7 +81,7 @@ namespace MookDialogueScript
         {
             StringBuilder sb = new StringBuilder();
             sb.AppendLine($"--- {NodeName}");
-            
+
             // 添加元数据到输出
             if (Metadata is {Count: > 0})
             {
@@ -90,7 +90,7 @@ namespace MookDialogueScript
                     sb.AppendLine($"[{meta.Key}:{meta.Value}]");
                 }
             }
-            
+
             foreach (var content in Content)
             {
                 sb.AppendLine($"{content}");

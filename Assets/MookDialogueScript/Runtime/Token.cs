@@ -7,7 +7,7 @@ namespace MookDialogueScript
         /// 文件结束
         /// </summary>
         EOF,
-        
+
         // 符号标记
         /// <summary>
         /// 元数据键值对分隔符 :

@@ -63,7 +63,8 @@ namespace MookDialogueScript
             try
             {
                 // 创建词法分析器
-                var lexer = new Lexer(scriptContent);
+                var lexer = new Lexer();
+                lexer.Reset(scriptContent);
                 // 创建语法分析器
                 var parser = new Parser(lexer.Tokenize());
                 // 注册脚本节点

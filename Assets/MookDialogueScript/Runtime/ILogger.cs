@@ -107,7 +107,7 @@ namespace MookDialogueScript
             }
         }
     }
-    
+
 #if GODOT
 /// <summary>
 /// Godot引擎的日志实现
