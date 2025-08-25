@@ -148,10 +148,10 @@ description: 演示0.4.0版本优化特性的开场节点
 商人: 您的名称是{player.name}，等级是{player.level}。
 商人: 您的当前状态：{player.get_status()}
     // 演示对象方法调用（新语法：object.method()）
-    <<call player.take_damage(5)>>
+    <<player.take_damage(5)>>
     商人: 您受到了一点伤害，现在状态：{player.get_status()}
     <<wait 1>>
-    <<call player.heal(10)>>
+    <<player.heal(10)>>
     商人: 已经为您治疗，现在状态：{player.get_status()}
 
 // VIP系统
@@ -356,7 +356,7 @@ final: true
 您的冒险暂时告一段落。
 
 // 统计信息展示
-=== 冒险统计 ===
+\=== 冒险统计 \===
 玩家姓名：{$player_name}
 最终等级：{$player_level}  
 剩余金币：{$gold}

@@ -16,7 +16,9 @@
       "Bash(timeout:*)",
       "mcp__UnityMCP__manage_gameobject",
       "Bash(sed:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []

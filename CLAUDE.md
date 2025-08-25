@@ -6,7 +6,7 @@
 
 MookDialogueScript 是为 Unity 游戏开发设计的轻量级对话脚本系统。它提供了一种自定义脚本语言，用于创建复杂的对话系统和分支叙事。
 
-当前版本：**0.4.0**，包含重要的性能优化和架构改进。
+当前版本：**0.5.0**，包含重要的架构重构和性能优化。
 
 ## 架构
 
@@ -59,6 +59,7 @@ MookDialogueScript 是为 Unity 游戏开发设计的轻量级对话脚本系统
 - **选择**: `-> 选项文本 [if 条件]`
 - **函数**: `call 函数名(参数)` 或在表达式中直接使用 `函数名()`
 - **跳转**: `=> 节点名` 或 `jump 节点名`
+- **转义**: 使用反斜杠转义特殊字符，支持 `\:`、`\#`、`\{`、`\}`、`\<`、`\>`、`\'`、`\"`、`\\`、`\---`、`\===`
 
 ### 关键语言特性
 - 变量插值: `{$变量名}`
@@ -112,7 +113,7 @@ runner.RegisterFunction("calculate", (int a, int b) => a + b);
 
 ## 包信息
 
-- **版本**: 0.4.0 (在 `Assets/MookDialogueScript/package.json` 中定义)
+- **版本**: 0.5.0 (在 `Assets/MookDialogueScript/package.json` 中定义)
 - **Unity 版本**: 2021.4+
 - **许可证**: Apache-2.0
 - **包名**: `com.wenyu.dialoguescript`

@@ -150,6 +150,30 @@ namespace MookDialogueScript
         }
 
         /// <summary>
+        /// 检查当前位置是否被转义（前面有反斜杠）
+        /// </summary>
+        private bool IsEscaped()
+        {
+            if (_position == 0) return false;
+
+            // 检查前一个字符是否是反斜杠
+            char prevChar = GetCharAt(_position - 1);
+            if (prevChar != '\\') return false;
+
+            // 计算连续反斜杠的数量，只有奇数个反斜杠才表示转义
+            int backslashCount = 0;
+            int pos = _position - 1;
+            while (pos >= 0 && GetCharAt(pos) == '\\')
+            {
+                backslashCount++;
+                pos--;
+            }
+
+            // 奇数个反斜杠表示转义，偶数个表示反斜杠本身被转义
+            return backslashCount % 2 == 1;
+        }
+
+        /// <summary>
         /// 更新当前字符
         /// </summary>
         private void UpdateCurrentChar()
@@ -573,17 +597,40 @@ namespace MookDialogueScript
                     {
                         char nextChar = Peek();
                         // 支持的转义字符:
-                        if (nextChar is ':' or '#' or '{' or '}' or '<' or '>' or '\'' or '"' or '\\')
+                        if (nextChar is ':' or '#' or '{' or '}' or '<' or '>' or '\'' or '"' or '\\' or '-' or '=')
                         {
                             Advance(); // 跳过反斜杠
-                            resultBuilder.Append(nextChar);
+
+                            // 特殊处理：检查是否是 \--- 或 \===
+                            if (nextChar == '-' && GetCharAt(_position + 1) == '-' && GetCharAt(_position + 2) == '-')
+                            {
+                                // \--- -> ---
+                                resultBuilder.Append("---");
+                                Advance(); // 跳过第一个 -
+                                Advance(); // 跳过第二个 -
+                                Advance(); // 跳过第三个 -
+                            }
+                            else if (nextChar == '=' && GetCharAt(_position + 1) == '=' && GetCharAt(_position + 2) == '=')
+                            {
+                                // \=== -> ===
+                                resultBuilder.Append("===");
+                                Advance(); // 跳过第一个 =
+                                Advance(); // 跳过第二个 =
+                                Advance(); // 跳过第三个 =
+                            }
+                            else
+                            {
+                                // 其他单字符转义
+                                resultBuilder.Append(nextChar);
+                                Advance();
+                            }
                         }
                         else
                         {
                             // 其他情况保留反斜杠
                             resultBuilder.Append(_currentChar);
+                            Advance();
                         }
-                        Advance();
                         continue;
                     }
 
@@ -818,14 +865,18 @@ namespace MookDialogueScript
                 if (_isInNodeContent && !_isInCommandMode && !_isInInterpolation && !_isInStringMode
                     && _currentChar == '=' && Peek() == '=' && GetCharAt(_position + 2) == '=')
                 {
-                    int startLine = _line;
-                    int startColumn = _column;
+                    // 检查是否被转义（前面有反斜杠）
+                    if (!IsEscaped())
+                    {
+                        int startLine = _line;
+                        int startColumn = _column;
 
-                    Advance();
-                    Advance();
-                    Advance();
-                    _isInNodeContent = false;
-                    return new Token(TokenType.NODE_END, "===", startLine, startColumn);
+                        Advance();
+                        Advance();
+                        Advance();
+                        _isInNodeContent = false;
+                        return new Token(TokenType.NODE_END, "===", startLine, startColumn);
+                    }
                 }
 
                 // 处理引号文本
@@ -869,15 +920,19 @@ namespace MookDialogueScript
                     // 检查是否是节点标记 ---
                     if (_currentChar == '-' && Peek() == '-' && GetCharAt(_position + 2) == '-')
                     {
-                        int startLine = _line;
-                        int startColumn = _column;
+                        // 检查是否被转义（前面有反斜杠）
+                        if (!IsEscaped())
+                        {
+                            int startLine = _line;
+                            int startColumn = _column;
 
-                        // --- 识别为 NODE_START
-                        Advance();
-                        Advance();
-                        Advance();
-                        _isInNodeContent = true;
-                        return new Token(TokenType.NODE_START, "---", startLine, startColumn);
+                            // --- 识别为 NODE_START
+                            Advance();
+                            Advance();
+                            Advance();
+                            _isInNodeContent = true;
+                            return new Token(TokenType.NODE_START, "---", startLine, startColumn);
+                        }
                     }
                 }
 

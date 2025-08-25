@@ -647,41 +647,7 @@ namespace MookDialogueScript
         }
     }
 
-    /// <summary>
-    /// 函数调用节点
-    /// </summary>
-    [Obsolete("使用CallExpressionNode替代")]
-    public class FunctionCallNode : ExpressionNode
-    {
-        /// <summary>
-        /// 名称
-        /// </summary>
-        public string Name { get; }
-
-        /// <summary>
-        /// 参数列表
-        /// </summary>
-        public List<ExpressionNode> Arguments { get; }
-
-        public FunctionCallNode(string name, List<ExpressionNode> arguments, int line, int column)
-            : base(line, column)
-        {
-            Name = name;
-            Arguments = arguments;
-        }
-
-        public override string ToString()
-        {
-            StringBuilder sb = new StringBuilder();
-            sb.Append($"函数调用节点: {Name}(");
-            if (Arguments is {Count: > 0})
-            {
-                sb.Append(string.Join(", ", Arguments));
-            }
-            sb.Append(")");
-            return sb.ToString();
-        }
-    }
+    // FunctionCallNode 已被删除 - 使用 CallExpressionNode 替代
 
     /// <summary>
     /// 调用表达式节点，支持任意表达式的调用

@@ -68,6 +68,18 @@ namespace MookDialogueScript
         }
 
         /// <summary>
+        /// 回退到上一个Token
+        /// </summary>
+        private void PreviousToken()
+        {
+            if (_tokenIndex > 0)
+            {
+                _tokenIndex--;
+                _currentToken = _tokens[_tokenIndex];
+            }
+        }
+
+        /// <summary>
         /// 查看当前Token类型
         /// </summary>
         private bool Check(TokenType type)
@@ -635,6 +647,33 @@ namespace MookDialogueScript
         }
 
         /// <summary>
+        /// 从CallExpressionNode的Callee中提取函数名
+        /// </summary>
+        private string ExtractFunctionName(ExpressionNode callee)
+        {
+            switch (callee)
+            {
+                case IdentifierNode identifier:
+                    // 简单函数调用：func()
+                    return identifier.Name;
+
+                case MemberAccessNode memberAccess:
+                    // 对象方法调用：obj.method()
+                    string objectName = ExtractFunctionName(memberAccess.Target);
+                    return $"{objectName}.{memberAccess.Member}";
+
+                case VariableNode variable:
+                    // 变量函数调用：$func()
+                    return variable.Name;
+
+                default:
+                    throw new InvalidOperationException($"不支持的函数调用类型: {callee.GetType().Name}");
+            }
+        }
+
+
+
+        /// <summary>
         /// 解析命令
         /// </summary>
         private CommandNode ParseCommand()
@@ -684,14 +723,22 @@ namespace MookDialogueScript
                 }
 
                 case TokenType.IDENTIFIER:
-                    // 检查是否是函数调用
-                    if (Check(TokenType.LEFT_PAREN))
+                    // 回退到IDENTIFIER token，然后通过ParseExpression解析完整的表达式
+                    // 这样可以正确处理各种情况：func()、obj.method()、obj.property等
+                    PreviousToken(); // 回退到IDENTIFIER
+                    var expression = ParseExpression();
+
+                    // 检查解析出的表达式是否为调用表达式
+                    if (expression is CallExpressionNode callExpr)
                     {
-                        var result = ParseFunctionCallCommand(commandValue, line, column);
+                        // 将CallExpressionNode转换为CallCommandNode
+                        string functionName = ExtractFunctionName(callExpr.Callee);
+                        var result = new CallCommandNode(functionName, callExpr.Arguments, line, column);
                         Consume(TokenType.COMMAND_END);
                         return result;
                     }
-                    throw new InvalidOperationException($"语法错误: 第{line}行，第{column}列，未知的标识符 {commandValue}");
+
+                    throw new InvalidOperationException($"语法错误: 第{line}行，第{column}列，命令中的表达式必须是函数调用");
 
                 default:
                     throw new InvalidOperationException($"语法错误: 第{line}行，第{column}列，未知命令 {commandValue}");
@@ -937,7 +984,7 @@ namespace MookDialogueScript
 
             // 解析基本表达式
             var baseExpr = ParsePrimary();
-            
+
             // 应用后缀链循环
             return ParsePostfixChain(baseExpr);
         }
@@ -948,12 +995,12 @@ namespace MookDialogueScript
         private ExpressionNode ParsePostfixChain(ExpressionNode baseExpr)
         {
             var current = baseExpr;
-            
+
             while (true)
             {
                 // 前进保护：记录当前位置
                 int beforeIndex = _tokenIndex;
-                
+
                 switch (_currentToken.Type)
                 {
                     case TokenType.LEFT_PAREN:
@@ -961,19 +1008,19 @@ namespace MookDialogueScript
                         var line = _currentToken.Line;
                         var column = _currentToken.Column;
                         Consume(TokenType.LEFT_PAREN);
-                        
+
                         List<ExpressionNode> parameters;
                         try
                         {
                             parameters = ParseParameterList();
-                            
+
                             // 错误恢复：处理缺失的右括号
                             if (_currentToken.Type != TokenType.RIGHT_PAREN)
                             {
                                 // 尝试同步到右括号或其他停止符号
-                                SynchronizeToTokens(TokenType.RIGHT_PAREN, TokenType.COMMA, TokenType.COMMAND_END, 
-                                                  TokenType.NEWLINE, TokenType.NODE_END, TokenType.NODE_START);
-                                
+                                SynchronizeToTokens(TokenType.RIGHT_PAREN, TokenType.COMMA, TokenType.COMMAND_END,
+                                    TokenType.NEWLINE, TokenType.NODE_END, TokenType.NODE_START);
+
                                 if (_currentToken.Type == TokenType.RIGHT_PAREN)
                                 {
                                     MLogger.Warning($"语法警告: 第{line}行，第{column}列，自动修复缺失的右括号");
@@ -995,49 +1042,49 @@ namespace MookDialogueScript
                             // 返回当前节点，结束后缀链解析
                             return current;
                         }
-                        
+
                         current = new CallExpressionNode(current, parameters, line, column);
                         break;
-                        
+
                     case TokenType.DOT:
                         // 成员访问：expr.member
                         line = _currentToken.Line;
                         column = _currentToken.Column;
                         Consume(TokenType.DOT);
-                        
+
                         if (_currentToken.Type != TokenType.IDENTIFIER)
                         {
                             // 统一错误策略：尝试同步并返回当前节点
                             MLogger.Error($"语法错误: 第{_currentToken.Line}行，第{_currentToken.Column}列，期望标识符，但得到 {_currentToken.Type}");
-                            SynchronizeToTokens(TokenType.IDENTIFIER, TokenType.DOT, TokenType.LEFT_PAREN, 
-                                              TokenType.LEFT_BRACKET, TokenType.COMMAND_END, TokenType.NEWLINE, 
-                                              TokenType.NODE_END, TokenType.NODE_START);
+                            SynchronizeToTokens(TokenType.IDENTIFIER, TokenType.DOT, TokenType.LEFT_PAREN,
+                                TokenType.LEFT_BRACKET, TokenType.COMMAND_END, TokenType.NEWLINE,
+                                TokenType.NODE_END, TokenType.NODE_START);
                             return current;
                         }
-                        
+
                         var memberName = _currentToken.Value;
                         Consume(TokenType.IDENTIFIER);
                         current = new MemberAccessNode(current, memberName, line, column);
                         break;
-                        
+
                     case TokenType.LEFT_BRACKET:
                         // 索引访问：expr[index]
                         line = _currentToken.Line;
                         column = _currentToken.Column;
                         Consume(TokenType.LEFT_BRACKET);
-                        
+
                         ExpressionNode indexExpr;
                         try
                         {
                             indexExpr = ParseExpression();
-                            
+
                             // 错误恢复：处理缺失的右中括号
                             if (_currentToken.Type != TokenType.RIGHT_BRACKET)
                             {
                                 // 尝试同步到右中括号或其他停止符号
-                                SynchronizeToTokens(TokenType.RIGHT_BRACKET, TokenType.COMMA, TokenType.COMMAND_END, 
-                                                  TokenType.NEWLINE, TokenType.NODE_END, TokenType.NODE_START);
-                                
+                                SynchronizeToTokens(TokenType.RIGHT_BRACKET, TokenType.COMMA, TokenType.COMMAND_END,
+                                    TokenType.NEWLINE, TokenType.NODE_END, TokenType.NODE_START);
+
                                 if (_currentToken.Type == TokenType.RIGHT_BRACKET)
                                 {
                                     MLogger.Warning($"语法警告: 第{line}行，第{column}列，自动修复缺失的右中括号");
@@ -1059,15 +1106,15 @@ namespace MookDialogueScript
                             // 返回当前节点，结束后缀链解析
                             return current;
                         }
-                        
+
                         current = new IndexAccessNode(current, indexExpr, line, column);
                         break;
-                        
+
                     default:
                         // 没有更多后缀操作，返回当前表达式
                         return current;
                 }
-                
+
                 // 前进保护：检查是否前进
                 if (_tokenIndex <= beforeIndex)
                 {
@@ -1084,7 +1131,7 @@ namespace MookDialogueScript
         {
             int maxAdvance = 50; // 防止无限循环
             int advance = 0;
-            
+
             while (_currentToken.Type != TokenType.EOF && advance < maxAdvance)
             {
                 if (tokens.Contains(_currentToken.Type))
@@ -1094,7 +1141,7 @@ namespace MookDialogueScript
                 GetNextToken();
                 advance++;
             }
-            
+
             if (advance >= maxAdvance)
             {
                 MLogger.Warning($"错误恢复: 第{_currentToken.Line}行，第{_currentToken.Column}列，达到最大前进限制，停止同步");

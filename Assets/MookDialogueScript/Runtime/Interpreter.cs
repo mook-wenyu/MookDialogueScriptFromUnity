@@ -178,15 +178,6 @@ namespace MookDialogueScript
                             return RuntimeValue.Null;
                     }
 
-                case FunctionCallNode f:
-                    var args = new List<RuntimeValue>();
-                    // 递归评估每个参数，支持嵌套函数调用
-                    foreach (var arg in f.Arguments)
-                    {
-                        args.Add(await EvaluateExpression(arg));
-                    }
-                    return await _context.CallFunction(f.Name, args);
-
                 case CallExpressionNode call:
                     return await EvaluateCallExpression(call);
 
@@ -297,45 +288,6 @@ namespace MookDialogueScript
                                     result.Append($"{{${varNode.Name}}}");
                                 }
                             }
-                            else if (i.Expression is FunctionCallNode funcNode)
-                            {
-                                // 显式检查函数是否存在
-                                if (_context.HasFunction(funcNode.Name))
-                                {
-                                    try
-                                    {
-                                        var functionArgs = new List<RuntimeValue>();
-                                        foreach (var arg in funcNode.Arguments)
-                                        {
-                                            functionArgs.Add(await EvaluateExpression(arg));
-                                        }
-
-                                        var value = await _context.CallFunction(funcNode.Name, functionArgs);
-                                        if (value.Type != RuntimeValue.ValueType.Null && value.Value != null)
-                                        {
-                                            result.Append(value.ToString());
-                                        }
-                                        else
-                                        {
-                                            MLogger.Warning($"函数 '{funcNode.Name}' 返回null");
-                                            // 函数返回null时显示null，包括花括号
-                                            result.Append("{null}");
-                                        }
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        MLogger.Error($"函数 '{funcNode.Name}' 调用错误: {ex}");
-                                        // 函数调用异常时显示原始文本，包括花括号
-                                        result.Append($"{{{FormatFunctionCall(funcNode)}}}");
-                                    }
-                                }
-                                else
-                                {
-                                    MLogger.Error($"函数 '{funcNode.Name}' 不存在");
-                                    // 函数不存在时显示原始文本，包括花括号
-                                    result.Append($"{{{FormatFunctionCall(funcNode)}}}");
-                                }
-                            }
                             else
                             {
                                 // 其他类型表达式通过EvaluateExpression评估
@@ -406,8 +358,6 @@ namespace MookDialogueScript
                     return boolNode.Value ? "true" : "false";
                 case VariableNode varNode:
                     return $"${varNode.Name}";
-                case FunctionCallNode funcNode:
-                    return FormatFunctionCall(funcNode); // 递归处理嵌套函数
                 case BinaryOpNode binNode:
                     return $"({FormatExpressionNode(binNode.Left)} {binNode.Operator} {FormatExpressionNode(binNode.Right)})";
                 case UnaryOpNode unaryNode:
@@ -415,29 +365,6 @@ namespace MookDialogueScript
                 default:
                     return "?"; // 其他类型表达式用?表示
             }
-        }
-
-        /// <summary>
-        /// 格式化函数调用，包括递归处理嵌套函数
-        /// </summary>
-        /// <param name="funcNode">函数调用节点</param>
-        /// <returns>格式化后的函数调用字符串</returns>
-        private string FormatFunctionCall(FunctionCallNode funcNode)
-        {
-            var funcText = new System.Text.StringBuilder(funcNode.Name);
-            funcText.Append('(');
-
-            for (int j = 0; j < funcNode.Arguments.Count; j++)
-            {
-                var arg = funcNode.Arguments[j];
-                funcText.Append(FormatExpressionNode(arg));
-
-                if (j < funcNode.Arguments.Count - 1)
-                    funcText.Append(", ");
-            }
-
-            funcText.Append(')');
-            return funcText.ToString();
         }
 
         /// <summary>
@@ -587,17 +514,17 @@ namespace MookDialogueScript
                     // 函数管理器的编译委托
                     case Func<List<RuntimeValue>, Task<RuntimeValue>> compiledFunc:
                         return await compiledFunc(args);
-                    
+
                     // 其他委托类型
                     case Delegate del:
                         // 可以扩展支持其他委托类型
                         MLogger.Warning($"运行时错误: 第{line}行，第{column}列，不支持的委托类型: {del.GetType().Name}");
                         return RuntimeValue.Null;
-                    
+
                     // 字符串类型（如果被当作函数名）
                     case string funcName:
                         return await _context.CallFunction(funcName, args);
-                    
+
                     default:
                         throw new InvalidOperationException($"运行时错误: 第{line}行，第{column}列，目标不可调用（类型: {callee?.GetType().Name ?? "null"}）");
                 }
@@ -637,9 +564,9 @@ namespace MookDialogueScript
                 case MemberAccessNode memberAccess:
                     // 成员方法调用：obj.method(args)
                     var targetValue = await EvaluateExpression(memberAccess.Target);
-                    
+
                     // 检查是否为已注册对象的方法
-                    if (targetValue.Type == RuntimeValue.ValueType.Object && 
+                    if (targetValue.Type == RuntimeValue.ValueType.Object &&
                         _context.TryGetObjectName(targetValue.Value, out var objectName))
                     {
                         string functionKey = $"{objectName}.{memberAccess.Member}";
@@ -648,7 +575,7 @@ namespace MookDialogueScript
                             return await _context.CallFunction(functionKey, args);
                         }
                     }
-                    
+
                     throw new InvalidOperationException($"运行时错误: 第{call.Line}行，第{call.Column}列，对象不包含可调用方法 '{memberAccess.Member}'（类型: {targetValue.Value?.GetType().Name ?? "null"}）");
 
                 case VariableNode variable:
@@ -673,7 +600,7 @@ namespace MookDialogueScript
             try
             {
                 var target = await EvaluateExpression(member.Target);
-                
+
                 // 处理对象成员访问
                 return await _context.GetObjectMember(target, member.Member);
             }
@@ -694,7 +621,7 @@ namespace MookDialogueScript
             {
                 var target = await EvaluateExpression(index.Target);
                 var indexValue = await EvaluateExpression(index.Index);
-                
+
                 // 处理不同类型的索引访问
                 return GetIndexValue(target, indexValue, index.Line, index.Column);
             }

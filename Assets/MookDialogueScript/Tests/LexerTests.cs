@@ -966,5 +966,66 @@ _special: 下划线开头
             Assert.IsNotNull(tokens, "引号不匹配不应崩溃");
             Assert.IsTrue(tokens.Any(t => t.Type == TokenType.TEXT && t.Value.Contains("正常")), "应该能继续解析后续内容");
         }
+
+        // === 转义字符测试 ===
+        [Test]
+        public void TestNodeMarkerEscaping()
+        {
+            string script = @"---
+旁白: 转义的节点标记 \---
+旁白: 转义的结束标记 \===
+===";
+
+            var tokens = TokenizeScript(script);
+
+            // 查找包含转义字符的文本token
+            var textTokens = tokens.Where(t => t.Type == TokenType.TEXT).ToList();
+
+            // 验证转义字符被正确处理
+            Assert.IsTrue(textTokens.Any(t => t.Value.Contains("---")), "应该包含转义后的 ---");
+            Assert.IsTrue(textTokens.Any(t => t.Value.Contains("===")), "应该包含转义后的 ===");
+
+            // 验证正常的节点标记仍然被识别
+            Assert.IsTrue(tokens.Any(t => t.Type == TokenType.NODE_START), "应该识别节点开始标记");
+            Assert.IsTrue(tokens.Any(t => t.Type == TokenType.NODE_END), "应该识别节点结束标记");
+        }
+
+        [Test]
+        public void TestDoubleBackslashEscaping()
+        {
+            string script = @"---
+旁白: 双反斜杠 \\--- 测试
+旁白: 双反斜杠 \\=== 测试
+===";
+
+            var tokens = TokenizeScript(script);
+
+            var textTokens = tokens.Where(t => t.Type == TokenType.TEXT).ToList();
+
+            // 验证双反斜杠被正确处理（反斜杠本身被转义）
+            Assert.IsTrue(textTokens.Any(t => t.Value.Contains("\\---")), "应该包含 \\---");
+            Assert.IsTrue(textTokens.Any(t => t.Value.Contains("\\===")), "应该包含 \\===");
+        }
+
+        [Test]
+        public void TestMixedEscapeCharacters()
+        {
+            string script = @"---
+旁白: 混合转义 \: \# \< \> \--- \===
+===";
+
+            var tokens = TokenizeScript(script);
+
+            var textTokens = tokens.Where(t => t.Type == TokenType.TEXT).ToList();
+            var combinedText = string.Join("", textTokens.Select(t => t.Value));
+
+            // 验证各种转义字符被正确处理
+            Assert.IsTrue(combinedText.Contains(":"), "应该包含转义后的 :");
+            Assert.IsTrue(combinedText.Contains("#"), "应该包含转义后的 #");
+            Assert.IsTrue(combinedText.Contains("<"), "应该包含转义后的 <");
+            Assert.IsTrue(combinedText.Contains(">"), "应该包含转义后的 >");
+            Assert.IsTrue(combinedText.Contains("---"), "应该包含转义后的 ---");
+            Assert.IsTrue(combinedText.Contains("==="), "应该包含转义后的 ===");
+        }
     }
 }

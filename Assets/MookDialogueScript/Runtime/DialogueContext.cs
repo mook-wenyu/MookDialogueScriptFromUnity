@@ -202,7 +202,7 @@ namespace MookDialogueScript
         /// </summary>
         /// <param name="objectName">对象名称（用作变量名称的前缀）</param>
         /// <param name="instance">对象实例</param>
-        public void RegisterObjectPropertiesAndFields(string objectName, object instance)
+        public void RegisterObjectOnlyPropertiesAndFields(string objectName, object instance)
         {
             _variableManager.RegisterObjectPropertiesAndFields(objectName, instance);
         }
@@ -299,7 +299,7 @@ namespace MookDialogueScript
         /// </summary>
         /// <param name="objectName">对象名称（用作函数名称的前缀）</param>
         /// <param name="instance">对象实例</param>
-        public void RegisterObjectFunctions(string objectName, object instance)
+        public void RegisterObjectOnlyFunctions(string objectName, object instance)
         {
             _functionManager.RegisterObjectFunctions(objectName, instance);
         }
@@ -342,6 +342,17 @@ namespace MookDialogueScript
         public bool HasFunction(string name)
         {
             return _functionManager.HasFunction(name);
+        }
+
+        /// <summary>
+        /// 尝试获取函数委托
+        /// </summary>
+        /// <param name="name">函数名</param>
+        /// <param name="func">函数委托</param>
+        /// <returns>是否找到函数</returns>
+        public bool TryGetFunction(string name, out Func<List<RuntimeValue>, Task<RuntimeValue>> func)
+        {
+            return _functionManager.TryGet(name, out func);
         }
 
         /// <summary>
@@ -397,28 +408,30 @@ namespace MookDialogueScript
         /// <returns>成员值</returns>
         public async Task<RuntimeValue> GetObjectMember(RuntimeValue target, string memberName)
         {
-            // 优先通过注册对象查找（委托优先策略）
-            if (target.Type == RuntimeValue.ValueType.Object && target.Value != null)
+            // 直接委托给VariableManager处理，它会利用传入的context进行高级解析
+            var result = _variableManager.GetObjectMember(target, memberName, this);
+
+            // 如果返回的是MethodReference，需要转换为实际的函数委托
+            if (result.Type == RuntimeValue.ValueType.Object && result.Value is MethodReference methodRef)
             {
-                // 检查是否为已注册对象
-                if (TryGetObjectName(target.Value, out var objectName))
+                if (TryGetFunction(methodRef.FunctionKey, out var func))
                 {
-                    // 尝试通过函数管理器获取预编译的委托
-                    string functionKey = $"{objectName}.{memberName}";
-                    if (_functionManager.TryGet(functionKey, out var func))
-                    {
-                        // 返回可调用的方法委托
-                        return new RuntimeValue(func);
-                    }
+                    MLogger.Debug($"将方法引用 '{methodRef}' 转换为可调用委托");
+                    return new RuntimeValue(func);
+                }
+                else
+                {
+                    MLogger.Warning($"无法找到方法引用 '{methodRef}' 对应的函数委托");
+                    return RuntimeValue.Null;
                 }
             }
-            
-            // 回退到VariableManager的处理
-            return await Task.FromResult(_variableManager.GetObjectMember(target, memberName, this));
+
+            return await Task.FromResult(result);
         }
 
         /// <summary>
         /// 注册对象实例，使其可以通过名称访问
+        /// 会同时注册对象的方法（函数）、属性和字段
         /// </summary>
         /// <param name="name">对象名称</param>
         /// <param name="instance">对象实例</param>
@@ -444,10 +457,11 @@ namespace MookDialogueScript
             _nameToObject[name] = instance;
             _objectToName[instance] = name;
 
-            // 同时注册对象的方法到函数管理器
-            RegisterObjectFunctions(name, instance);
-            
-            MLogger.Debug($"注册对象: {name} -> {instance.GetType().Name}");
+            // 注册对象的所有成员
+            RegisterObjectOnlyFunctions(name, instance);           // 注册方法（函数）
+            RegisterObjectOnlyPropertiesAndFields(name, instance); // 注册属性和字段
+
+            MLogger.Debug($"注册对象: {name} -> {instance.GetType().Name} (包含方法、属性和字段)");
         }
 
         /// <summary>

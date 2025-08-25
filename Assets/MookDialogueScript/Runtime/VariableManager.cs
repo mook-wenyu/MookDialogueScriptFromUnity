@@ -6,6 +6,47 @@ using System.Linq;
 namespace MookDialogueScript
 {
     /// <summary>
+    /// 表示注册对象的方法引用
+    /// </summary>
+    public class MethodReference
+    {
+        /// <summary>
+        /// 对象名称
+        /// </summary>
+        public string ObjectName { get; }
+
+        /// <summary>
+        /// 方法名称
+        /// </summary>
+        public string MethodName { get; }
+
+        /// <summary>
+        /// 函数键（用于在FunctionManager中查找）
+        /// </summary>
+        public string FunctionKey { get; }
+
+        /// <summary>
+        /// 创建方法引用
+        /// </summary>
+        /// <param name="objectName">对象名称</param>
+        /// <param name="methodName">方法名称</param>
+        /// <param name="functionKey">函数键</param>
+        public MethodReference(string objectName, string methodName, string functionKey)
+        {
+            ObjectName = objectName ?? throw new ArgumentNullException(nameof(objectName));
+            MethodName = methodName ?? throw new ArgumentNullException(nameof(methodName));
+            FunctionKey = functionKey ?? throw new ArgumentNullException(nameof(functionKey));
+        }
+
+        /// <summary>
+        /// 返回方法引用的字符串表示
+        /// </summary>
+        public override string ToString()
+        {
+            return $"{ObjectName}.{MethodName}";
+        }
+    }
+    /// <summary>
     /// 标记可在脚本中访问的变量
     /// </summary>
     [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field)]
@@ -172,7 +213,8 @@ namespace MookDialogueScript
             var properties = instance.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
             foreach (var property in properties)
             {
-                var varName = $"{objectName}__{property.Name}";
+                // 使用点号格式注册变量
+                var varName = $"{objectName}.{property.Name}";
                 RegisterInstancePropertyAsVariable(property, instance, varName);
             }
 
@@ -180,7 +222,8 @@ namespace MookDialogueScript
             var fields = instance.GetType().GetFields(BindingFlags.Public | BindingFlags.Instance);
             foreach (var field in fields)
             {
-                var varName = $"{objectName}__{field.Name}";
+                // 使用点号格式注册变量
+                var varName = $"{objectName}.{field.Name}";
                 RegisterInstanceFieldAsVariable(field, instance, varName);
             }
         }
@@ -353,13 +396,128 @@ namespace MookDialogueScript
         /// <param name="memberName">成员名称</param>
         /// <param name="context">对话上下文（可选，用于高级成员解析）</param>
         /// <returns>成员值</returns>
-        public RuntimeValue GetObjectMember(RuntimeValue target, string memberName, object context = null)
+        public RuntimeValue GetObjectMember(RuntimeValue target, string memberName, DialogueContext context = null)
         {
-            // 在这里可以实现对象成员访问逻辑
-            // 例如：访问字典键、对象属性等
+            // 如果提供了对话上下文，优先使用高级成员解析
+            if (context != null)
+            {
+                var advancedResult = TryAdvancedMemberResolution(target, memberName, context);
+                if (advancedResult.HasValue)
+                {
+                    return advancedResult.Value;
+                }
+            }
+
+            // 回退到基础成员访问逻辑
+            return GetBasicObjectMember(target, memberName);
+        }
+
+        /// <summary>
+        /// 尝试高级成员解析（利用对话上下文）
+        /// </summary>
+        /// <param name="target">目标对象</param>
+        /// <param name="memberName">成员名称</param>
+        /// <param name="context">对话上下文</param>
+        /// <returns>解析结果，如果无法解析则返回null</returns>
+        private RuntimeValue? TryAdvancedMemberResolution(RuntimeValue target, string memberName, DialogueContext context)
+        {
+            if (target.Type != RuntimeValue.ValueType.Object || target.Value == null)
+            {
+                return null;
+            }
+
+            // 1. 优先检查注册对象的预编译方法委托
+            if (context.TryGetObjectName(target.Value, out var objectName))
+            {
+                // 尝试获取预编译的方法委托
+                string functionKey = $"{objectName}.{memberName}";
+                if (context.HasFunction(functionKey))
+                {
+                    MLogger.Debug($"找到注册对象 '{objectName}' 的预编译方法: {memberName}");
+                    // 创建一个方法引用对象，包含必要的调用信息
+                    var methodRef = new MethodReference(objectName, memberName, functionKey);
+                    return new RuntimeValue(methodRef);
+                }
+
+                // 2. 尝试通过点号格式查找注册的变量
+                string variableKey = $"{objectName}.{memberName}";
+                if (context.HasVariable(variableKey))
+                {
+                    MLogger.Debug($"找到注册对象 '{objectName}' 的变量: {memberName}");
+                    return context.GetVariable(variableKey);
+                }
+
+                // 3. 尝试通过上下文获取更详细的成员信息
+                var contextualResult = TryContextualMemberAccess(target, memberName, context, objectName);
+                if (contextualResult.HasValue)
+                {
+                    return contextualResult.Value;
+                }
+
+                MLogger.Debug($"注册对象 '{objectName}' 中未找到成员 '{memberName}'，回退到反射访问");
+            }
+
+            return null; // 无法通过高级解析处理
+        }
+
+        /// <summary>
+        /// 尝试上下文相关的成员访问
+        /// </summary>
+        /// <param name="target">目标对象</param>
+        /// <param name="memberName">成员名称</param>
+        /// <param name="context">对话上下文</param>
+        /// <param name="objectName">对象名称</param>
+        /// <returns>解析结果</returns>
+        private RuntimeValue? TryContextualMemberAccess(RuntimeValue target, string memberName, DialogueContext context, string objectName)
+        {
+            try
+            {
+                // 可以在这里添加更多上下文相关的成员解析逻辑
+                // 例如：基于当前对话状态、节点信息等进行智能解析
+
+                // 示例：检查是否有基于节点元数据的特殊成员访问
+                // 这里可以根据具体需求扩展
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                MLogger.Warning($"上下文成员访问时出错: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 检测并报告命名冲突
+        /// </summary>
+        /// <param name="objectName">对象名称</param>
+        /// <param name="memberName">成员名称</param>
+        /// <param name="context">对话上下文</param>
+        private void DetectNamingConflicts(string objectName, string memberName, DialogueContext context)
+        {
+            string key = $"{objectName}.{memberName}";
+
+            bool hasFunction = context.HasFunction(key);
+            bool hasVariable = context.HasVariable(key);
+
+            if (hasFunction && hasVariable)
+            {
+                MLogger.Warning($"检测到命名冲突: '{key}' 同时存在方法和变量。" +
+                                $"访问时将优先使用方法，如需访问变量请考虑重命名。");
+            }
+        }
+
+        /// <summary>
+        /// 基础对象成员访问（原有逻辑）
+        /// </summary>
+        /// <param name="target">目标对象</param>
+        /// <param name="memberName">成员名称</param>
+        /// <returns>成员值</returns>
+        private RuntimeValue GetBasicObjectMember(RuntimeValue target, string memberName)
+        {
             switch (target.Type)
             {
-                case RuntimeValue.ValueType.Object when target.Value is System.Collections.Generic.Dictionary<string, object> dict:
+                case RuntimeValue.ValueType.Object when target.Value is Dictionary<string, object> dict:
                     if (dict.TryGetValue(memberName, out var value))
                     {
                         return Helper.ConvertToRuntimeValue(value);
@@ -388,7 +546,7 @@ namespace MookDialogueScript
             try
             {
                 var type = target.GetType();
-                
+
                 // 使用缓存的成员访问器
                 var accessor = Helper.GetMemberAccessor(type, memberName);
                 if (accessor != null)
@@ -403,7 +561,7 @@ namespace MookDialogueScript
                                 return Helper.ConvertToRuntimeValue(value);
                             }
                             break;
-                            
+
                         case MemberAccessor.AccessorType.Method:
                             // 返回方法的绑定委托（用于后续调用）
                             var method = accessor.Method;
@@ -419,7 +577,7 @@ namespace MookDialogueScript
                             }
                     }
                 }
-                
+
                 MLogger.Warning($"对象 {type.Name} 中不存在可访问的成员: {memberName}");
                 return RuntimeValue.Null;
             }

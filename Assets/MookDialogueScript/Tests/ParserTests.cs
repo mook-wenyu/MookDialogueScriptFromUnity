@@ -1173,6 +1173,65 @@ unicode_desc: 🌟复杂的Unicode描述🌟
             // 链式调用应该形成嵌套的成员访问结构
         }
 
+        [Test]
+        public void TestObjectMethodCallCommands()
+        {
+            string script = @"---
+<<player.Take_Damage(5)>>
+<<player.Heal(10)>>
+<<enemy.Attack(""fireball"", 15)>>
+===";
+
+            var ast = ParseScript(script);
+
+            var node = ast.Nodes[0];
+            Assert.AreEqual(3, node.Content.Count, "节点应该有3个命令");
+
+            // 验证第一个对象方法调用
+            var command1 = node.Content[0] as CallCommandNode;
+            Assert.IsNotNull(command1, "第一个应该是调用命令");
+            Assert.AreEqual("player.Take_Damage", command1.FunctionName, "函数名应该是 player.Take_Damage");
+            Assert.AreEqual(1, command1.Parameters.Count, "应该有1个参数");
+
+            // 验证第二个对象方法调用
+            var command2 = node.Content[1] as CallCommandNode;
+            Assert.IsNotNull(command2, "第二个应该是调用命令");
+            Assert.AreEqual("player.Heal", command2.FunctionName, "函数名应该是 player.Heal");
+            Assert.AreEqual(1, command2.Parameters.Count, "应该有1个参数");
+
+            // 验证第三个对象方法调用
+            var command3 = node.Content[2] as CallCommandNode;
+            Assert.IsNotNull(command3, "第三个应该是调用命令");
+            Assert.AreEqual("enemy.Attack", command3.FunctionName, "函数名应该是 enemy.Attack");
+            Assert.AreEqual(2, command3.Parameters.Count, "应该有2个参数");
+        }
+
+        [Test]
+        public void TestSimpleFunctionCallCommands()
+        {
+            string script = @"---
+<<func1()>>
+<<func2(10, ""test"")>>
+===";
+
+            var ast = ParseScript(script);
+
+            var node = ast.Nodes[0];
+            Assert.AreEqual(2, node.Content.Count, "节点应该有2个命令");
+
+            // 验证第一个简单函数调用
+            var command1 = node.Content[0] as CallCommandNode;
+            Assert.IsNotNull(command1, "第一个应该是调用命令");
+            Assert.AreEqual("func1", command1.FunctionName, "函数名应该是 func1");
+            Assert.AreEqual(0, command1.Parameters.Count, "应该有0个参数");
+
+            // 验证第二个简单函数调用
+            var command2 = node.Content[1] as CallCommandNode;
+            Assert.IsNotNull(command2, "第二个应该是调用命令");
+            Assert.AreEqual("func2", command2.FunctionName, "函数名应该是 func2");
+            Assert.AreEqual(2, command2.Parameters.Count, "应该有2个参数");
+        }
+
         // === 错误处理和边界测试 ===
         [Test]
         public void TestErrorRecoveryAfterMalformedNode()

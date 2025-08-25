@@ -218,8 +218,7 @@ namespace MookDialogueScript
         /// <param name="instance">对象实例</param>
         public void RegisterObject(string name, object instance)
         {
-            _context.RegisterObjectPropertiesAndFields(name, instance);
-            _context.RegisterObjectFunctions(name, instance);
+            _context.RegisterObject(name, instance);
         }
 
         /// <summary>
