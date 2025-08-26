@@ -646,6 +646,16 @@ namespace MookDialogueScript
                     // 尝试获取成员作为函数值
                     var memberValue = await EvaluateMemberAccess(memberAccess);
                     
+                    // 显式检查 Null 值，提供更精确的错误信息
+                    if (memberValue.Type == RuntimeValue.ValueType.Null)
+                    {
+                        throw ExceptionFactory.CreateFunctionMemberNotBoundException(
+                            targetValue.Value?.GetType().Name ?? "unknown", 
+                            memberAccess.MemberName, 
+                            call.Line, 
+                            call.Column);
+                    }
+                    
                     // 统一处理 MethodReference 类型
                     if (memberValue.Type == RuntimeValue.ValueType.Object && memberValue.Value is MethodReference methodRef)
                     {

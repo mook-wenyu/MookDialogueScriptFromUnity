@@ -676,6 +676,7 @@ namespace MookDialogueScript
                 case RuntimeValue.ValueType.String: return "string";
                 case RuntimeValue.ValueType.Boolean: return "boolean";
                 case RuntimeValue.ValueType.Object: return "object";
+                case RuntimeValue.ValueType.Function: return "function";
                 case RuntimeValue.ValueType.Null: return "null";
                 default: return type.ToString();
             }
@@ -747,6 +748,54 @@ namespace MookDialogueScript
 
             // 如果是小数
             return number;
+        }
+
+        /// <summary>
+        /// 高频转换：将RuntimeValue转换为double（热点优化）
+        /// </summary>
+        [Preserve]
+        public static double ConvertToDouble(RuntimeValue value)
+        {
+            switch (value.Type)
+            {
+                case RuntimeValue.ValueType.Number:
+                    return (double)value.Value;
+                case RuntimeValue.ValueType.Boolean:
+                    return (bool)value.Value ? 1.0 : 0.0;
+                case RuntimeValue.ValueType.String:
+                    if (double.TryParse(value.Value?.ToString() ?? "", out var result))
+                        return result;
+                    return 0.0;
+                case RuntimeValue.ValueType.Null:
+                    return 0.0;
+                default:
+                    return 0.0;
+            }
+        }
+
+        /// <summary>
+        /// 高频转换：将RuntimeValue转换为string（热点优化）
+        /// </summary>
+        [Preserve]
+        public static string ConvertToString(RuntimeValue value)
+        {
+            switch (value.Type)
+            {
+                case RuntimeValue.ValueType.String:
+                    return value.Value?.ToString() ?? "";
+                case RuntimeValue.ValueType.Number:
+                    return ((double)value.Value).ToString("G");
+                case RuntimeValue.ValueType.Boolean:
+                    return (bool)value.Value ? "true" : "false";
+                case RuntimeValue.ValueType.Null:
+                    return "";
+                case RuntimeValue.ValueType.Function:
+                    return "function";
+                case RuntimeValue.ValueType.Object:
+                    return value.Value?.ToString() ?? "object";
+                default:
+                    return "";
+            }
         }
 
         #region 一等函数支持
