@@ -396,9 +396,9 @@ namespace MookDialogueScript
             // 对于条件节点，检查是否没有内容
             if (node is ConditionNode condition)
             {
-                return (condition.ThenBranch == null || condition.ThenBranch.Count == 0) &&
-                       (condition.ElifBranches == null || condition.ElifBranches.Count == 0) &&
-                       (condition.ElseBranch == null || condition.ElseBranch.Count == 0);
+                return (condition.ThenContent == null || condition.ThenContent.Count == 0) &&
+                       (condition.ElifContents == null || condition.ElifContents.Count == 0) &&
+                       (condition.ElseContent == null || condition.ElseContent.Count == 0);
             }
 
             // 其他类型的节点通常不会是空的
@@ -791,7 +791,7 @@ namespace MookDialogueScript
                 case MemberAccessNode memberAccess:
                     // 对象方法调用：obj.method()
                     string objectName = ExtractFunctionName(memberAccess.Target);
-                    return $"{objectName}.{memberAccess.Member}";
+                    return $"{objectName}.{memberAccess.MemberName}";
 
                 case VariableNode variable:
                     // 变量函数调用：$func()

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine.Scripting;
 
@@ -31,11 +32,14 @@ namespace MookDialogueScript
     /// <summary>
     /// 函数管理器，负责管理、注册和调用脚本中的函数
     /// </summary>
-    public class FunctionManager
+    public class FunctionManager : IDisposable
     {
         #region 字段和构造函数
         // 编译后的函数字典：函数名 -> 函数实现
         private readonly Dictionary<string, Func<List<RuntimeValue>, Task<RuntimeValue>>> _compiledFunctions = new(StringComparer.OrdinalIgnoreCase);
+
+        // 读写锁，用于线程安全
+        private readonly ReaderWriterLockSlim _functionsLock = new(LockRecursionPolicy.NoRecursion);
 
         // 任务处理器缓存：Task类型 -> 处理函数
         private readonly Dictionary<Type, Func<Task, Task<object>>> _taskResultHandlers = new();
@@ -152,26 +156,34 @@ namespace MookDialogueScript
 
                     try
                     {
-                        // 严格禁止重名：检查是否已存在同名函数（忽略大小写）
-                        if (_compiledFunctions.ContainsKey(funcName))
+                        _functionsLock.EnterWriteLock();
+                        try
                         {
-                            var existingKey = _compiledFunctions.Keys.FirstOrDefault(k =>
-                                string.Equals(k, funcName, StringComparison.OrdinalIgnoreCase));
+                            // 严格禁止重名：检查是否已存在同名函数（忽略大小写）
+                            if (_compiledFunctions.ContainsKey(funcName))
+                            {
+                                var existingKey = _compiledFunctions.Keys.FirstOrDefault(k =>
+                                    string.Equals(k, funcName, StringComparison.OrdinalIgnoreCase));
 
-                            // 检查是否为大小写冲突
-                            bool isCaseConflict = !string.Equals(existingKey, funcName, StringComparison.Ordinal);
-                            string conflictType = isCaseConflict ? "大小写冲突" : "重名";
+                                // 检查是否为大小写冲突
+                                bool isCaseConflict = !string.Equals(existingKey, funcName, StringComparison.Ordinal);
+                                string conflictType = isCaseConflict ? "大小写冲突" : "重名";
 
-                            string errorMsg = $"脚本函数名 '{funcName}' 重复定义（{conflictType}）。" +
-                                              $"已存在函数：'{existingKey}'，尝试注册：'{funcName}' " +
-                                              $"（类型：{method.DeclaringType?.Name}，方法：{method.Name}）。" +
-                                              $"系统不支持重名/重载，请重命名。";
+                                string errorMsg = $"脚本函数名 '{funcName}' 重复定义（{conflictType}）。" +
+                                                  $"已存在函数：'{existingKey}'，尝试注册：'{funcName}' " +
+                                                  $"（类型：{method.DeclaringType?.Name}，方法：{method.Name}）。" +
+                                                  $"系统不支持重名/重载，请重命名。";
 
-                            MLogger.Error(errorMsg);
-                            continue; // 跳过此函数，继续处理其他函数
+                                MLogger.Error(errorMsg);
+                                continue; // 跳过此函数，继续处理其他函数
+                            }
+
+                            _compiledFunctions[funcName] = CompileMethod(method, null);
                         }
-
-                        _compiledFunctions[funcName] = CompileMethod(method, null);
+                        finally
+                        {
+                            _functionsLock.ExitWriteLock();
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -198,8 +210,8 @@ namespace MookDialogueScript
             {
                 try
                 {
-                    // 准备参数
-                    object[] nativeArgs = PrepareArguments(args, parameters);
+                    // 准备参数（CompileMethod 阶段无法获取位置信息，传递默认值）
+                    object[] nativeArgs = PrepareArguments(args, parameters, 0, 0);
 
                     // 调用并处理结果
                     object result = null;
@@ -238,26 +250,34 @@ namespace MookDialogueScript
         /// </summary>
         public void RegisterFunction(string name, Delegate function)
         {
-            // 严格禁止重名：检查是否已存在同名函数（忽略大小写）
-            if (_compiledFunctions.ContainsKey(name))
+            _functionsLock.EnterWriteLock();
+            try
             {
-                var existingKey = _compiledFunctions.Keys.FirstOrDefault(k =>
-                    string.Equals(k, name, StringComparison.OrdinalIgnoreCase));
+                // 严格禁止重名：检查是否已存在同名函数（忽略大小写）
+                if (_compiledFunctions.ContainsKey(name))
+                {
+                    var existingKey = _compiledFunctions.Keys.FirstOrDefault(k =>
+                        string.Equals(k, name, StringComparison.OrdinalIgnoreCase));
 
-                // 检查是否为大小写冲突
-                bool isCaseConflict = !string.Equals(existingKey, name, StringComparison.Ordinal);
-                string conflictType = isCaseConflict ? "大小写冲突" : "重名";
+                    // 检查是否为大小写冲突
+                    bool isCaseConflict = !string.Equals(existingKey, name, StringComparison.Ordinal);
+                    string conflictType = isCaseConflict ? "大小写冲突" : "重名";
 
-                string errorMsg = $"脚本函数名 '{name}' 重复定义（{conflictType}）。" +
-                                  $"已存在函数：'{existingKey}'，尝试注册：'{name}' " +
-                                  $"（委托类型：{function.Method.DeclaringType?.Name}，方法：{function.Method.Name}）。" +
-                                  $"系统不支持重名/重载，请重命名。";
+                    string errorMsg = $"脚本函数名 '{name}' 重复定义（{conflictType}）。" +
+                                      $"已存在函数：'{existingKey}'，尝试注册：'{name}' " +
+                                      $"（委托类型：{function.Method.DeclaringType?.Name}，方法：{function.Method.Name}）。" +
+                                      $"系统不支持重名/重载，请重命名。";
 
-                MLogger.Error(errorMsg);
-                return; // 拒绝覆盖，直接返回
+                    MLogger.Error(errorMsg);
+                    return; // 拒绝覆盖，直接返回
+                }
+
+                _compiledFunctions[name] = CompileMethod(function.Method, function.Target);
             }
-
-            _compiledFunctions[name] = CompileMethod(function.Method, function.Target);
+            finally
+            {
+                _functionsLock.ExitWriteLock();
+            }
         }
 
         /// <summary>
@@ -292,26 +312,34 @@ namespace MookDialogueScript
 
                 try
                 {
-                    // 严格禁止重名：检查是否已存在同名函数（忽略大小写）
-                    if (_compiledFunctions.ContainsKey(funcName))
+                    _functionsLock.EnterWriteLock();
+                    try
                     {
-                        var existingKey = _compiledFunctions.Keys.FirstOrDefault(k =>
-                            string.Equals(k, funcName, StringComparison.OrdinalIgnoreCase));
+                        // 严格禁止重名：检查是否已存在同名函数（忽略大小写）
+                        if (_compiledFunctions.ContainsKey(funcName))
+                        {
+                            var existingKey = _compiledFunctions.Keys.FirstOrDefault(k =>
+                                string.Equals(k, funcName, StringComparison.OrdinalIgnoreCase));
 
-                        // 检查是否为大小写冲突
-                        bool isCaseConflict = !string.Equals(existingKey, funcName, StringComparison.Ordinal);
-                        string conflictType = isCaseConflict ? "大小写冲突" : "重名";
+                            // 检查是否为大小写冲突
+                            bool isCaseConflict = !string.Equals(existingKey, funcName, StringComparison.Ordinal);
+                            string conflictType = isCaseConflict ? "大小写冲突" : "重名";
 
-                        string errorMsg = $"脚本函数名 '{funcName}' 重复定义（{conflictType}）。" +
-                                          $"已存在函数：'{existingKey}'，尝试注册：'{funcName}' " +
-                                          $"（对象类型：{instance.GetType().Name}，方法：{method.Name}）。" +
-                                          $"系统不支持重名/重载，请重命名。";
+                            string errorMsg = $"脚本函数名 '{funcName}' 重复定义（{conflictType}）。" +
+                                              $"已存在函数：'{existingKey}'，尝试注册：'{funcName}' " +
+                                              $"（对象类型：{instance.GetType().Name}，方法：{method.Name}）。" +
+                                              $"系统不支持重名/重载，请重命名。";
 
-                        MLogger.Error(errorMsg);
-                        continue; // 跳过此函数，继续处理其他函数
+                            MLogger.Error(errorMsg);
+                            continue; // 跳过此函数，继续处理其他函数
+                        }
+
+                        _compiledFunctions[funcName] = CompileMethod(method, instance);
                     }
-
-                    _compiledFunctions[funcName] = CompileMethod(method, instance);
+                    finally
+                    {
+                        _functionsLock.ExitWriteLock();
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -328,7 +356,15 @@ namespace MookDialogueScript
         /// <returns>是否存在</returns>
         public bool HasFunction(string name)
         {
-            return _compiledFunctions.ContainsKey(name);
+            _functionsLock.EnterReadLock();
+            try
+            {
+                return _compiledFunctions.ContainsKey(name);
+            }
+            finally
+            {
+                _functionsLock.ExitReadLock();
+            }
         }
 
         /// <summary>
@@ -337,9 +373,17 @@ namespace MookDialogueScript
         public Dictionary<string, string> GetRegisteredScriptFunctions()
         {
             var result = new Dictionary<string, string>();
-            foreach (string key in _compiledFunctions.Keys)
+            _functionsLock.EnterReadLock();
+            try
             {
-                result[key] = "已注册的函数";
+                foreach (string key in _compiledFunctions.Keys)
+                {
+                    result[key] = "已注册的函数";
+                }
+            }
+            finally
+            {
+                _functionsLock.ExitReadLock();
             }
             return result;
         }
@@ -352,39 +396,164 @@ namespace MookDialogueScript
         /// <returns>是否找到函数</returns>
         public bool TryGet(string name, out Func<List<RuntimeValue>, Task<RuntimeValue>> func)
         {
-            return _compiledFunctions.TryGetValue(name, out func);
+            _functionsLock.EnterReadLock();
+            try
+            {
+                return _compiledFunctions.TryGetValue(name, out func);
+            }
+            finally
+            {
+                _functionsLock.ExitReadLock();
+            }
+        }
+
+        /// <summary>
+        /// 获取所有已注册的函数名
+        /// </summary>
+        /// <returns>函数名列表</returns>
+        public IEnumerable<string> GetAllFunctionNames()
+        {
+            _functionsLock.EnterReadLock();
+            try
+            {
+                return _compiledFunctions.Keys.ToArray(); // 返回快照，避免锁外使用
+            }
+            finally
+            {
+                _functionsLock.ExitReadLock();
+            }
+        }
+
+        /// <summary>
+        /// 获取函数值（用于一等函数支持）
+        /// </summary>
+        /// <param name="name">函数名</param>
+        /// <param name="line">行号（用于错误报告）</param>
+        /// <param name="column">列号（用于错误报告）</param>
+        /// <returns>函数值</returns>
+        /// <exception cref="InterpreterException">当函数未找到时抛出异常</exception>
+        public RuntimeValue GetFunctionValue(string name, int line = 0, int column = 0)
+        {
+            _functionsLock.EnterReadLock();
+            try
+            {
+                if (_compiledFunctions.TryGetValue(name, out var func))
+                {
+                    return new RuntimeValue(func);
+                }
+
+                // 使用异常工厂创建带建议的异常
+                throw ExceptionFactory.CreateFunctionNotFoundException(name, GetAllFunctionNames(), line, column);
+            }
+            finally
+            {
+                _functionsLock.ExitReadLock();
+            }
+        }
+
+        /// <summary>
+        /// 尝试获取函数值
+        /// </summary>
+        /// <param name="name">函数名</param>
+        /// <param name="functionValue">输出的函数值</param>
+        /// <returns>是否找到函数</returns>
+        public bool TryGetFunctionValue(string name, out RuntimeValue functionValue)
+        {
+            _functionsLock.EnterReadLock();
+            try
+            {
+                if (_compiledFunctions.TryGetValue(name, out var func))
+                {
+                    functionValue = new RuntimeValue(func);
+                    return true;
+                }
+
+                functionValue = RuntimeValue.Null;
+                return false;
+            }
+            finally
+            {
+                _functionsLock.ExitReadLock();
+            }
+        }
+
+        /// <summary>
+        /// 注册函数值作为变量（支持一等函数）
+        /// </summary>
+        /// <param name="name">变量名</param>
+        /// <param name="functionValue">函数值</param>
+        public void RegisterFunctionVariable(string name, Func<List<RuntimeValue>, Task<RuntimeValue>> functionValue)
+        {
+            // 这个方法主要用于在变量管理器中注册函数值
+            // 实际存储由 VariableManager 处理
+        }
+
+        /// <summary>
+        /// 调用函数值（用于一等函数调用）
+        /// </summary>
+        /// <param name="functionValue">函数值</param>
+        /// <param name="args">参数列表</param>
+        /// <param name="line">行号</param>
+        /// <param name="column">列号</param>
+        /// <returns>调用结果</returns>
+        /// <exception cref="InterpreterException">当函数值无效或调用失败时抛出异常</exception>
+        public async Task<RuntimeValue> CallFunctionValue(RuntimeValue functionValue, List<RuntimeValue> args, int line = 0, int column = 0)
+        {
+            // 检查函数类型
+            if (functionValue.Type != RuntimeValue.ValueType.Function)
+            {
+                throw ExceptionFactory.CreateFunctionExpectedException(functionValue.Type.ToString(), line, column);
+            }
+
+            if (functionValue.Value is not Func<List<RuntimeValue>, Task<RuntimeValue>> func)
+            {
+                throw ExceptionFactory.CreateFunctionExpectedException("无效的函数值类型", line, column);
+            }
+
+            try
+            {
+                return await func(args);
+            }
+            catch (Exception ex)
+            {
+                throw ExceptionFactory.CreateFunctionInvokeFailException("函数值", ex, line, column);
+            }
         }
 
         /// <summary>
         /// 调用已注册的函数
         /// </summary>
+        /// <param name="name">函数名</param>
+        /// <param name="args">参数列表</param>
+        /// <param name="line">行号</param>
+        /// <param name="column">列号</param>
+        /// <returns>调用结果</returns>
+        /// <exception cref="InterpreterException">当函数未找到或调用失败时抛出异常</exception>
         public async Task<RuntimeValue> CallFunction(string name, List<RuntimeValue> args, int line = 0, int column = 0)
         {
-            if (_compiledFunctions.TryGetValue(name, out var func))
+            Func<List<RuntimeValue>, Task<RuntimeValue>> func;
+            
+            _functionsLock.EnterReadLock();
+            try
             {
-                try
+                if (!_compiledFunctions.TryGetValue(name, out func))
                 {
-                    return await func(args);
-                }
-                catch (Exception ex)
-                {
-                    // 统一错误信息格式：运行时错误
-                    string errorMsg = line > 0 && column > 0
-                        ? $"运行时错误: 第{line}行，第{column}列，函数 '{name}' 调用失败: {ex.Message}"
-                        : $"函数 '{name}' 调用失败: {ex.Message}";
-
-                    MLogger.Error(errorMsg);
-                    return RuntimeValue.Null; // 返回空值
+                    throw ExceptionFactory.CreateFunctionNotFoundException(name, GetAllFunctionNames(), line, column);
                 }
             }
+            finally
+            {
+                _functionsLock.ExitReadLock();
+            }
 
-            // 统一错误信息格式：运行时错误  
-            string notFoundMsg = line > 0 && column > 0
-                ? $"运行时错误: 第{line}行，第{column}列，函数 '{name}' 未找到"
-                : $"函数 '{name}' 未找到";
-
-            MLogger.Error(notFoundMsg);
-            return RuntimeValue.Null; // 返回空值而不是抛出异常
+            try
+            {
+                return await func(args);
+            }
+            catch (Exception ex)
+            {
+                throw ExceptionFactory.CreateFunctionInvokeFailException(name, ex, line, column);
+            }
         }
 
         /// <summary>
@@ -397,10 +566,29 @@ namespace MookDialogueScript
         #endregion
 
         /// <summary>
-        /// 准备函数调用参数
+        /// 准备函数调用参数，包含严格的参数验证
         /// </summary>
-        private object[] PrepareArguments(List<RuntimeValue> scriptArgs, ParameterInfo[] parameters)
+        /// <param name="scriptArgs">脚本参数</param>
+        /// <param name="parameters">方法参数信息</param>
+        /// <param name="line">行号（用于错误报告）</param>
+        /// <param name="column">列号（用于错误报告）</param>
+        /// <returns>准备好的参数数组</returns>
+        /// <exception cref="InterpreterException">当参数不匹配时抛出异常</exception>
+        private object[] PrepareArguments(List<RuntimeValue> scriptArgs, ParameterInfo[] parameters, int line = 0, int column = 0)
         {
+            // 检查必需参数数量
+            int requiredParamCount = parameters.Count(p => !p.HasDefaultValue);
+            if (scriptArgs.Count < requiredParamCount)
+            {
+                throw ExceptionFactory.CreateArgumentMismatchException(requiredParamCount, scriptArgs.Count, line, column);
+            }
+
+            // 检查最大参数数量
+            if (scriptArgs.Count > parameters.Length)
+            {
+                throw ExceptionFactory.CreateArgumentMismatchException(parameters.Length, scriptArgs.Count, line, column);
+            }
+
             var nativeArgs = new object[parameters.Length];
 
             for (var i = 0; i < parameters.Length; i++)
@@ -408,7 +596,15 @@ namespace MookDialogueScript
                 if (i < scriptArgs.Count)
                 {
                     // 提供了参数值，进行类型转换
-                    nativeArgs[i] = Helper.ConvertToNativeType(scriptArgs[i], parameters[i].ParameterType);
+                    try
+                    {
+                        nativeArgs[i] = Helper.ConvertToNativeType(scriptArgs[i], parameters[i].ParameterType);
+                    }
+                    catch (Exception ex)
+                    {
+                        string message = $"参数 {i + 1} 类型转换失败：无法将 {scriptArgs[i].Type} 转换为 {parameters[i].ParameterType.Name}";
+                        throw new InterpreterException(ErrorCode.ARG_MISMATCH, message, line, column, "检查参数类型是否匹配", ex);
+                    }
                 }
                 else if (parameters[i].HasDefaultValue)
                 {
@@ -528,6 +724,16 @@ namespace MookDialogueScript
                 }
                 return total;
             }
+        }
+        #endregion
+
+        #region 资源管理
+        /// <summary>
+        /// 释放资源
+        /// </summary>
+        public void Dispose()
+        {
+            _functionsLock?.Dispose();
         }
         #endregion
     }

@@ -44,10 +44,10 @@ namespace MookDialogueScript
         /// <param name="context">对话上下文</param>
         public DialogueStorage(DialogueContext context)
         {
-            // 从DialogueContext获取所有当前的脚本变量
+            // 从DialogueContext获取可序列化的脚本变量（排除Function类型）
             if (context != null)
             {
-                variables = context.GetScriptVariables();
+                variables = context.GetSerializableScriptVariables();
             }
         }
 
@@ -124,13 +124,21 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 保存变量值
+        /// 保存变量值（排除Function类型以保证可序列化）
         /// </summary>
         /// <param name="name">变量名</param>
         /// <param name="value">变量值</param>
         public void SaveVariable(string name, RuntimeValue value)
         {
-            variables[name] = value;
+            // 跳过Function类型的变量，因为它们不能被序列化
+            if (value.Type != RuntimeValue.ValueType.Function)
+            {
+                variables[name] = value;
+            }
+            else
+            {
+                MLogger.Warning($"函数变量 '{name}' 无法序列化，已跳过保存。函数变量需要在初始化时重新绑定。");
+            }
         }
 
         /// <summary>
@@ -139,8 +147,13 @@ namespace MookDialogueScript
         /// <param name="context">对话上下文</param>
         public void ApplyToContext(DialogueContext context)
         {
+            if (context == null) return;
+
             // 加载存储的变量到上下文
-            context?.LoadScriptVariables(variables);
+            context.LoadScriptVariables(variables);
+            
+            // 提示：函数变量需要重新绑定
+            MLogger.Info("存档已加载。注意：函数变量已被跳过，如果脚本中使用了函数变量，请确保在加载后重新注册相关函数。");
         }
 
         /// <summary>
@@ -152,8 +165,8 @@ namespace MookDialogueScript
             if (context == null)
                 return;
 
-            // 更新变量存储
-            variables = context.GetScriptVariables();
+            // 更新变量存储，排除Function类型以保证可序列化
+            variables = context.GetSerializableScriptVariables();
         }
     }
 }

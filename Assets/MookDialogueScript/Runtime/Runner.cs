@@ -7,12 +7,83 @@ using UnityEngine.Scripting;
 namespace MookDialogueScript
 {
     /// <summary>
+    /// 全局节点查找提供者实现
+    /// </summary>
+    public class RunnerNodeProvider : IGlobalNodeProvider
+    {
+        private readonly DialogueContext _context;
+
+        public RunnerNodeProvider(DialogueContext context)
+        {
+            _context = context ?? throw new ArgumentNullException(nameof(context));
+        }
+
+        /// <summary>
+        /// 查找节点是否存在
+        /// </summary>
+        public bool NodeExists(string nodeName)
+        {
+            return _context.HasNode(nodeName);
+        }
+
+        /// <summary>
+        /// 获取相似节点名建议
+        /// </summary>
+        public string GetSimilarNodeName(string nodeName)
+        {
+            // 获取所有节点名
+            var allNodes = _context.GetAllNodeNames();
+            
+            // 使用编辑距离算法找出最相似的节点名
+            return allNodes
+                .Where(name => LevenshteinDistance(name.ToLower(), nodeName.ToLower()) <= 2)
+                .OrderBy(name => LevenshteinDistance(name.ToLower(), nodeName.ToLower()))
+                .FirstOrDefault();
+        }
+
+        /// <summary>
+        /// 计算编辑距离（用于相似名称建议）
+        /// </summary>
+        private static int LevenshteinDistance(string source, string target)
+        {
+            if (string.IsNullOrEmpty(source))
+                return string.IsNullOrEmpty(target) ? 0 : target.Length;
+
+            if (string.IsNullOrEmpty(target))
+                return source.Length;
+
+            var matrix = new int[source.Length + 1, target.Length + 1];
+
+            for (int i = 0; i <= source.Length; i++)
+                matrix[i, 0] = i;
+
+            for (int j = 0; j <= target.Length; j++)
+                matrix[0, j] = j;
+
+            for (int i = 1; i <= source.Length; i++)
+            {
+                for (int j = 1; j <= target.Length; j++)
+                {
+                    int cost = (target[j - 1] == source[i - 1]) ? 0 : 1;
+                    matrix[i, j] = Math.Min(
+                        Math.Min(matrix[i - 1, j] + 1, matrix[i, j - 1] + 1),
+                        matrix[i - 1, j - 1] + cost);
+                }
+            }
+
+            return matrix[source.Length, target.Length];
+        }
+    }
+
+    /// <summary>
     /// 运行器，负责运行对话
     /// </summary>
     public class Runner
     {
         private readonly DialogueContext _context;
         private readonly Interpreter _interpreter;
+        private readonly SemanticAnalyzer _semanticAnalyzer;
+        private readonly RunnerNodeProvider _nodeProvider;
 
         // 是否正在执行中（等待用户输入等状态）
         private bool _isExecuting;
@@ -30,6 +101,15 @@ namespace MookDialogueScript
         // AST节点执行栈，用于跟踪嵌套执行
         private readonly Stack<(ASTNode node, int index)> _executionStack = new();
 
+        // 语义分析配置
+        private AnalysisOptions _analysisOptions;
+        
+        // 是否启用语义分析
+        private bool _enableSemanticAnalysis = true;
+
+        // 注册的脚本列表，用于语义分析
+        private readonly List<ScriptNode> _registeredScripts = new();
+
         // 是否有可选择的选项
         [Preserve]
         public bool HasChoices => _isCollectingChoices && _currentChoices.Count > 0;
@@ -45,6 +125,64 @@ namespace MookDialogueScript
         /// </summary>
         [Preserve]
         public DialogueContext Context => _context;
+
+        /// <summary>
+        /// 获取语义分析器
+        /// </summary>
+        [Preserve]
+        public SemanticAnalyzer SemanticAnalyzer => _semanticAnalyzer;
+
+        /// <summary>
+        /// 设置语义分析选项
+        /// </summary>
+        /// <param name="options">分析选项</param>
+        public void SetAnalysisOptions(AnalysisOptions options)
+        {
+            _analysisOptions = options ?? new AnalysisOptions();
+        }
+
+        /// <summary>
+        /// 启用或禁用语义分析
+        /// </summary>
+        /// <param name="enable">是否启用</param>
+        public void SetSemanticAnalysisEnabled(bool enable)
+        {
+            _enableSemanticAnalysis = enable;
+        }
+
+        /// <summary>
+        /// 对脚本进行语义分析
+        /// </summary>
+        /// <param name="script">要分析的脚本</param>
+        /// <returns>语义分析报告</returns>
+        public SemanticReport AnalyzeScript(ScriptNode script)
+        {
+            if (!_enableSemanticAnalysis)
+            {
+                return new SemanticReport(); // 返回空报告
+            }
+
+            var variableManager = _context.GetVariableManager();
+            var functionManager = _context.GetFunctionManager();
+            
+            return _semanticAnalyzer.Analyze(script, variableManager, functionManager);
+        }
+
+        /// <summary>
+        /// 检查脚本是否有语义错误
+        /// </summary>
+        /// <param name="script">要检查的脚本</param>
+        /// <returns>是否有错误</returns>
+        public bool HasSemanticErrors(ScriptNode script)
+        {
+            if (!_enableSemanticAnalysis)
+            {
+                return false;
+            }
+
+            var report = AnalyzeScript(script);
+            return report.HasErrors;
+        }
 
         /// <summary>
         /// 对话开始事件，需要存储对话状态并存档，对话结束前禁止存档
@@ -96,6 +234,11 @@ namespace MookDialogueScript
             _interpreter = new Interpreter(_context);
             // 初始化存储
             Storage = new DialogueStorage();
+
+            // 初始化语义分析器
+            _nodeProvider = new RunnerNodeProvider(_context);
+            _analysisOptions = new AnalysisOptions();
+            _semanticAnalyzer = new SemanticAnalyzer(_analysisOptions, _nodeProvider);
 
             // 重置状态
             _conditionStates.Clear();
@@ -149,6 +292,12 @@ namespace MookDialogueScript
         public void RegisterScript(ScriptNode script)
         {
             _interpreter.RegisterNodes(script);
+            
+            // 存储脚本用于语义分析
+            if (script != null && !_registeredScripts.Contains(script))
+            {
+                _registeredScripts.Add(script);
+            }
         }
 
         /// <summary>
@@ -276,6 +425,45 @@ namespace MookDialogueScript
             {
                 MLogger.Warning("当前对话尚未结束，无法开始新的对话");
                 return;
+            }
+
+            // 运行前语义把关：检查所有已注册脚本的语义错误
+            if (_enableSemanticAnalysis && _registeredScripts.Count > 0)
+            {
+                bool hasSemanticErrors = false;
+                var errorSummary = new System.Text.StringBuilder();
+                errorSummary.AppendLine("语义分析发现以下错误:");
+                
+                foreach (var script in _registeredScripts)
+                {
+                    var report = AnalyzeScript(script);
+                    if (report.HasErrors)
+                    {
+                        hasSemanticErrors = true;
+                        errorSummary.AppendLine($"脚本错误数: {report.ErrorCount}, 警告数: {report.WarningCount}");
+                        
+                        // 列出前5个错误供参考
+                        var errors = report.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Take(5);
+                        foreach (var error in errors)
+                        {
+                            errorSummary.AppendLine($"  - 第{error.Line}行: {error.Message}");
+                        }
+                        
+                        if (report.ErrorCount > 5)
+                        {
+                            errorSummary.AppendLine($"  ... 还有 {report.ErrorCount - 5} 个错误");
+                        }
+                    }
+                }
+                
+                if (hasSemanticErrors)
+                {
+                    var errorMsg = errorSummary.ToString() + "\n请修复语义错误后再运行对话。";
+                    MLogger.Error(errorMsg);
+                    
+                    // 阻止对话运行
+                    throw new InvalidOperationException(errorMsg);
+                }
             }
 
             NodeDefinitionNode startNode;
@@ -470,9 +658,9 @@ namespace MookDialogueScript
                 {
                     // 检查elif分支
                     var elifExecuted = false;
-                    for (var i = 0; i < conditionNode.ElifBranches.Count; i++)
+                    for (var i = 0; i < conditionNode.ElifContents.Count; i++)
                     {
-                        var (elifCondition, _) = conditionNode.ElifBranches[i];
+                        var (elifCondition, _) = conditionNode.ElifContents[i];
                         condition = await _interpreter.EvaluateExpression(elifCondition);
                         if (condition.Type != RuntimeValue.ValueType.Boolean)
                         {
@@ -490,7 +678,7 @@ namespace MookDialogueScript
                     }
 
                     // 如果没有elif分支为真，且有else分支，执行else分支
-                    if (!elifExecuted && conditionNode.ElseBranch != null)
+                    if (!elifExecuted && conditionNode.ElseContent != null)
                     {
                         state = (2, 0, 0); // else分支
                     }
@@ -509,15 +697,15 @@ namespace MookDialogueScript
             List<ContentNode> contents;
             if (state.branch == 0) // then分支
             {
-                contents = conditionNode.ThenBranch;
+                contents = conditionNode.ThenContent;
             }
             else if (state.branch == 1) // elif分支
             {
-                contents = conditionNode.ElifBranches[state.elifIndex].Item2;
+                contents = conditionNode.ElifContents[state.elifIndex].Item2;
             }
             else // else分支
             {
-                contents = conditionNode.ElseBranch;
+                contents = conditionNode.ElseContent;
             }
 
             // 检查索引是否有效
@@ -974,16 +1162,16 @@ namespace MookDialogueScript
             if (result.Type != RuntimeValue.ValueType.Boolean)
             {
                 MLogger.Error("条件必须计算为布尔类型");
-                return condition.ElseBranch ?? new List<ContentNode>();
+                return condition.ElseContent ?? new List<ContentNode>();
             }
 
             if ((bool)result.Value)
             {
-                return condition.ThenBranch;
+                return condition.ThenContent;
             }
 
             // 检查elif分支
-            foreach (var (elifCondition, elifContent) in condition.ElifBranches)
+            foreach (var (elifCondition, elifContent) in condition.ElifContents)
             {
                 var elifResult = await _interpreter.EvaluateExpression(elifCondition);
                 if (elifResult.Type != RuntimeValue.ValueType.Boolean)
@@ -999,7 +1187,7 @@ namespace MookDialogueScript
             }
 
             // 如果有else分支则返回else分支内容
-            return condition.ElseBranch is {Count: > 0} ? condition.ElseBranch : null;
+            return condition.ElseContent is {Count: > 0} ? condition.ElseContent : null;
         }
 
         /// <summary>

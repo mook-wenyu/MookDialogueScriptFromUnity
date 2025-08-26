@@ -19,7 +19,8 @@ namespace MookDialogueScript
             Number,
             Boolean,
             String,
-            Object
+            Object,
+            Function
         }
 
         public ValueType Type { get; }
@@ -45,8 +46,16 @@ namespace MookDialogueScript
 
         public RuntimeValue(object value)
         {
-            Type = ValueType.Object;
-            Value = value;
+            if (value is Func<List<RuntimeValue>, Task<RuntimeValue>> func)
+            {
+                Type = ValueType.Function;
+                Value = func;
+            }
+            else
+            {
+                Type = ValueType.Object;
+                Value = value;
+            }
         }
 
         /// <summary>
@@ -56,9 +65,19 @@ namespace MookDialogueScript
 
         public override string ToString()
         {
-            if (Value == null)
-                return "null";
-            return Type == ValueType.Boolean ? Value.ToString().ToLower() : Value.ToString();
+            switch (Type)
+            {
+                case ValueType.Null:
+                    return "null";
+                case ValueType.Boolean:
+                    return Value.ToString().ToLower();
+                case ValueType.Function:
+                    if (Value is Func<List<RuntimeValue>, Task<RuntimeValue>> func)
+                        return $"function {func.Method.Name}";
+                    return "function";
+                default:
+                    return Value?.ToString() ?? "null";
+            }
         }
 
         /// <summary>
@@ -85,6 +104,11 @@ namespace MookDialogueScript
                     return (bool)Value == (bool)other.Value;
                 case ValueType.String:
                     return string.Equals((string)Value, (string)other.Value, StringComparison.Ordinal);
+                case ValueType.Function:
+                    // 函数值按引用相等比较
+                    return ReferenceEquals(Value, other.Value);
+                case ValueType.Object:
+                    return Equals(Value, other.Value);
                 default:
                     return Equals(Value, other.Value);
             }
@@ -126,6 +150,11 @@ namespace MookDialogueScript
                         var s = (string)Value;
                         return hash * 31 + (s?.GetHashCode() ?? 0);
                     }
+                    case ValueType.Function:
+                        // 函数值使用引用哈希
+                        return hash * 31 + (Value?.GetHashCode() ?? 0);
+                    case ValueType.Object:
+                        return hash * 31 + (Value?.GetHashCode() ?? 0);
                     default:
                         return hash * 31 + (Value?.GetHashCode() ?? 0);
                 }
@@ -198,6 +227,25 @@ namespace MookDialogueScript
         }
 
         /// <summary>
+        /// 检查节点是否存在
+        /// </summary>
+        /// <param name="name">节点名</param>
+        /// <returns>是否存在</returns>
+        public bool HasNode(string name)
+        {
+            return _nodes.ContainsKey(name);
+        }
+
+        /// <summary>
+        /// 获取所有节点名称
+        /// </summary>
+        /// <returns>所有节点名称</returns>
+        public IEnumerable<string> GetAllNodeNames()
+        {
+            return _nodes.Keys;
+        }
+
+        /// <summary>
         /// 注册对象实例的所有属性和字段作为脚本变量
         /// </summary>
         /// <param name="objectName">对象名称（用作变量名称的前缀）</param>
@@ -256,6 +304,33 @@ namespace MookDialogueScript
         }
 
         /// <summary>
+        /// 获取变量管理器（用于语义分析）
+        /// </summary>
+        /// <returns>变量管理器实例</returns>
+        internal VariableManager GetVariableManager()
+        {
+            return _variableManager;
+        }
+
+        /// <summary>
+        /// 获取函数管理器（用于语义分析）
+        /// </summary>
+        /// <returns>函数管理器实例</returns>
+        internal FunctionManager GetFunctionManager()
+        {
+            return _functionManager;
+        }
+
+        /// <summary>
+        /// 获取可序列化的脚本变量（排除Function类型，用于存档）
+        /// </summary>
+        /// <returns>可序列化的脚本变量字典</returns>
+        public Dictionary<string, RuntimeValue> GetSerializableScriptVariables()
+        {
+            return _variableManager.GetSerializableScriptVariables();
+        }
+
+        /// <summary>
         /// 设置变量值
         /// </summary>
         /// <param name="name">变量名</param>
@@ -291,7 +366,7 @@ namespace MookDialogueScript
         /// <param name="variables">要加载的脚本变量字典</param>
         public void LoadScriptVariables(Dictionary<string, RuntimeValue> variables)
         {
-            _variableManager.LoadScriptVariables(variables);
+            _variableManager.LoadScriptVariables(variables, this);
         }
 
         /// <summary>
@@ -324,6 +399,15 @@ namespace MookDialogueScript
         }
 
         /// <summary>
+        /// 获取所有已注册的函数名（用于错误提示）
+        /// </summary>
+        /// <returns>函数名列表</returns>
+        public IEnumerable<string> GetAllFunctionNames()
+        {
+            return _functionManager.GetAllFunctionNames();
+        }
+
+        /// <summary>
         /// 调用函数
         /// </summary>
         /// <param name="name">函数名</param>
@@ -332,6 +416,42 @@ namespace MookDialogueScript
         public async Task<RuntimeValue> CallFunction(string name, List<RuntimeValue> args)
         {
             return await _functionManager.CallFunction(name, args);
+        }
+
+        /// <summary>
+        /// 调用函数（带行列信息）
+        /// </summary>
+        /// <param name="name">函数名</param>
+        /// <param name="args">参数</param>
+        /// <param name="line">行号</param>
+        /// <param name="column">列号</param>
+        /// <returns>返回值</returns>
+        public async Task<RuntimeValue> CallFunction(string name, List<RuntimeValue> args, int line, int column)
+        {
+            return await _functionManager.CallFunction(name, args, line, column);
+        }
+
+        /// <summary>
+        /// 调用函数值（支持一等函数）
+        /// </summary>
+        /// <param name="functionValue">函数值</param>
+        /// <param name="args">参数</param>
+        /// <param name="line">行号</param>
+        /// <param name="column">列号</param>
+        /// <returns>调用结果</returns>
+        public async Task<RuntimeValue> CallFunctionValue(RuntimeValue functionValue, List<RuntimeValue> args, int line = 0, int column = 0)
+        {
+            return await _functionManager.CallFunctionValue(functionValue, args, line, column);
+        }
+
+        /// <summary>
+        /// 获取函数值（用于一等函数支持）
+        /// </summary>
+        /// <param name="name">函数名</param>
+        /// <returns>函数值</returns>
+        public RuntimeValue GetFunctionValue(string name)
+        {
+            return _functionManager.GetFunctionValue(name);
         }
 
         /// <summary>

@@ -274,12 +274,130 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 加载脚本变量（用于恢复状态）
+        /// 获取可序列化的脚本变量（排除Function类型）
+        /// </summary>
+        /// <returns>可序列化的脚本变量字典</returns>
+        public Dictionary<string, RuntimeValue> GetSerializableScriptVariables()
+        {
+            var result = new Dictionary<string, RuntimeValue>();
+            
+            foreach (var kvp in _scriptVariables)
+            {
+                // 跳过Function类型的变量，因为它们不能被序列化
+                if (kvp.Value.Type == RuntimeValue.ValueType.Function)
+                {
+                    continue;
+                }
+                
+                // 对于包含MethodReference的Object类型，创建序列化标记
+                if (kvp.Value.Type == RuntimeValue.ValueType.Object && kvp.Value.Value is MethodReference methodRef)
+                {
+                    // 创建一个特殊的序列化标记，用于重绑定
+                    var rebindInfo = new Dictionary<string, object>
+                    {
+                        ["__type"] = "MethodReference",
+                        ["objectName"] = methodRef.ObjectName,
+                        ["methodName"] = methodRef.MethodName,
+                        ["functionKey"] = methodRef.FunctionKey
+                    };
+                    result[kvp.Key] = new RuntimeValue(rebindInfo);
+                }
+                else
+                {
+                    result[kvp.Key] = kvp.Value;
+                }
+            }
+            
+            return result;
+        }
+
+        /// <summary>
+        /// 加载脚本变量（用于恢复状态），包括函数重绑定
         /// </summary>
         /// <param name="variables">要加载的脚本变量字典</param>
-        public void LoadScriptVariables(Dictionary<string, RuntimeValue> variables)
+        /// <param name="context">对话上下文，用于重绑定函数</param>
+        public void LoadScriptVariables(Dictionary<string, RuntimeValue> variables, DialogueContext context = null)
         {
-            _scriptVariables = variables;
+            _scriptVariables = new Dictionary<string, RuntimeValue>(StringComparer.OrdinalIgnoreCase);
+            
+            foreach (var kvp in variables)
+            {
+                // 检查是否为MethodReference的序列化标记
+                if (kvp.Value.Type == RuntimeValue.ValueType.Object && 
+                    kvp.Value.Value is Dictionary<string, object> dict &&
+                    dict.ContainsKey("__type") &&
+                    dict["__type"].ToString() == "MethodReference")
+                {
+                    // 尝试重绑定MethodReference
+                    if (TryRebindMethodReference(dict, context, out var reboundValue))
+                    {
+                        _scriptVariables[kvp.Key] = reboundValue;
+                    }
+                    else
+                    {
+                        // 重绑定失败，记录统一错误码
+                        string errorMsg = $"序列化重绑定失败：变量 '{kvp.Key}' 的方法引用无法重绑定";
+                        if (context != null)
+                        {
+                            // 如果有context，可以创建更详细的错误
+                            MLogger.Error($"[{ErrorCode.SER_REBIND_FAIL}] {errorMsg}");
+                        }
+                        else
+                        {
+                            MLogger.Warning(errorMsg + "（未提供DialogueContext）");
+                        }
+                        // 可以选择保留原始信息或跳过
+                        // _scriptVariables[kvp.Key] = kvp.Value;
+                    }
+                }
+                else
+                {
+                    _scriptVariables[kvp.Key] = kvp.Value;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 尝试重绑定方法引用
+        /// </summary>
+        /// <param name="rebindInfo">重绑定信息</param>
+        /// <param name="context">对话上下文</param>
+        /// <param name="reboundValue">重绑定后的值</param>
+        /// <returns>是否成功重绑定</returns>
+        private bool TryRebindMethodReference(Dictionary<string, object> rebindInfo, DialogueContext context, out RuntimeValue reboundValue)
+        {
+            reboundValue = RuntimeValue.Null;
+            
+            try
+            {
+                if (!rebindInfo.ContainsKey("objectName") || 
+                    !rebindInfo.ContainsKey("methodName") || 
+                    !rebindInfo.ContainsKey("functionKey"))
+                {
+                    return false;
+                }
+
+                string objectName = rebindInfo["objectName"].ToString();
+                string methodName = rebindInfo["methodName"].ToString();
+                string functionKey = rebindInfo["functionKey"].ToString();
+
+                // 检查函数管理器中是否存在对应的函数
+                if (context?.HasFunction(functionKey) == true)
+                {
+                    // 重新创建MethodReference
+                    var methodRef = new MethodReference(objectName, methodName, functionKey);
+                    reboundValue = new RuntimeValue(methodRef);
+                    return true;
+                }
+                
+                MLogger.Warning($"重绑定失败：函数键 '{functionKey}' 在当前函数管理器中不存在");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                MLogger.Error($"重绑定MethodReference时发生异常: {ex.Message}");
+                return false;
+            }
         }
 
         /// <summary>
@@ -409,7 +527,7 @@ namespace MookDialogueScript
             }
 
             // 回退到基础成员访问逻辑
-            return GetBasicObjectMember(target, memberName);
+            return GetBasicObjectMember(target, memberName, context);
         }
 
         /// <summary>
@@ -472,11 +590,43 @@ namespace MookDialogueScript
         {
             try
             {
-                // 可以在这里添加更多上下文相关的成员解析逻辑
-                // 例如：基于当前对话状态、节点信息等进行智能解析
+                // 基于对象实例检查成员类型，提供更精确的方法引用
+                var instance = target.Value;
+                var type = instance.GetType();
 
-                // 示例：检查是否有基于节点元数据的特殊成员访问
-                // 这里可以根据具体需求扩展
+                // 使用Helper缓存的反射访问器
+                var accessor = Helper.GetMemberAccessor(type, memberName);
+                if (accessor != null)
+                {
+                    switch (accessor.Type)
+                    {
+                        case MemberAccessor.AccessorType.Method:
+                            // 确保MethodReference的FunctionKey与FunctionManager注册键一致
+                            string functionKey = $"{objectName}.{memberName}";
+                            if (context.HasFunction(functionKey))
+                            {
+                                MLogger.Debug($"找到上下文方法引用: {functionKey}");
+                                var methodRef = new MethodReference(objectName, memberName, functionKey);
+                                return new RuntimeValue(methodRef);
+                            }
+                            else
+                            {
+                                MLogger.Warning($"方法 {functionKey} 在FunctionManager中未注册，但在反射中可见");
+                                // 创建运行时绑定方法
+                                return Helper.CreateBoundMethod(instance, memberName);
+                            }
+
+                        case MemberAccessor.AccessorType.Property:
+                        case MemberAccessor.AccessorType.Field:
+                            // 属性和字段直接通过Helper转换
+                            if (accessor.Getter != null)
+                            {
+                                var value = accessor.Getter(instance);
+                                return Helper.ConvertToRuntimeValue(value);
+                            }
+                            break;
+                    }
+                }
 
                 return null;
             }
@@ -512,8 +662,9 @@ namespace MookDialogueScript
         /// </summary>
         /// <param name="target">目标对象</param>
         /// <param name="memberName">成员名称</param>
+        /// <param name="context">对话上下文</param>
         /// <returns>成员值</returns>
-        private RuntimeValue GetBasicObjectMember(RuntimeValue target, string memberName)
+        private RuntimeValue GetBasicObjectMember(RuntimeValue target, string memberName, DialogueContext context = null)
         {
             switch (target.Type)
             {
@@ -527,7 +678,7 @@ namespace MookDialogueScript
 
                 case RuntimeValue.ValueType.Object when target.Value != null:
                     // 尝试通过反射访问成员（受控方式）
-                    return GetMemberThroughReflection(target.Value, memberName);
+                    return GetMemberThroughReflection(target.Value, memberName, context);
 
                 default:
                     MLogger.Warning($"暂不支持对象成员访问: {target.Type}.{memberName}");
@@ -540,8 +691,9 @@ namespace MookDialogueScript
         /// </summary>
         /// <param name="target">目标对象</param>
         /// <param name="memberName">成员名称</param>
+        /// <param name="context">对话上下文</param>
         /// <returns>成员值</returns>
-        private RuntimeValue GetMemberThroughReflection(object target, string memberName)
+        private RuntimeValue GetMemberThroughReflection(object target, string memberName, DialogueContext context)
         {
             try
             {
@@ -563,17 +715,28 @@ namespace MookDialogueScript
                             break;
 
                         case MemberAccessor.AccessorType.Method:
-                            // 返回方法的绑定委托（用于后续调用）
+                            // 统一返回MethodReference，而不是直接返回绑定方法
                             var method = accessor.Method;
-                            var boundMethod = Helper.GetBoundMethod(target, memberName);
-                            if (boundMethod != null)
+                            
+                            // 尝试通过context获取对象名
+                            if (context.TryGetObjectName(target, out var objectName))
                             {
-                                return new RuntimeValue(boundMethod);
+                                string functionKey = $"{objectName}.{memberName}";
+                                return new RuntimeValue(new MethodReference(objectName, memberName, functionKey));
                             }
                             else
                             {
-                                // 如果无法创建绑定委托，返回MethodInfo以供FunctionManager处理
-                                return new RuntimeValue(method);
+                                // 如果对象未注册，尝试创建绑定委托作为回退
+                                var boundMethod = Helper.GetBoundMethod(target, memberName);
+                                if (boundMethod != null)
+                                {
+                                    return new RuntimeValue(boundMethod);
+                                }
+                                else
+                                {
+                                    MLogger.Warning($"对象方法 {memberName} 未绑定到函数管理器且无法创建委托");
+                                    return RuntimeValue.Null;
+                                }
                             }
                     }
                 }

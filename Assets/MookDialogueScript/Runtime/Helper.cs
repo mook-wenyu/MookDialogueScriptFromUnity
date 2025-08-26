@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Threading.Tasks;
 using UnityEngine.Scripting;
 
 namespace MookDialogueScript
@@ -64,12 +65,32 @@ namespace MookDialogueScript
         private static readonly Dictionary<(Type, string), Delegate> _boundMethodCache =
             new Dictionary<(Type, string), Delegate>();
 
+        // 函数值缓存：缓存创建的函数值
+        private static readonly Dictionary<(object, string), Func<List<RuntimeValue>, Task<RuntimeValue>>> _functionCache =
+            new Dictionary<(object, string), Func<List<RuntimeValue>, Task<RuntimeValue>>>();
+
         // 类型转换缓存：缓存常用类型转换器
         private static readonly Dictionary<(Type, Type), Func<object, object>> _conversionCache =
             new Dictionary<(Type, Type), Func<object, object>>();
 
         // 大小写不敏感的字符串比较器
         private static readonly StringComparer _stringComparer = StringComparer.OrdinalIgnoreCase;
+        
+        // 缓存性能统计
+        private static long _memberCacheHits = 0;
+        private static long _memberCacheMisses = 0;
+        private static long _methodCacheHits = 0;
+        private static long _methodCacheMisses = 0;
+        private static long _functionCacheHits = 0;
+        private static long _functionCacheMisses = 0;
+        private static long _conversionCacheHits = 0;
+        private static long _conversionCacheMisses = 0;
+        
+        // 缓存大小限制
+        private const int MAX_MEMBER_CACHE_SIZE = 1000;
+        private const int MAX_METHOD_CACHE_SIZE = 500;
+        private const int MAX_FUNCTION_CACHE_SIZE = 200;
+        private const int MAX_CONVERSION_CACHE_SIZE = 100;
         #endregion
 
         #region 缓存管理
@@ -86,6 +107,10 @@ namespace MookDialogueScript
             {
                 _boundMethodCache.Clear();
             }
+            lock (_functionCache)
+            {
+                _functionCache.Clear();
+            }
             lock (_conversionCache)
             {
                 _conversionCache.Clear();
@@ -93,22 +118,54 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 获取缓存统计信息
+        /// 获取缓存统计信息（增强版）
         /// </summary>
-        public static Dictionary<string, int> GetCacheStatistics()
+        public static Dictionary<string, object> GetCacheStatistics()
         {
-            return new Dictionary<string, int>
+            var totalMembers = _memberCache.Values.Sum(dict => dict.Count);
+            var estimatedMemory = EstimateCacheMemoryUsage();
+            
+            return new Dictionary<string, object>
             {
-                ["MemberCache"] = _memberCache.Count,
-                ["BoundMethodCache"] = _boundMethodCache.Count,
-                ["ConversionCache"] = _conversionCache.Count
+                ["MemberTypes"] = _memberCache.Count,
+                ["TotalMembers"] = totalMembers,
+                ["BoundMethods"] = _boundMethodCache.Count,
+                ["Functions"] = _functionCache.Count,
+                ["Conversions"] = _conversionCache.Count,
+                ["MemberHitRate"] = CalculateHitRate(_memberCacheHits, _memberCacheMisses),
+                ["MethodHitRate"] = CalculateHitRate(_methodCacheHits, _methodCacheMisses),
+                ["FunctionHitRate"] = CalculateHitRate(_functionCacheHits, _functionCacheMisses),
+                ["ConversionHitRate"] = CalculateHitRate(_conversionCacheHits, _conversionCacheMisses),
+                ["EstimatedMemoryKB"] = estimatedMemory
             };
+        }
+        
+        /// <summary>
+        /// 计算命中率
+        /// </summary>
+        private static double CalculateHitRate(long hits, long misses)
+        {
+            var total = hits + misses;
+            return total == 0 ? 0.0 : (double)hits / total * 100.0;
+        }
+        
+        /// <summary>
+        /// 估算缓存内存使用量（KB）
+        /// </summary>
+        private static int EstimateCacheMemoryUsage()
+        {
+            var memberMemory = _memberCache.Count * 200; // 粗略估算每个类型200字节
+            var methodMemory = _boundMethodCache.Count * 50;
+            var functionMemory = _functionCache.Count * 100;
+            var conversionMemory = _conversionCache.Count * 30;
+            
+            return (memberMemory + methodMemory + functionMemory + conversionMemory) / 1024;
         }
         #endregion
 
         #region 高性能成员访问
         /// <summary>
-        /// 获取类型的成员访问器（带缓存）
+        /// 获取类型的成员访问器（高性能缓存版）
         /// </summary>
         public static MemberAccessor GetMemberAccessor(Type type, string memberName)
         {
@@ -119,13 +176,34 @@ namespace MookDialogueScript
                 {
                     if (!_memberCache.TryGetValue(type, out typeMembers))
                     {
+                        // 检查缓存大小限制
+                        if (_memberCache.Count >= MAX_MEMBER_CACHE_SIZE)
+                        {
+                            EvictLRUMemberCache();
+                        }
+                        
                         typeMembers = BuildMemberCache(type);
                         _memberCache[type] = typeMembers;
+                        System.Threading.Interlocked.Increment(ref _memberCacheMisses);
+                    }
+                    else
+                    {
+                        System.Threading.Interlocked.Increment(ref _memberCacheHits);
                     }
                 }
             }
+            else
+            {
+                System.Threading.Interlocked.Increment(ref _memberCacheHits);
+            }
 
-            // 使用大小写不敏感查找
+            // 优化的快速查找：直接使用TryGetValue而不是遍历
+            if (typeMembers.TryGetValue(memberName, out var accessor))
+            {
+                return accessor;
+            }
+
+            // 回退到大小写不敏感查找（性能较低）
             foreach (var kvp in typeMembers)
             {
                 if (_stringComparer.Equals(kvp.Key, memberName))
@@ -135,6 +213,23 @@ namespace MookDialogueScript
             }
 
             return null;
+        }
+        
+        /// <summary>
+        /// 清理最久未使用的成员缓存（简单LRU实现）
+        /// </summary>
+        private static void EvictLRUMemberCache()
+        {
+            if (_memberCache.Count == 0) return;
+            
+            // 简单实现：移除前10%的缓存项
+            var toRemove = _memberCache.Keys.Take(_memberCache.Count / 10).ToList();
+            foreach (var key in toRemove)
+            {
+                _memberCache.Remove(key);
+            }
+            
+            MLogger.Debug($"已清理 {toRemove.Count} 个成员缓存项以控制内存使用");
         }
 
         /// <summary>
@@ -184,7 +279,7 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 获取绑定方法委托（带缓存）
+        /// 获取绑定方法委托（高性能缓存版）
         /// </summary>
         public static Delegate GetBoundMethod(object instance, string methodName)
         {
@@ -196,7 +291,16 @@ namespace MookDialogueScript
             // 尝试从缓存获取
             if (_boundMethodCache.TryGetValue(cacheKey, out var cachedDelegate))
             {
+                System.Threading.Interlocked.Increment(ref _methodCacheHits);
                 return cachedDelegate;
+            }
+
+            System.Threading.Interlocked.Increment(ref _methodCacheMisses);
+
+            // 检查缓存大小限制
+            if (_boundMethodCache.Count >= MAX_METHOD_CACHE_SIZE)
+            {
+                EvictLRUMethodCache();
             }
 
             // 查找方法并创建委托（处理重载问题：选择第一个匹配的方法）
@@ -236,6 +340,22 @@ namespace MookDialogueScript
             }
 
             return null;
+        }
+        
+        /// <summary>
+        /// 清理最久未使用的方法缓存
+        /// </summary>
+        private static void EvictLRUMethodCache()
+        {
+            if (_boundMethodCache.Count == 0) return;
+            
+            var toRemove = _boundMethodCache.Keys.Take(_boundMethodCache.Count / 10).ToList();
+            foreach (var key in toRemove)
+            {
+                _boundMethodCache.Remove(key);
+            }
+            
+            MLogger.Debug($"已清理 {toRemove.Count} 个方法缓存项以控制内存使用");
         }
 
         /// <summary>
@@ -340,7 +460,7 @@ namespace MookDialogueScript
 
         #region 类型转换（优化版）
         /// <summary>
-        /// 将 RuntimeValue 转换为原生 C# 类型（带缓存优化）
+        /// 将 RuntimeValue 转换为原生 C# 类型（高性能缓存版）
         /// </summary>
         public static object ConvertToNativeType(RuntimeValue value, Type targetType)
         {
@@ -355,11 +475,27 @@ namespace MookDialogueScript
                 return value.Value;
             }
 
+            // 热路径优化：常用类型转换
+            if (TryHotPathConversion(value, targetType, out var result))
+            {
+                System.Threading.Interlocked.Increment(ref _conversionCacheHits);
+                return result;
+            }
+
             // 缓存查找类型转换器
             var conversionKey = (value.Value?.GetType() ?? typeof(object), targetType);
             if (_conversionCache.TryGetValue(conversionKey, out var converter))
             {
+                System.Threading.Interlocked.Increment(ref _conversionCacheHits);
                 return converter(value.Value);
+            }
+
+            System.Threading.Interlocked.Increment(ref _conversionCacheMisses);
+
+            // 检查缓存大小限制
+            if (_conversionCache.Count >= MAX_CONVERSION_CACHE_SIZE)
+            {
+                EvictLRUConversionCache();
             }
 
             // 创建并缓存转换器
@@ -375,6 +511,67 @@ namespace MookDialogueScript
 
             // 回退到原有转换逻辑
             return ConvertToNativeTypeOriginal(value, targetType);
+        }
+
+        /// <summary>
+        /// 热路径类型转换优化
+        /// </summary>
+        private static bool TryHotPathConversion(RuntimeValue value, Type targetType, out object result)
+        {
+            result = null;
+
+            // 最常用的转换：string
+            if (targetType == typeof(string))
+            {
+                result = value.ToString();
+                return true;
+            }
+
+            // 数值类型转换
+            if (value.Type == RuntimeValue.ValueType.Number)
+            {
+                var doubleValue = (double)value.Value;
+                if (targetType == typeof(int))
+                {
+                    result = (int)doubleValue;
+                    return true;
+                }
+                if (targetType == typeof(float))
+                {
+                    result = (float)doubleValue;
+                    return true;
+                }
+                if (targetType == typeof(double))
+                {
+                    result = doubleValue;
+                    return true;
+                }
+            }
+
+            // 布尔类型转换
+            if (value.Type == RuntimeValue.ValueType.Boolean && targetType == typeof(bool))
+            {
+                result = (bool)value.Value;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// 清理最久未使用的转换缓存
+        /// </summary>
+        private static void EvictLRUConversionCache()
+        {
+            if (_conversionCache.Count == 0) return;
+            
+            var toRemove = _conversionCache.Keys.Take(_conversionCache.Count / 2).ToList(); // 清理更多项
+            foreach (var key in toRemove)
+            {
+                _conversionCache.Remove(key);
+            }
+            
+            MLogger.Debug($"已清理 {toRemove.Count} 个类型转换缓存项");
         }
 
         /// <summary>
@@ -521,6 +718,12 @@ namespace MookDialogueScript
                 case RuntimeValue.ValueType.Null:
                     return null;
 
+                case RuntimeValue.ValueType.Function:
+                    return value.Value; // 函数值直接返回
+
+                case RuntimeValue.ValueType.Object:
+                    return value.Value;
+
                 default:
                     MLogger.Error($"不支持的运行时值类型: {value.Type}");
                     return null; // 返回空值而不是抛出异常
@@ -545,6 +748,211 @@ namespace MookDialogueScript
             // 如果是小数
             return number;
         }
+
+        #region 一等函数支持
+
+        /// <summary>
+        /// 创建绑定方法的函数值（高性能缓存版）
+        /// </summary>
+        public static RuntimeValue CreateBoundMethod(object instance, string methodName)
+        {
+            if (instance == null)
+                return RuntimeValue.Null;
+
+            var key = (instance, methodName);
+            if (_functionCache.TryGetValue(key, out var cachedFunc))
+            {
+                System.Threading.Interlocked.Increment(ref _functionCacheHits);
+                return new RuntimeValue(cachedFunc);
+            }
+
+            System.Threading.Interlocked.Increment(ref _functionCacheMisses);
+
+            // 检查缓存大小限制
+            if (_functionCache.Count >= MAX_FUNCTION_CACHE_SIZE)
+            {
+                EvictLRUFunctionCache();
+            }
+
+            var type = instance.GetType();
+            var accessor = GetMemberAccessor(type, methodName);
+            
+            if (accessor?.Type != MemberAccessor.AccessorType.Method || accessor.Method == null)
+            {
+                return RuntimeValue.Null;
+            }
+
+            var method = accessor.Method;
+            var func = CreateMethodFunction(instance, method);
+            
+            lock (_functionCache)
+            {
+                _functionCache[key] = func;
+            }
+            
+            return new RuntimeValue(func);
+        }
+        
+        /// <summary>
+        /// 清理最久未使用的函数缓存
+        /// </summary>
+        private static void EvictLRUFunctionCache()
+        {
+            if (_functionCache.Count == 0) return;
+            
+            var toRemove = _functionCache.Keys.Take(_functionCache.Count / 3).ToList();
+            foreach (var key in toRemove)
+            {
+                _functionCache.Remove(key);
+            }
+            
+            MLogger.Debug($"已清理 {toRemove.Count} 个函数缓存项以控制内存使用");
+        }
+
+        /// <summary>
+        /// 创建静态函数值
+        /// </summary>
+        public static RuntimeValue CreateStaticFunction(Type type, string methodName)
+        {
+            if (type == null)
+                return RuntimeValue.Null;
+
+            var method = type.GetMethod(methodName, BindingFlags.Public | BindingFlags.Static | BindingFlags.IgnoreCase);
+            if (method == null)
+                return RuntimeValue.Null;
+
+            var func = CreateMethodFunction(null, method);
+            return new RuntimeValue(func);
+        }
+
+        /// <summary>
+        /// 从 Delegate 创建函数值
+        /// </summary>
+        public static RuntimeValue CreateFunctionValue(Delegate del)
+        {
+            if (del == null)
+                return RuntimeValue.Null;
+
+            var func = CreateDelegateFunction(del);
+            return new RuntimeValue(func);
+        }
+
+        /// <summary>
+        /// 创建方法函数包装器
+        /// </summary>
+        private static Func<List<RuntimeValue>, Task<RuntimeValue>> CreateMethodFunction(object instance, MethodInfo method)
+        {
+            return async (args) =>
+            {
+                try
+                {
+                    var parameters = method.GetParameters();
+                    var nativeArgs = new object[parameters.Length];
+
+                    // 转换参数
+                    for (int i = 0; i < Math.Min(args.Count, parameters.Length); i++)
+                    {
+                        var paramType = parameters[i].ParameterType;
+                        var arg = ConvertToNativeType(args[i]);
+                        nativeArgs[i] = ConvertToNativeType(args[i], paramType);
+                    }
+
+                    // 调用方法
+                    var result = method.Invoke(instance, nativeArgs);
+
+                    // 处理异步结果
+                    if (result is Task task)
+                    {
+                        await task.ConfigureAwait(false);
+                        
+                        if (task.GetType().IsGenericType)
+                        {
+                            var property = task.GetType().GetProperty("Result");
+                            var taskResult = property?.GetValue(task);
+                            return ConvertToRuntimeValue(taskResult);
+                        }
+                        
+                        return RuntimeValue.Null;
+                    }
+
+                    return ConvertToRuntimeValue(result);
+                }
+                catch (Exception ex)
+                {
+                    MLogger.Error($"调用绑定方法 '{method.Name}' 时出错: {ex}");
+                    return RuntimeValue.Null;
+                }
+            };
+        }
+
+        /// <summary>
+        /// 创建委托函数包装器
+        /// </summary>
+        private static Func<List<RuntimeValue>, Task<RuntimeValue>> CreateDelegateFunction(Delegate del)
+        {
+            return async (args) =>
+            {
+                try
+                {
+                    var method = del.Method;
+                    var parameters = method.GetParameters();
+                    var nativeArgs = new object[parameters.Length];
+
+                    // 转换参数
+                    for (int i = 0; i < Math.Min(args.Count, parameters.Length); i++)
+                    {
+                        var paramType = parameters[i].ParameterType;
+                        var arg = ConvertToNativeType(args[i]);
+                        nativeArgs[i] = ConvertToNativeType(args[i], paramType);
+                    }
+
+                    // 调用委托
+                    var result = del.DynamicInvoke(nativeArgs);
+
+                    // 处理异步结果
+                    if (result is Task task)
+                    {
+                        await task.ConfigureAwait(false);
+                        
+                        if (task.GetType().IsGenericType)
+                        {
+                            var property = task.GetType().GetProperty("Result");
+                            var taskResult = property?.GetValue(task);
+                            return ConvertToRuntimeValue(taskResult);
+                        }
+                        
+                        return RuntimeValue.Null;
+                    }
+
+                    return ConvertToRuntimeValue(result);
+                }
+                catch (Exception ex)
+                {
+                    MLogger.Error($"调用委托函数时出错: {ex}");
+                    return RuntimeValue.Null;
+                }
+            };
+        }
+
+        /// <summary>
+        /// 检查值是否为函数
+        /// </summary>
+        public static bool IsFunction(RuntimeValue value)
+        {
+            return value.Type == RuntimeValue.ValueType.Function && value.Value != null;
+        }
+
+        /// <summary>
+        /// 获取函数值
+        /// </summary>
+        public static Func<List<RuntimeValue>, Task<RuntimeValue>> GetFunction(RuntimeValue value)
+        {
+            if (IsFunction(value))
+                return value.Value as Func<List<RuntimeValue>, Task<RuntimeValue>>;
+            return null;
+        }
+
+        #endregion
 
     }
 }

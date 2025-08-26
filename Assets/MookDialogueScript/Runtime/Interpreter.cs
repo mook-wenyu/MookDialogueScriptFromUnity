@@ -188,9 +188,21 @@ namespace MookDialogueScript
                     return await EvaluateIndexAccess(index);
 
                 case IdentifierNode identifier:
-                    // 标识符节点，在这里可能代表一个未绑定的函数名或其他标识符
-                    // 在后缀调用中，会被包装成CallExpressionNode
-                    MLogger.Warning($"遇到未绑定的标识符: {identifier.Name}");
+                    // 标识符节点，可能代表函数名
+                    // 先检查是否为函数名，如果是则返回函数值
+                    if (_context.HasFunction(identifier.Name))
+                    {
+                        return _context.GetFunctionValue(identifier.Name);
+                    }
+                    
+                    // 检查是否为变量
+                    var varValue = _context.GetVariable(identifier.Name);
+                    if (varValue.Type != RuntimeValue.ValueType.Null)
+                    {
+                        return varValue;
+                    }
+                    
+                    MLogger.Warning($"遇到未定义的标识符: {identifier.Name}");
                     return RuntimeValue.Null;
 
                 default:
@@ -376,7 +388,7 @@ namespace MookDialogueScript
             // 注册所有节点
             foreach (var node in script.Nodes)
             {
-                _context.RegisterNode(node.NodeName, node);
+                _context.RegisterNode(node.Name, node);
             }
         }
 
@@ -394,52 +406,52 @@ namespace MookDialogueScript
                     switch (v.Operation.ToLower())
                     {
                         case "var":
-                            if (!_context.HasVariable(v.Variable))
+                            if (!_context.HasVariable(v.VariableName))
                             {
-                                _context.SetVariable(v.Variable, value);
+                                _context.SetVariable(v.VariableName, value);
                             }
                             else
                             {
-                                MLogger.Warning($"变量 '{v.Variable}' 已存在");
+                                MLogger.Warning($"变量 '{v.VariableName}' 已存在");
                             }
                             break;
 
                         case "set":
-                            _context.SetVariable(v.Variable, value);
+                            _context.SetVariable(v.VariableName, value);
                             break;
 
                         case "add":
-                            var current = _context.GetVariable(v.Variable);
+                            var current = _context.GetVariable(v.VariableName);
                             if (current.Type != RuntimeValue.ValueType.Number || value.Type != RuntimeValue.ValueType.Number)
                             {
                                 MLogger.Error("Add操作需要数值类型");
                                 return string.Empty;
                             }
-                            _context.SetVariable(v.Variable, new RuntimeValue((double)current.Value + (double)value.Value));
+                            _context.SetVariable(v.VariableName, new RuntimeValue((double)current.Value + (double)value.Value));
                             break;
 
                         case "sub":
-                            current = _context.GetVariable(v.Variable);
+                            current = _context.GetVariable(v.VariableName);
                             if (current.Type != RuntimeValue.ValueType.Number || value.Type != RuntimeValue.ValueType.Number)
                             {
                                 MLogger.Error("Sub操作需要数值类型");
                                 return string.Empty;
                             }
-                            _context.SetVariable(v.Variable, new RuntimeValue((double)current.Value - (double)value.Value));
+                            _context.SetVariable(v.VariableName, new RuntimeValue((double)current.Value - (double)value.Value));
                             break;
 
                         case "mul":
-                            current = _context.GetVariable(v.Variable);
+                            current = _context.GetVariable(v.VariableName);
                             if (current.Type != RuntimeValue.ValueType.Number || value.Type != RuntimeValue.ValueType.Number)
                             {
                                 MLogger.Error("Mul操作需要数值类型");
                                 return string.Empty;
                             }
-                            _context.SetVariable(v.Variable, new RuntimeValue((double)current.Value * (double)value.Value));
+                            _context.SetVariable(v.VariableName, new RuntimeValue((double)current.Value * (double)value.Value));
                             break;
 
                         case "div":
-                            current = _context.GetVariable(v.Variable);
+                            current = _context.GetVariable(v.VariableName);
                             if (current.Type != RuntimeValue.ValueType.Number || value.Type != RuntimeValue.ValueType.Number)
                             {
                                 MLogger.Error("Div操作需要数值类型");
@@ -450,11 +462,11 @@ namespace MookDialogueScript
                                 MLogger.Error("Div操作的除数不能为零");
                                 return string.Empty;
                             }
-                            _context.SetVariable(v.Variable, new RuntimeValue((double)current.Value / (double)value.Value));
+                            _context.SetVariable(v.VariableName, new RuntimeValue((double)current.Value / (double)value.Value));
                             break;
 
                         case "mod":
-                            current = _context.GetVariable(v.Variable);
+                            current = _context.GetVariable(v.VariableName);
                             if (current.Type != RuntimeValue.ValueType.Number || value.Type != RuntimeValue.ValueType.Number)
                             {
                                 MLogger.Error("Mod操作需要数值类型");
@@ -465,7 +477,7 @@ namespace MookDialogueScript
                                 MLogger.Error("Mod操作的除数不能为零");
                                 return string.Empty;
                             }
-                            _context.SetVariable(v.Variable, new RuntimeValue((double)current.Value % (double)value.Value));
+                            _context.SetVariable(v.VariableName, new RuntimeValue((double)current.Value % (double)value.Value));
                             break;
 
                         default:
@@ -515,24 +527,69 @@ namespace MookDialogueScript
                     case Func<List<RuntimeValue>, Task<RuntimeValue>> compiledFunc:
                         return await compiledFunc(args);
 
-                    // 其他委托类型
-                    case Delegate del:
-                        // 可以扩展支持其他委托类型
-                        MLogger.Warning($"运行时错误: 第{line}行，第{column}列，不支持的委托类型: {del.GetType().Name}");
+                    // 支持同步Func和Action委托
+                    case Func<int> func0Int:
+                        return new RuntimeValue((double)func0Int());
+                    case Func<double> func0Double:
+                        return new RuntimeValue(func0Double());
+                    case Func<string> func0String:
+                        return new RuntimeValue(func0String());
+                    case Func<bool> func0Bool:
+                        return new RuntimeValue(func0Bool());
+                    case Action action0:
+                        action0();
                         return RuntimeValue.Null;
+
+                    // 支持一个参数的委托
+                    case Action<int> action1Int when args.Count >= 1 && args[0].Type == RuntimeValue.ValueType.Number:
+                        action1Int((int)(double)args[0].Value);
+                        return RuntimeValue.Null;
+                    case Action<string> action1String when args.Count >= 1:
+                        action1String(args[0].ToString());
+                        return RuntimeValue.Null;
+                    case Func<int, int> func1IntInt when args.Count >= 1 && args[0].Type == RuntimeValue.ValueType.Number:
+                        return new RuntimeValue((double)func1IntInt((int)(double)args[0].Value));
+                    case Func<string, string> func1StringString when args.Count >= 1:
+                        return new RuntimeValue(func1StringString(args[0].ToString()));
+
+                    // 支持异步Task委托（需要先匹配具体类型，再匹配基类）
+                    case Func<Task<int>> funcTaskInt:
+                        var taskIntResult = await funcTaskInt();
+                        return new RuntimeValue((double)taskIntResult);
+                    case Func<Task<double>> funcTaskDouble:
+                        var taskDoubleResult = await funcTaskDouble();
+                        return new RuntimeValue(taskDoubleResult);
+                    case Func<Task<string>> funcTaskString:
+                        var taskStringResult = await funcTaskString();
+                        return new RuntimeValue(taskStringResult);
+                    case Func<Task<bool>> funcTaskBool:
+                        var taskBoolResult = await funcTaskBool();
+                        return new RuntimeValue(taskBoolResult);
+                    case Func<Task> funcTask:
+                        await funcTask();
+                        return RuntimeValue.Null;
+
+                    // 通用委托处理（使用Helper的函数值包装器）
+                    case Delegate del:
+                        var helperFunc = Helper.CreateFunctionValue(del);
+                        if (helperFunc.Type == RuntimeValue.ValueType.Function)
+                        {
+                            return await _context.CallFunctionValue(helperFunc, args, line, column);
+                        }
+                        throw ExceptionFactory.CreateCallableNotSupportedException($"委托类型 {del.GetType().Name}", line, column);
 
                     // 字符串类型（如果被当作函数名）
                     case string funcName:
-                        return await _context.CallFunction(funcName, args);
+                        return await _context.CallFunction(funcName, args, line, column);
 
                     default:
-                        throw new InvalidOperationException($"运行时错误: 第{line}行，第{column}列，目标不可调用（类型: {callee?.GetType().Name ?? "null"}）");
+                        throw ExceptionFactory.CreateCallableNotSupportedException(callee?.GetType().Name ?? "null", line, column);
                 }
             }
-            catch (Exception ex) when (!(ex is InvalidOperationException))
+            catch (Exception ex) when (!(ex is InterpreterException))
             {
-                MLogger.Error($"运行时错误: 第{line}行，第{column}列，调用执行失败: {ex.Message}");
-                return RuntimeValue.Null;
+                // 将非InterpreterException包装为统一异常
+                throw ExceptionFactory.CreateFunctionInvokeFailException("可调用对象", ex, line, column);
             }
         }
         /// <summary>
@@ -554,12 +611,22 @@ namespace MookDialogueScript
             {
                 case IdentifierNode identifier:
                     // 简单的函数调用：identifier(args)
-                    // 优先通过FunctionManager查找
+                    // 优先检查是否为函数名
                     if (_context.HasFunction(identifier.Name))
                     {
-                        return await _context.CallFunction(identifier.Name, args);
+                        return await _context.CallFunction(identifier.Name, args, call.Line, call.Column);
                     }
-                    throw new InvalidOperationException($"运行时错误: 第{call.Line}行，第{call.Column}列，函数 '{identifier.Name}' 不存在");
+                    
+                    // 检查是否为函数值变量
+                    var identifierValue = _context.GetVariable(identifier.Name);
+                    if (identifierValue.Type == RuntimeValue.ValueType.Function)
+                    {
+                        return await _context.CallFunctionValue(identifierValue, args, call.Line, call.Column);
+                    }
+                    
+                    // 使用统一异常系统
+                    var availableFunctions = _context.GetAllFunctionNames();
+                    throw ExceptionFactory.CreateFunctionNotFoundException(identifier.Name, availableFunctions, call.Line, call.Column);
 
                 case MemberAccessNode memberAccess:
                     // 成员方法调用：obj.method(args)
@@ -569,23 +636,54 @@ namespace MookDialogueScript
                     if (targetValue.Type == RuntimeValue.ValueType.Object &&
                         _context.TryGetObjectName(targetValue.Value, out var objectName))
                     {
-                        string functionKey = $"{objectName}.{memberAccess.Member}";
+                        string functionKey = $"{objectName}.{memberAccess.MemberName}";
                         if (_context.HasFunction(functionKey))
                         {
-                            return await _context.CallFunction(functionKey, args);
+                            return await _context.CallFunction(functionKey, args, call.Line, call.Column);
                         }
                     }
 
-                    throw new InvalidOperationException($"运行时错误: 第{call.Line}行，第{call.Column}列，对象不包含可调用方法 '{memberAccess.Member}'（类型: {targetValue.Value?.GetType().Name ?? "null"}）");
+                    // 尝试获取成员作为函数值
+                    var memberValue = await EvaluateMemberAccess(memberAccess);
+                    
+                    // 统一处理 MethodReference 类型
+                    if (memberValue.Type == RuntimeValue.ValueType.Object && memberValue.Value is MethodReference methodRef)
+                    {
+                        // 通过函数管理器调用方法引用
+                        return await _context.CallFunction(methodRef.FunctionKey, args, call.Line, call.Column);
+                    }
+                    else if (memberValue.Type == RuntimeValue.ValueType.Function)
+                    {
+                        return await _context.CallFunctionValue(memberValue, args, call.Line, call.Column);
+                    }
+                    
+                    // 回退到可调用对象处理
+                    return await InvokeCallable(memberValue.Value, args, call.Line, call.Column);
 
                 case VariableNode variable:
                     // 变量可调用：$fn(args)
                     var varValue = _context.GetVariable(variable.Name);
+                    
+                    // 优先检查是否为函数值
+                    if (varValue.Type == RuntimeValue.ValueType.Function)
+                    {
+                        return await _context.CallFunctionValue(varValue, args, call.Line, call.Column);
+                    }
+                    
+                    // 回退到原有的可调用对象处理
                     return await InvokeCallable(varValue.Value, args, call.Line, call.Column);
 
                 default:
                     // 其他类型的被调用者，先求值再调用
                     var calleeValue = await EvaluateExpression(call.Callee);
+                    
+                    // 检查是否为函数值
+                    if (calleeValue.Type == RuntimeValue.ValueType.Function)
+                    {
+                        return await _context.CallFunctionValue(calleeValue, args, call.Line, call.Column);
+                    }
+                    
+                    // 回退到原有的可调用对象处理
                     return await InvokeCallable(calleeValue.Value, args, call.Line, call.Column);
             }
         }
@@ -602,7 +700,7 @@ namespace MookDialogueScript
                 var target = await EvaluateExpression(member.Target);
 
                 // 处理对象成员访问
-                return await _context.GetObjectMember(target, member.Member);
+                return await _context.GetObjectMember(target, member.MemberName);
             }
             catch (Exception ex)
             {

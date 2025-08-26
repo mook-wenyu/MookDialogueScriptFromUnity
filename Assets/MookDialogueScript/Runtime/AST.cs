@@ -57,7 +57,7 @@ namespace MookDialogueScript
         /// <summary>
         /// 节点名称
         /// </summary>
-        public string NodeName { get; }
+        public string Name { get; }
 
         /// <summary>
         /// 节点元数据，存储节点定义时的键值对信息
@@ -69,10 +69,10 @@ namespace MookDialogueScript
         /// </summary>
         public List<ContentNode> Content { get; }
 
-        public NodeDefinitionNode(string nodeName, Dictionary<string, string> metadata, List<ContentNode> content, int line, int column)
+        public NodeDefinitionNode(string name, Dictionary<string, string> metadata, List<ContentNode> content, int line, int column)
             : base(line, column)
         {
-            NodeName = nodeName;
+            Name = name;
             Content = content;
             Metadata = metadata ?? new Dictionary<string, string>();
         }
@@ -80,7 +80,7 @@ namespace MookDialogueScript
         public override string ToString()
         {
             StringBuilder sb = new StringBuilder();
-            sb.AppendLine($"--- {NodeName}");
+            sb.AppendLine($"--- {Name}");
 
             // 添加元数据到输出
             if (Metadata is {Count: > 0})
@@ -289,30 +289,30 @@ namespace MookDialogueScript
         /// <summary>
         /// 然后分支
         /// </summary>
-        public List<ContentNode> ThenBranch { get; }
+        public List<ContentNode> ThenContent { get; }
 
         /// <summary>
         /// 否则如果分支
         /// </summary>
-        public List<(ExpressionNode Condition, List<ContentNode> Content)> ElifBranches { get; }
+        public List<(ExpressionNode Condition, List<ContentNode> Content)> ElifContents { get; }
 
         /// <summary>
         /// 否则分支
         /// </summary>
-        public List<ContentNode> ElseBranch { get; }
+        public List<ContentNode> ElseContent { get; }
 
         public ConditionNode(
             ExpressionNode condition,
-            List<ContentNode> thenBranch,
-            List<(ExpressionNode Condition, List<ContentNode> Content)> elifBranches,
-            List<ContentNode> elseBranch,
+            List<ContentNode> thenContent,
+            List<(ExpressionNode Condition, List<ContentNode> Content)> elifContents,
+            List<ContentNode> elseContent,
             int line, int column)
             : base(line, column)
         {
             Condition = condition;
-            ThenBranch = thenBranch;
-            ElifBranches = elifBranches;
-            ElseBranch = elseBranch;
+            ThenContent = thenContent;
+            ElifContents = elifContents;
+            ElseContent = elseContent;
         }
 
         public override string ToString()
@@ -320,23 +320,23 @@ namespace MookDialogueScript
             StringBuilder sb = new StringBuilder();
             sb.AppendLine($"条件节点: {Condition}");
             sb.AppendLine("--- 然后分支 ---");
-            foreach (var content in ThenBranch)
+            foreach (var content in ThenContent)
             {
                 sb.AppendLine($"内容: {content}");
             }
-            if (ElifBranches is {Count: > 0})
+            if (ElifContents is {Count: > 0})
             {
                 sb.AppendLine("--- 否则如果分支 ---");
-                foreach (var (condition, content) in ElifBranches)
+                foreach (var (condition, content) in ElifContents)
                 {
                     sb.AppendLine($"条件: {condition}");
                     sb.AppendLine($"内容: {content}");
                 }
             }
-            if (ElseBranch is {Count: > 0})
+            if (ElseContent is {Count: > 0})
             {
                 sb.AppendLine("--- 否则分支 ---");
-                foreach (var content in ElseBranch)
+                foreach (var content in ElseContent)
                 {
                     sb.AppendLine($"内容: {content}");
                 }
@@ -361,7 +361,7 @@ namespace MookDialogueScript
         /// <summary>
         /// 变量
         /// </summary>
-        public string Variable { get; }
+        public string VariableName { get; }
 
         /// <summary>
         /// 值
@@ -372,17 +372,17 @@ namespace MookDialogueScript
         /// 操作
         /// </summary>
         public string Operation { get; } // set, add, sub, mul, div, mod
-        public VarCommandNode(string variable, ExpressionNode value, string operation, int line, int column)
+        public VarCommandNode(string variableName, ExpressionNode value, string operation, int line, int column)
             : base(line, column)
         {
-            Variable = variable;
+            VariableName = variableName;
             Value = value;
             Operation = operation;
         }
 
         public override string ToString()
         {
-            return $"{Variable} {Operation} {Value}";
+            return $"{VariableName} {Operation} {Value}";
         }
     }
 
@@ -697,18 +697,18 @@ namespace MookDialogueScript
         /// <summary>
         /// 成员名称
         /// </summary>
-        public string Member { get; }
+        public string MemberName { get; }
 
-        public MemberAccessNode(ExpressionNode target, string member, int line, int column)
+        public MemberAccessNode(ExpressionNode target, string memberName, int line, int column)
             : base(line, column)
         {
             Target = target;
-            Member = member;
+            MemberName = memberName;
         }
 
         public override string ToString()
         {
-            return $"{Target}.{Member}";
+            return $"{Target}.{MemberName}";
         }
     }
 
