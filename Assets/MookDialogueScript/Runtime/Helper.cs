@@ -1,7 +1,9 @@
 using System;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Threading.Tasks;
 using UnityEngine.Scripting;
@@ -69,6 +71,10 @@ namespace MookDialogueScript
         private static readonly Dictionary<(object, string), Func<List<RuntimeValue>, Task<RuntimeValue>>> _functionCache =
             new Dictionary<(object, string), Func<List<RuntimeValue>, Task<RuntimeValue>>>();
 
+        // 编译委托缓存：高性能委托编译缓存
+        private static readonly ConcurrentDictionary<string, Func<List<RuntimeValue>, Task<RuntimeValue>>> 
+            _compiledFunctions = new();
+
         // 类型转换缓存：缓存常用类型转换器
         private static readonly Dictionary<(Type, Type), Func<object, object>> _conversionCache =
             new Dictionary<(Type, Type), Func<object, object>>();
@@ -115,6 +121,10 @@ namespace MookDialogueScript
             {
                 _conversionCache.Clear();
             }
+            lock (_compiledFunctions)
+            {
+                _compiledFunctions.Clear();
+            }
         }
 
         /// <summary>
@@ -131,6 +141,7 @@ namespace MookDialogueScript
                 ["TotalMembers"] = totalMembers,
                 ["BoundMethods"] = _boundMethodCache.Count,
                 ["Functions"] = _functionCache.Count,
+                ["CompiledFunctions"] = _compiledFunctions.Count,
                 ["Conversions"] = _conversionCache.Count,
                 ["MemberHitRate"] = CalculateHitRate(_memberCacheHits, _memberCacheMisses),
                 ["MethodHitRate"] = CalculateHitRate(_methodCacheHits, _methodCacheMisses),
@@ -139,6 +150,223 @@ namespace MookDialogueScript
                 ["EstimatedMemoryKB"] = estimatedMemory
             };
         }
+
+        #region 高性能委托编译
+
+        /// <summary>
+        /// 编译方法为高性能委托（使用表达式树）
+        /// </summary>
+        public static Func<List<RuntimeValue>, Task<RuntimeValue>> CompileMethodDelegate(MethodInfo method, object instance = null)
+        {
+            var key = $"{method.DeclaringType?.FullName}.{method.Name}_{instance?.GetHashCode() ?? 0}";
+            
+            if (_compiledFunctions.TryGetValue(key, out var cached))
+            {
+                return cached;
+            }
+
+            try
+            {
+                var compiled = CreateCompiledDelegate(method, instance);
+                _compiledFunctions.TryAdd(key, compiled);
+                return compiled;
+            }
+            catch (Exception ex)
+            {
+                MLogger.Warning($"无法编译方法 {method.Name}，回退到反射调用: {ex.Message}");
+                // 回退到传统的反射调用
+                return CreateReflectionDelegate(method, instance);
+            }
+        }
+
+        /// <summary>
+        /// 使用表达式树创建编译委托
+        /// </summary>
+        private static Func<List<RuntimeValue>, Task<RuntimeValue>> CreateCompiledDelegate(MethodInfo method, object instance)
+        {
+            var argsParam = Expression.Parameter(typeof(List<RuntimeValue>), "args");
+            var parameters = method.GetParameters();
+            
+            // 创建参数转换表达式
+            var argExpressions = new Expression[parameters.Length];
+            for (int i = 0; i < parameters.Length; i++)
+            {
+                var paramType = parameters[i].ParameterType;
+                var argAccess = Expression.Call(argsParam, typeof(List<RuntimeValue>).GetMethod("get_Item"), 
+                    Expression.Constant(i));
+                
+                argExpressions[i] = CreateParameterConversionExpression(argAccess, paramType);
+            }
+
+            // 创建方法调用表达式
+            Expression callExpression;
+            if (method.IsStatic)
+            {
+                callExpression = Expression.Call(method, argExpressions);
+            }
+            else
+            {
+                var instanceExpr = Expression.Constant(instance, method.DeclaringType);
+                callExpression = Expression.Call(instanceExpr, method, argExpressions);
+            }
+
+            // 处理返回类型
+            var resultExpression = CreateReturnConversionExpression(callExpression, method.ReturnType);
+            
+            // 编译表达式
+            var lambda = Expression.Lambda<Func<List<RuntimeValue>, Task<RuntimeValue>>>(
+                resultExpression, argsParam);
+            
+            return lambda.Compile();
+        }
+
+        /// <summary>
+        /// 创建参数转换表达式
+        /// </summary>
+        private static Expression CreateParameterConversionExpression(Expression argExpression, Type targetType)
+        {
+            // 获取 RuntimeValue.Value 属性
+            var valueProperty = typeof(RuntimeValue).GetProperty("Value");
+            var valueExpr = Expression.Property(argExpression, valueProperty);
+            
+            if (targetType == typeof(double))
+            {
+                // 调用 Helper.ConvertToDouble
+                var convertMethod = typeof(Helper).GetMethod(nameof(ConvertToDouble), 
+                    BindingFlags.Public | BindingFlags.Static);
+                return Expression.Call(convertMethod, argExpression);
+            }
+            else if (targetType == typeof(string))
+            {
+                // 调用 Helper.ConvertToString
+                var convertMethod = typeof(Helper).GetMethod(nameof(ConvertToString), 
+                    BindingFlags.Public | BindingFlags.Static);
+                return Expression.Call(convertMethod, argExpression);
+            }
+            else if (targetType == typeof(bool))
+            {
+                // 直接转换布尔值
+                return Expression.Convert(valueExpr, targetType);
+            }
+            else if (targetType == typeof(int))
+            {
+                // 先转换为double，再转为int
+                var doubleValue = CreateParameterConversionExpression(argExpression, typeof(double));
+                return Expression.Convert(doubleValue, typeof(int));
+            }
+            
+            // 默认转换
+            return Expression.Convert(valueExpr, targetType);
+        }
+
+        /// <summary>
+        /// 创建返回值转换表达式
+        /// </summary>
+        private static Expression CreateReturnConversionExpression(Expression callExpression, Type returnType)
+        {
+            if (returnType == typeof(void))
+            {
+                // void 方法返回 Null
+                var voidBlock = Expression.Block(
+                    callExpression,
+                    Expression.Constant(Task.FromResult(RuntimeValue.Null))
+                );
+                return voidBlock;
+            }
+            else if (returnType == typeof(Task))
+            {
+                // Task 方法，等待完成后返回 Null
+                var awaitTask = Expression.Call(
+                    typeof(Helper).GetMethod(nameof(WrapTaskResult), BindingFlags.NonPublic | BindingFlags.Static),
+                    callExpression);
+                return awaitTask;
+            }
+            else if (returnType.IsGenericType && returnType.GetGenericTypeDefinition() == typeof(Task<>))
+            {
+                // Task<T> 方法，等待完成后转换结果
+                var awaitTaskGeneric = Expression.Call(
+                    typeof(Helper).GetMethod(nameof(WrapTaskGenericResult), BindingFlags.NonPublic | BindingFlags.Static)
+                        .MakeGenericMethod(returnType.GetGenericArguments()[0]),
+                    callExpression);
+                return awaitTaskGeneric;
+            }
+            else
+            {
+                // 同步方法，直接转换结果
+                var runtimeValueCtor = typeof(RuntimeValue).GetConstructor(new[] { typeof(object) });
+                var resultValue = Expression.New(runtimeValueCtor, Expression.Convert(callExpression, typeof(object)));
+                var taskResult = Expression.Call(typeof(Task).GetMethod(nameof(Task.FromResult))
+                    .MakeGenericMethod(typeof(RuntimeValue)), resultValue);
+                return taskResult;
+            }
+        }
+
+        /// <summary>
+        /// Task 包装方法
+        /// </summary>
+        private static async Task<RuntimeValue> WrapTaskResult(Task task)
+        {
+            await task.ConfigureAwait(false);
+            return RuntimeValue.Null;
+        }
+
+        /// <summary>
+        /// Task<T> 包装方法
+        /// </summary>
+        private static async Task<RuntimeValue> WrapTaskGenericResult<T>(Task<T> task)
+        {
+            var result = await task.ConfigureAwait(false);
+            return new RuntimeValue(result);
+        }
+
+        /// <summary>
+        /// 创建反射委托（回退方案）
+        /// </summary>
+        private static Func<List<RuntimeValue>, Task<RuntimeValue>> CreateReflectionDelegate(MethodInfo method, object instance)
+        {
+            return async (args) =>
+            {
+                try
+                {
+                    var parameters = method.GetParameters();
+                    var nativeArgs = new object[parameters.Length];
+                    
+                    // 转换参数
+                    for (int i = 0; i < Math.Min(args.Count, parameters.Length); i++)
+                    {
+                        var paramType = parameters[i].ParameterType;
+                        nativeArgs[i] = ConvertToNativeType(args[i], paramType);
+                    }
+                    
+                    // 调用方法
+                    var result = method.Invoke(instance, nativeArgs);
+                    
+                    // 处理异步结果
+                    if (result is Task task)
+                    {
+                        await task.ConfigureAwait(false);
+                        
+                        if (task.GetType().IsGenericType)
+                        {
+                            var property = task.GetType().GetProperty("Result");
+                            var taskResult = property?.GetValue(task);
+                            return ConvertToRuntimeValue(taskResult);
+                        }
+                        
+                        return RuntimeValue.Null;
+                    }
+                    
+                    return ConvertToRuntimeValue(result);
+                }
+                catch (Exception ex)
+                {
+                    MLogger.Error($"调用编译委托时出错: {ex}");
+                    return RuntimeValue.Null;
+                }
+            };
+        }
+
+        #endregion
         
         /// <summary>
         /// 计算命中率

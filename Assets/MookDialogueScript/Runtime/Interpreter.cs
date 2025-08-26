@@ -1,17 +1,30 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace MookDialogueScript
 {
     /// <summary>
-    /// 表达式解释器，专注于表达式求值
+    /// 表达式解释器，专注于表达式求值（增强版本，包含性能优化）
     /// </summary>
     public class Interpreter
     {
         private readonly DialogueContext _context;
         private readonly Dictionary<string, Func<ExpressionNode, Task<RuntimeValue>>> _operators;
+
+        // 表达式缓存：缓存不可变表达式的求值结果
+        private readonly ConcurrentDictionary<int, RuntimeValue> _expressionCache = new();
+        
+        // 参数列表缓存：重用参数列表对象
+        private readonly Queue<List<RuntimeValue>> _argsPool = new();
+        private readonly object _argsPoolLock = new();
+
+        // 缓存性能统计
+        private long _cacheHits = 0;
+        private long _cacheMisses = 0;
 
         public Interpreter(DialogueContext context)
         {
@@ -46,12 +59,195 @@ namespace MookDialogueScript
             };
         }
 
+        #region 性能优化方法
+
         /// <summary>
-        /// 评估表达式并返回运行时值
+        /// 检查表达式是否为不可变表达式（可以缓存结果）
+        /// </summary>
+        private bool IsImmutableExpression(ExpressionNode node)
+        {
+            return node switch
+            {
+                NumberNode => true,
+                BooleanNode => true,
+                StringNode => true,
+                StringInterpolationExpressionNode stringInterp => 
+                    stringInterp.Parts.All(part => part is StringNode), // 仅包含字面量的字符串插值
+                BinaryExpressionNode binary => 
+                    IsImmutableExpression(binary.Left) && IsImmutableExpression(binary.Right),
+                UnaryExpressionNode unary => IsImmutableExpression(unary.Operand),
+                _ => false
+            };
+        }
+
+        /// <summary>
+        /// 获取参数列表对象（使用对象池）
+        /// </summary>
+        private List<RuntimeValue> GetArgumentsList()
+        {
+            lock (_argsPoolLock)
+            {
+                if (_argsPool.Count > 0)
+                {
+                    var args = _argsPool.Dequeue();
+                    args.Clear();
+                    return args;
+                }
+            }
+            return new List<RuntimeValue>();
+        }
+
+        /// <summary>
+        /// 归还参数列表对象到对象池
+        /// </summary>
+        private void ReturnArgumentsList(List<RuntimeValue> args)
+        {
+            if (args == null || args.Count > 20) // 避免缓存过大的列表
+                return;
+
+            lock (_argsPoolLock)
+            {
+                if (_argsPool.Count < 10) // 限制池大小
+                {
+                    args.Clear();
+                    _argsPool.Enqueue(args);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 获取缓存性能统计
+        /// </summary>
+        public Dictionary<string, object> GetCacheStatistics()
+        {
+            return new Dictionary<string, object>
+            {
+                ["ExpressionCacheSize"] = _expressionCache.Count,
+                ["CacheHits"] = _cacheHits,
+                ["CacheMisses"] = _cacheMisses,
+                ["HitRate"] = _cacheHits + _cacheMisses > 0 
+                    ? (double)_cacheHits / (_cacheHits + _cacheMisses) * 100.0 
+                    : 0.0,
+                ["ArgsPoolSize"] = _argsPool.Count
+            };
+        }
+
+        /// <summary>
+        /// 清理缓存
+        /// </summary>
+        public void ClearCache()
+        {
+            _expressionCache.Clear();
+            
+            lock (_argsPoolLock)
+            {
+                _argsPool.Clear();
+            }
+            
+            _cacheHits = 0;
+            _cacheMisses = 0;
+        }
+
+        #endregion
+
+        #region 性能监控和调试
+
+        /// <summary>
+        /// 获取解释器性能统计
+        /// </summary>
+        public Dictionary<string, object> GetPerformanceStatistics()
+        {
+            var helperStats = Helper.GetCacheStatistics();
+            var interpreterStats = GetCacheStatistics();
+
+            var combined = new Dictionary<string, object>();
+            
+            // 合并 Helper 统计
+            foreach (var kvp in helperStats)
+            {
+                combined[$"Helper_{kvp.Key}"] = kvp.Value;
+            }
+            
+            // 合并解释器统计
+            foreach (var kvp in interpreterStats)
+            {
+                combined[$"Interpreter_{kvp.Key}"] = kvp.Value;
+            }
+            
+            return combined;
+        }
+
+        /// <summary>
+        /// 预热缓存（针对常用表达式）
+        /// </summary>
+        public async Task WarmupCache(IEnumerable<ExpressionNode> commonExpressions)
+        {
+            foreach (var expr in commonExpressions)
+            {
+                try
+                {
+                    await EvaluateExpression(expr);
+                }
+                catch
+                {
+                    // 忽略预热期间的异常
+                }
+            }
+        }
+
+        #endregion
+
+        /// <summary>
+        /// 评估表达式并返回运行时值（带缓存优化）
         /// </summary>
         /// <param name="node">表达式节点</param>
         /// <returns>计算结果的运行时值</returns>
         public async Task<RuntimeValue> EvaluateExpression(ExpressionNode node)
+        {
+            // 检查是否可以使用缓存
+            if (IsImmutableExpression(node))
+            {
+                var hash = GetExpressionHash(node);
+                if (_expressionCache.TryGetValue(hash, out var cachedResult))
+                {
+                    System.Threading.Interlocked.Increment(ref _cacheHits);
+                    return cachedResult;
+                }
+                
+                // 计算结果并缓存
+                var result = await EvaluateExpressionInternal(node);
+                _expressionCache.TryAdd(hash, result);
+                System.Threading.Interlocked.Increment(ref _cacheMisses);
+                return result;
+            }
+            
+            // 对于可变表达式，直接计算
+            return await EvaluateExpressionInternal(node);
+        }
+
+        /// <summary>
+        /// 获取表达式的哈希值用于缓存键
+        /// </summary>
+        private int GetExpressionHash(ExpressionNode node)
+        {
+            // 简化的哈希计算，实际可以更精确
+            return node switch
+            {
+                NumberNode n => HashCode.Combine("Number", n.Value),
+                BooleanNode b => HashCode.Combine("Boolean", b.Value),
+                StringNode s => HashCode.Combine("String", s.Value),
+                BinaryExpressionNode bin => HashCode.Combine("Binary", bin.Operator, 
+                    GetExpressionHash(bin.Left), GetExpressionHash(bin.Right)),
+                UnaryExpressionNode un => HashCode.Combine("Unary", un.Operator, 
+                    GetExpressionHash(un.Operand)),
+                _ => node.GetHashCode()
+            };
+        }
+
+        /// <summary>
+        /// 内部表达式求值方法（无缓存）
+        /// </summary>
+        private async Task<RuntimeValue> EvaluateExpressionInternal(ExpressionNode node)
         {
             switch (node)
             {
@@ -599,14 +795,31 @@ namespace MookDialogueScript
         /// <returns>调用结果</returns>
         private async Task<RuntimeValue> EvaluateCallExpression(CallExpressionNode call)
         {
-            // 评估参数
-            var args = new List<RuntimeValue>();
-            foreach (var arg in call.Arguments)
+            // 使用对象池获取参数列表
+            var args = GetArgumentsList();
+            try
             {
-                args.Add(await EvaluateExpression(arg));
-            }
+                // 评估参数
+                foreach (var arg in call.Arguments)
+                {
+                    args.Add(await EvaluateExpression(arg));
+                }
 
-            // 分析被调用者
+                // 分析被调用者
+                return await ProcessFunctionCall(call, args);
+            }
+            finally
+            {
+                // 归还参数列表到对象池
+                ReturnArgumentsList(args);
+            }
+        }
+
+        /// <summary>
+        /// 处理函数调用逻辑（从 EvaluateCallExpression 中提取）
+        /// </summary>
+        private async Task<RuntimeValue> ProcessFunctionCall(CallExpressionNode call, List<RuntimeValue> args)
+        {
             switch (call.Callee)
             {
                 case IdentifierNode identifier:

@@ -199,9 +199,27 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 编译方法为可执行函数
+        /// 编译方法为高性能委托（增强版）
         /// </summary>
         private Func<List<RuntimeValue>, Task<RuntimeValue>> CompileMethod(MethodInfo method, object instance)
+        {
+            try
+            {
+                // 优先使用 Helper 的高性能编译委托
+                return Helper.CompileMethodDelegate(method, instance);
+            }
+            catch (Exception ex)
+            {
+                MLogger.Warning($"无法编译方法 {method.Name}，使用传统实现: {ex.Message}");
+                // 回退到传统实现
+                return CompileMethodFallback(method, instance);
+            }
+        }
+
+        /// <summary>
+        /// 传统的方法编译实现（回退方案）
+        /// </summary>
+        private Func<List<RuntimeValue>, Task<RuntimeValue>> CompileMethodFallback(MethodInfo method, object instance)
         {
             var parameters = method.GetParameters();
             var returnType = method.ReturnType;
