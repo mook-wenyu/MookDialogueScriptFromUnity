@@ -38,6 +38,9 @@ namespace MookDialogueScript
         // 编译后的函数字典：函数名 -> 函数实现
         private readonly Dictionary<string, Func<List<RuntimeValue>, Task<RuntimeValue>>> _compiledFunctions = new(StringComparer.OrdinalIgnoreCase);
 
+        // 函数签名字典：函数名 -> 函数签名
+        private readonly Dictionary<string, FunctionSignature> _functionSignatures = new(StringComparer.OrdinalIgnoreCase);
+
         // 读写锁，用于线程安全
         private readonly ReaderWriterLockSlim _functionsLock = new(LockRecursionPolicy.NoRecursion);
 
@@ -291,11 +294,79 @@ namespace MookDialogueScript
                 }
 
                 _compiledFunctions[name] = CompileMethod(function.Method, function.Target);
+                
+                // 构建并注册函数签名
+                var signature = CreateFunctionSignature(name, function.Method, function.Target);
+                _functionSignatures[name] = signature;
+
+                MLogger.Info($"成功注册函数：{signature.FormatSignature()}（来源：{signature.SourceType}）");
             }
             finally
             {
                 _functionsLock.ExitWriteLock();
             }
+        }
+
+        /// <summary>
+        /// 从 MethodInfo 创建函数签名
+        /// </summary>
+        /// <param name="name">函数名</param>
+        /// <param name="method">方法信息</param>
+        /// <param name="instance">实例对象（静态方法为null）</param>
+        /// <returns>函数签名</returns>
+        private FunctionSignature CreateFunctionSignature(string name, MethodInfo method, object instance)
+        {
+            // 构建参数签名
+            var parameters = method.GetParameters().Select(p => new FunctionParameter(
+                p.Name ?? $"param{p.Position}",
+                MapClrTypeToScriptType(p.ParameterType),
+                p.HasDefaultValue,
+                p.DefaultValue
+            )).ToList();
+
+            var signature = new FunctionSignature(
+                name,
+                MapClrTypeToScriptType(method.ReturnType),
+                parameters,
+                instance == null ? "静态函数" : "对象方法",
+                method.DeclaringType?.Name,
+                method.Name
+            );
+
+            return signature;
+        }
+
+        /// <summary>
+        /// 将 CLR 类型映射到脚本类型名
+        /// </summary>
+        /// <param name="clrType">CLR 类型</param>
+        /// <returns>脚本类型名</returns>
+        private string MapClrTypeToScriptType(Type clrType)
+        {
+            if (clrType == null) return "Object";
+
+            // 处理 Task 返回类型
+            if (clrType == typeof(Task))
+                return "Object";
+            
+            if (clrType.IsGenericType && clrType.GetGenericTypeDefinition() == typeof(Task<>))
+            {
+                var innerType = clrType.GetGenericArguments()[0];
+                return MapClrTypeToScriptType(innerType);
+            }
+
+            return clrType switch
+            {
+                Type t when t == typeof(double) || t == typeof(float) || t == typeof(int) || 
+                           t == typeof(long) || t == typeof(short) || t == typeof(byte) ||
+                           t == typeof(decimal) || t == typeof(uint) || t == typeof(ulong) || 
+                           t == typeof(ushort) || t == typeof(sbyte) => "Number",
+                Type t when t == typeof(string) => "String",
+                Type t when t == typeof(bool) => "Boolean",
+                Type t when typeof(Delegate).IsAssignableFrom(t) => "Function",
+                Type t when t == typeof(void) => "Object",
+                _ => "Object"
+            };
         }
 
         /// <summary>
@@ -743,6 +814,105 @@ namespace MookDialogueScript
                 return total;
             }
         }
+        /// <summary>
+        /// 获取所有已注册的函数名
+        /// </summary>
+        /// <returns>函数名列表</returns>
+        public IEnumerable<string> GetFunctionNames()
+        {
+            _functionsLock.EnterReadLock();
+            try
+            {
+                return _compiledFunctions.Keys.ToList();
+            }
+            finally
+            {
+                _functionsLock.ExitReadLock();
+            }
+        }
+
+        /// <summary>
+        /// 获取函数签名
+        /// </summary>
+        /// <param name="name">函数名</param>
+        /// <param name="line">错误行号（用于异常报告）</param>
+        /// <param name="column">错误列号（用于异常报告）</param>
+        /// <returns>函数签名，如果不存在或有重载冲突则返回null</returns>
+        public FunctionSignature GetFunctionSignature(string name, int line = 0, int column = 0)
+        {
+            _functionsLock.EnterReadLock();
+            try
+            {
+                if (_functionSignatures.TryGetValue(name, out var signature))
+                    return signature;
+                    
+                // 检查是否有同名多个签名（重载冲突）
+                var overloadCount = GetOverloadCount(name);
+                if (overloadCount > 1)
+                {
+                    throw new SemanticException($"SEM016: 不支持重载：'{name}'，找到 {overloadCount} 个签名", 
+                        line, column);
+                }
+                    
+                return null;
+            }
+            finally
+            {
+                _functionsLock.ExitReadLock();
+            }
+        }
+
+        /// <summary>
+        /// 尝试获取函数签名
+        /// </summary>
+        /// <param name="name">函数名</param>
+        /// <param name="signature">输出的函数签名</param>
+        /// <returns>是否成功获取</returns>
+        public bool TryGetFunctionSignature(string name, out FunctionSignature signature)
+        {
+            signature = GetFunctionSignature(name);
+            return signature != null;
+        }
+
+        /// <summary>
+        /// 获取所有函数签名
+        /// </summary>
+        /// <returns>函数名和签名的键值对集合</returns>
+        public IEnumerable<KeyValuePair<string, FunctionSignature>> GetAllFunctionSignatures()
+        {
+            _functionsLock.EnterReadLock();
+            try
+            {
+                return _functionSignatures.ToList();
+            }
+            finally
+            {
+                _functionsLock.ExitReadLock();
+            }
+        }
+
+        /// <summary>
+        /// 获取重载数量（在我们的系统中始终为0或1，不支持重载）
+        /// </summary>
+        /// <param name="name">函数名</param>
+        /// <returns>重载数量</returns>
+        private int GetOverloadCount(string name)
+        {
+            // 在当前实现中，我们不支持重载，每个函数名只能有一个签名
+            return _functionSignatures.ContainsKey(name) ? 1 : 0;
+        }
+
+        /// <summary>
+        /// 检测重载函数（返回是否存在同名函数）
+        /// </summary>
+        /// <param name="name">函数名</param>
+        /// <returns>是否存在同名函数（重载）</returns>
+        public bool HasOverloads(string name)
+        {
+            // 在我们的系统中，不支持重载，所以总是返回 false
+            return false;
+        }
+
         #endregion
 
         #region 资源管理

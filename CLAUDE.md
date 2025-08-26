@@ -6,7 +6,20 @@
 
 MookDialogueScript 是为 Unity 游戏开发设计的轻量级对话脚本系统。它提供了一种自定义脚本语言，用于创建复杂的对话系统和分支叙事。
 
-当前版本：**0.5.3**，包含异常处理系统和语义分析器。
+当前版本：**0.6.0**，包含完整的函数签名系统和严格类型检查。
+
+## 版本 0.6.0 新功能
+
+### 🎯 函数签名系统 (FunctionSignature)
+- **完整的类型安全**：函数注册时自动构建详细签名信息，包含参数名、类型、默认值
+- **严格参数校验**：语义分析阶段进行参数数量和类型的严格验证
+- **智能错误提示**：提供中文错误消息和具体的修复建议
+- **重载检测拒绝**：系统不支持函数重载，自动检测并报错
+
+### 🔍 语义分析增强  
+- **优化类型推断**：符号表未命中时返回 `Any` 类型，允许更宽松的分析
+- **统一诊断系统**：完整的 SEM 错误编码，涵盖所有语义错误情况
+- **性能优化**：TypeInfo 单例化，减少内存分配和 GC 压力
 
 ## 架构
 
@@ -17,15 +30,16 @@ MookDialogueScript 是为 Unity 游戏开发设计的轻量级对话脚本系统
 - **词法分析器** (`Assets/MookDialogueScript/Runtime/Lexer.cs`): 对 `.mds` 脚本文件进行词法分析
 - **语法解析器** (`Assets/MookDialogueScript/Runtime/Parser.cs`): 从标记构建抽象语法树 (AST)
 - **解释器** (`Assets/MookDialogueScript/Runtime/Interpreter.cs`): 执行 AST 节点
-- **异常处理** (`Assets/MookDialogueScript/Runtime/ParseException.cs`): 完整的异常类层次结构
-- **语义分析器** (`Assets/MookDialogueScript/Runtime/SemanticAnalyzer.cs`): 语义分析和验证
+- **异常处理** (`Assets/MookDialogueScript/Runtime/ScriptException.cs`): 完整的异常类层次结构
+- **语义分析器** (`Assets/MookDialogueScript/Runtime/SemanticAnalyzer.cs`): 严格的语义分析和类型检查
+- **函数签名系统** (`Assets/MookDialogueScript/Runtime/FunctionSignature.cs`): 函数参数和返回类型的完整描述
 - **运行器** (`Assets/MookDialogueScript/Runtime/Runner.cs`): 对话执行的主入口点
 - **抽象语法树** (`Assets/MookDialogueScript/Runtime/AST.cs`): 定义所有 AST 节点类型
 
 ### 变量和函数系统
 
 - **变量管理器** (`Assets/MookDialogueScript/Runtime/VariableManager.cs`): 管理脚本变量和 C# 变量绑定
-- **函数管理器** (`Assets/MookDialogueScript/Runtime/FunctionManager.cs`): 处理函数注册和调用
+- **函数管理器** (`Assets/MookDialogueScript/Runtime/FunctionManager.cs`): 函数注册、签名构建和调用管理，支持严格的类型检查
 - **对话存储** (`Assets/MookDialogueScript/Runtime/DialogueStorage.cs`): 持久化对话状态以支持保存/加载
 
 ### Unity 集成
@@ -94,14 +108,53 @@ runner.RegisterVariable("difficulty",
     (value) => GameSystem.Difficulty = (int)value);
 ```
 
-### 函数注册
+### 函数注册与签名
 ```csharp
-// 静态注册
+// 静态注册（自动构建签名）
 [ScriptFunc]
 public static void ShowMessage(string text) { /* 实现 */ }
 
-// 动态注册
+// 动态注册（自动类型推断）
 runner.RegisterFunction("calculate", (int a, int b) => a + b);
+
+// 获取函数签名信息
+var signature = functionManager.GetFunctionSignature("calculate");
+if (signature != null)
+{
+    Debug.Log($"函数签名: {signature.FormatSignature()}");
+    // 输出: Number calculate(Number a, Number b)
+    Debug.Log($"参数范围: {signature.MinRequiredParameters}-{signature.MaxParameters}");
+    Debug.Log($"来源类型: {signature.SourceType}");
+}
+
+// 获取所有已注册的函数签名
+foreach (var kvp in functionManager.GetAllFunctionSignatures())
+{
+    Debug.Log($"{kvp.Key}: {kvp.Value.FormatSignature()}");
+}
+```
+
+### 语义分析集成
+```csharp
+// 创建带函数签名支持的语义分析器
+var analyzer = new SemanticAnalyzer(
+    options: new AnalysisOptions(),
+    nodeProvider: nodeProvider,
+    functionManager: functionManager  // 注入函数管理器
+);
+
+// 执行严格的语义分析
+var report = analyzer.Analyze(script, variableManager, functionManager);
+
+// 检查分析结果
+if (report.HasErrors)
+{
+    foreach (var error in report.Errors)
+    {
+        Debug.LogError($"{error.Code}: {error.Message}");
+        // 示例输出: SEM013: 函数 'calculate' 参数不足：期望至少 2 个，实际 1 个
+    }
+}
 ```
 
 ## 文件结构
@@ -115,7 +168,7 @@ runner.RegisterFunction("calculate", (int a, int b) => a + b);
 
 ## 包信息
 
-- **版本**: 0.5.3 (在 `Assets/MookDialogueScript/package.json` 中定义)
+- **版本**: 0.6.0 (在 `Assets/MookDialogueScript/package.json` 中定义)
 - **Unity 版本**: 2021.4+
 - **许可证**: Apache-2.0
 - **包名**: `com.wenyu.dialoguescript`
@@ -131,6 +184,9 @@ runner.RegisterFunction("calculate", (int a, int b) => a + b);
 - 自定义脚本加载器
 - 异步函数调用
 - 带条件的选择分支
+- **严格类型检查**：函数调用的参数验证和类型匹配
+- **智能错误提示**：详细的语义分析报告和修复建议
+- **函数签名系统**：完整的参数和返回类型描述
 
 ## 代码开发规范
 

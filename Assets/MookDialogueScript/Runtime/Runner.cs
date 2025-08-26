@@ -34,45 +34,18 @@ namespace MookDialogueScript
             // 获取所有节点名
             var allNodes = _context.GetAllNodeNames();
             
-            // 使用编辑距离算法找出最相似的节点名
-            return allNodes
-                .Where(name => LevenshteinDistance(name.ToLower(), nodeName.ToLower()) <= 2)
-                .OrderBy(name => LevenshteinDistance(name.ToLower(), nodeName.ToLower()))
-                .FirstOrDefault();
+            // 使用统一的Utils工具类找出最相似的节点名
+            return Utils.GetMostSimilarString(nodeName, allNodes);
         }
 
         /// <summary>
-        /// 计算编辑距离（用于相似名称建议）
+        /// 获取所有节点名（用于语义分析）
         /// </summary>
-        private static int LevenshteinDistance(string source, string target)
+        public IEnumerable<string> GetAllNodeNames()
         {
-            if (string.IsNullOrEmpty(source))
-                return string.IsNullOrEmpty(target) ? 0 : target.Length;
-
-            if (string.IsNullOrEmpty(target))
-                return source.Length;
-
-            var matrix = new int[source.Length + 1, target.Length + 1];
-
-            for (int i = 0; i <= source.Length; i++)
-                matrix[i, 0] = i;
-
-            for (int j = 0; j <= target.Length; j++)
-                matrix[0, j] = j;
-
-            for (int i = 1; i <= source.Length; i++)
-            {
-                for (int j = 1; j <= target.Length; j++)
-                {
-                    int cost = (target[j - 1] == source[i - 1]) ? 0 : 1;
-                    matrix[i, j] = Math.Min(
-                        Math.Min(matrix[i - 1, j] + 1, matrix[i, j - 1] + 1),
-                        matrix[i - 1, j - 1] + cost);
-                }
-            }
-
-            return matrix[source.Length, target.Length];
+            return _context.GetAllNodeNames();
         }
+
     }
 
     /// <summary>

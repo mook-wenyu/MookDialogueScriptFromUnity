@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Text;
 using System.Runtime.CompilerServices;
@@ -22,6 +23,25 @@ namespace MookDialogueScript
         // 行号标签缓存
         private string _currentNodeNameLower;
         private string _lineTagPrefix;
+
+        #region AST节点缓存
+        // AST节点缓存：表达式哈希 -> 节点
+        private static readonly ConcurrentDictionary<int, ExpressionNode> _expressionCache = new();
+        private static readonly ConcurrentDictionary<string, NumberNode> _numberCache = new();
+        private static readonly ConcurrentDictionary<string, BooleanNode> _booleanCache = new();
+        private static readonly ConcurrentDictionary<string, VariableNode> _variableCache = new();
+        private static readonly ConcurrentDictionary<string, IdentifierNode> _identifierCache = new();
+        
+        // 缓存大小限制
+        private const int MAX_EXPRESSION_CACHE_SIZE = 1000;
+        private const int MAX_NODE_CACHE_SIZE = 500;
+        
+        // 缓存性能统计
+        private static long _expressionCacheHits = 0;
+        private static long _expressionCacheMisses = 0;
+        private static long _nodeCacheHits = 0;
+        private static long _nodeCacheMisses = 0;
+        #endregion
 
         public Parser(List<Token> tokens)
         {
@@ -144,6 +164,184 @@ namespace MookDialogueScript
                     return true;
             return false;
         }
+
+        #region AST节点缓存方法
+        /// <summary>
+        /// 获取表达式的缓存键
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static int GetExpressionCacheKey(TokenType type, string value, int line, int column)
+        {
+            return HashCode.Combine(type, value, line, column);
+        }
+        
+        /// <summary>
+        /// 创建或获取缓存的数值节点
+        /// </summary>
+        private static NumberNode GetOrCreateNumberNode(double value, int line, int column)
+        {
+            var key = $"{value}:{line}:{column}";
+            if (_numberCache.TryGetValue(key, out var cached))
+            {
+                System.Threading.Interlocked.Increment(ref _nodeCacheHits);
+                return cached;
+            }
+            
+            System.Threading.Interlocked.Increment(ref _nodeCacheMisses);
+            
+            // 检查缓存大小限制
+            if (_numberCache.Count >= MAX_NODE_CACHE_SIZE)
+            {
+                EvictNodeCache(_numberCache);
+            }
+            
+            var node = new NumberNode(value, line, column);
+            _numberCache.TryAdd(key, node);
+            return node;
+        }
+        
+        /// <summary>
+        /// 创建或获取缓存的布尔节点
+        /// </summary>
+        private static BooleanNode GetOrCreateBooleanNode(bool value, int line, int column)
+        {
+            var key = $"{value}:{line}:{column}";
+            if (_booleanCache.TryGetValue(key, out var cached))
+            {
+                System.Threading.Interlocked.Increment(ref _nodeCacheHits);
+                return cached;
+            }
+            
+            System.Threading.Interlocked.Increment(ref _nodeCacheMisses);
+            
+            if (_booleanCache.Count >= MAX_NODE_CACHE_SIZE)
+            {
+                EvictNodeCache(_booleanCache);
+            }
+            
+            var node = new BooleanNode(value, line, column);
+            _booleanCache.TryAdd(key, node);
+            return node;
+        }
+        
+        /// <summary>
+        /// 创建或获取缓存的变量节点
+        /// </summary>
+        private static VariableNode GetOrCreateVariableNode(string name, int line, int column)
+        {
+            var key = $"{name}:{line}:{column}";
+            if (_variableCache.TryGetValue(key, out var cached))
+            {
+                System.Threading.Interlocked.Increment(ref _nodeCacheHits);
+                return cached;
+            }
+            
+            System.Threading.Interlocked.Increment(ref _nodeCacheMisses);
+            
+            if (_variableCache.Count >= MAX_NODE_CACHE_SIZE)
+            {
+                EvictNodeCache(_variableCache);
+            }
+            
+            var node = new VariableNode(name, line, column);
+            _variableCache.TryAdd(key, node);
+            return node;
+        }
+        
+        /// <summary>
+        /// 创建或获取缓存的标识符节点
+        /// </summary>
+        private static IdentifierNode GetOrCreateIdentifierNode(string name, int line, int column)
+        {
+            var key = $"{name}:{line}:{column}";
+            if (_identifierCache.TryGetValue(key, out var cached))
+            {
+                System.Threading.Interlocked.Increment(ref _nodeCacheHits);
+                return cached;
+            }
+            
+            System.Threading.Interlocked.Increment(ref _nodeCacheMisses);
+            
+            if (_identifierCache.Count >= MAX_NODE_CACHE_SIZE)
+            {
+                EvictNodeCache(_identifierCache);
+            }
+            
+            var node = new IdentifierNode(name, line, column);
+            _identifierCache.TryAdd(key, node);
+            return node;
+        }
+        
+        /// <summary>
+        /// 清理节点缓存（简单LRU实现）
+        /// </summary>
+        private static void EvictNodeCache<T>(ConcurrentDictionary<string, T> cache) where T : class
+        {
+            if (cache.Count == 0) return;
+            
+            var keysToRemove = new List<string>(cache.Count / 10);
+            int removeCount = 0;
+            
+            foreach (var key in cache.Keys)
+            {
+                keysToRemove.Add(key);
+                removeCount++;
+                if (removeCount >= cache.Count / 10) break; // 移除10%的项
+            }
+            
+            foreach (var key in keysToRemove)
+            {
+                cache.TryRemove(key, out _);
+            }
+        }
+        
+        /// <summary>
+        /// 获取AST缓存统计信息
+        /// </summary>
+        public static Dictionary<string, object> GetCacheStatistics()
+        {
+            return new Dictionary<string, object>
+            {
+                ["ExpressionCacheSize"] = _expressionCache.Count,
+                ["NumberCacheSize"] = _numberCache.Count,
+                ["BooleanCacheSize"] = _booleanCache.Count,
+                ["VariableCacheSize"] = _variableCache.Count,
+                ["IdentifierCacheSize"] = _identifierCache.Count,
+                ["ExpressionCacheHits"] = _expressionCacheHits,
+                ["ExpressionCacheMisses"] = _expressionCacheMisses,
+                ["NodeCacheHits"] = _nodeCacheHits,
+                ["NodeCacheMisses"] = _nodeCacheMisses,
+                ["ExpressionHitRate"] = CalculateHitRate(_expressionCacheHits, _expressionCacheMisses),
+                ["NodeHitRate"] = CalculateHitRate(_nodeCacheHits, _nodeCacheMisses)
+            };
+        }
+        
+        /// <summary>
+        /// 计算命中率
+        /// </summary>
+        private static double CalculateHitRate(long hits, long misses)
+        {
+            var total = hits + misses;
+            return total == 0 ? 0.0 : (double)hits / total * 100.0;
+        }
+        
+        /// <summary>
+        /// 清理所有AST缓存
+        /// </summary>
+        public static void ClearASTCache()
+        {
+            _expressionCache.Clear();
+            _numberCache.Clear();
+            _booleanCache.Clear();
+            _variableCache.Clear();
+            _identifierCache.Clear();
+            
+            _expressionCacheHits = 0;
+            _expressionCacheMisses = 0;
+            _nodeCacheHits = 0;
+            _nodeCacheMisses = 0;
+        }
+        #endregion
 
         // 元数据取值：替代GetValueOrDefault
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -777,30 +975,6 @@ namespace MookDialogueScript
             return new ChoiceNode(text, condition, tags, content, line, column);
         }
 
-        /// <summary>
-        /// 从CallExpressionNode的Callee中提取函数名
-        /// </summary>
-        private string ExtractFunctionName(ExpressionNode callee)
-        {
-            switch (callee)
-            {
-                case IdentifierNode identifier:
-                    // 简单函数调用：func()
-                    return identifier.Name;
-
-                case MemberAccessNode memberAccess:
-                    // 对象方法调用：obj.method()
-                    string objectName = ExtractFunctionName(memberAccess.Target);
-                    return $"{objectName}.{memberAccess.MemberName}";
-
-                case VariableNode variable:
-                    // 变量函数调用：$func()
-                    return variable.Name;
-
-                default:
-                    throw new InvalidOperationException($"不支持的函数调用类型: {callee.GetType().Name}");
-            }
-        }
 
 
 
@@ -862,9 +1036,8 @@ namespace MookDialogueScript
                     // 检查解析出的表达式是否为调用表达式
                     if (expression is CallExpressionNode callExpr)
                     {
-                        // 将CallExpressionNode转换为CallCommandNode
-                        string functionName = ExtractFunctionName(callExpr.Callee);
-                        var result = new CallCommandNode(functionName, callExpr.Arguments, line, column);
+                        // 直接使用CallExpressionNode封装为CallCommandNode
+                        var result = new CallCommandNode(callExpr, line, column);
                         Consume(TokenType.COMMAND_END);
                         return result;
                     }
@@ -1239,32 +1412,32 @@ namespace MookDialogueScript
             {
                 case TokenType.NUMBER:
                     Consume(TokenType.NUMBER);
-                    return new NumberNode(double.Parse(token.Value), token.Line, token.Column);
+                    return GetOrCreateNumberNode(double.Parse(token.Value), token.Line, token.Column);
 
                 case TokenType.QUOTE:
                     return ParseString(token);
 
                 case TokenType.TRUE:
                     Consume(TokenType.TRUE);
-                    return new BooleanNode(true, token.Line, token.Column);
+                    return GetOrCreateBooleanNode(true, token.Line, token.Column);
 
                 case TokenType.FALSE:
                     Consume(TokenType.FALSE);
-                    return new BooleanNode(false, token.Line, token.Column);
+                    return GetOrCreateBooleanNode(false, token.Line, token.Column);
 
                 case TokenType.VARIABLE:
                     string variableValue = _currentToken.Value;
                     int line = _currentToken.Line;
                     int column = _currentToken.Column;
                     Consume(TokenType.VARIABLE);
-                    return new VariableNode(variableValue, line, column);
+                    return GetOrCreateVariableNode(variableValue, line, column);
 
                 case TokenType.IDENTIFIER:
                     string identifierValue = _currentToken.Value;
                     line = _currentToken.Line;
                     column = _currentToken.Column;
                     Consume(TokenType.IDENTIFIER);
-                    return new IdentifierNode(identifierValue, line, column);
+                    return GetOrCreateIdentifierNode(identifierValue, line, column);
 
                 case TokenType.LEFT_PAREN:
                     Consume(TokenType.LEFT_PAREN);

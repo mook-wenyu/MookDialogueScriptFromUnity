@@ -70,12 +70,11 @@ namespace MookDialogueScript
             {
                 NumberNode => true,
                 BooleanNode => true,
-                StringNode => true,
                 StringInterpolationExpressionNode stringInterp => 
-                    stringInterp.Parts.All(part => part is StringNode), // 仅包含字面量的字符串插值
-                BinaryExpressionNode binary => 
+                    stringInterp.Segments.All(part => part is TextNode), // 仅包含字面量的字符串插值
+                BinaryOpNode binary => 
                     IsImmutableExpression(binary.Left) && IsImmutableExpression(binary.Right),
-                UnaryExpressionNode unary => IsImmutableExpression(unary.Operand),
+                UnaryOpNode unary => IsImmutableExpression(unary.Operand),
                 _ => false
             };
         }
@@ -235,10 +234,10 @@ namespace MookDialogueScript
             {
                 NumberNode n => HashCode.Combine("Number", n.Value),
                 BooleanNode b => HashCode.Combine("Boolean", b.Value),
-                StringNode s => HashCode.Combine("String", s.Value),
-                BinaryExpressionNode bin => HashCode.Combine("Binary", bin.Operator, 
+                StringInterpolationExpressionNode s => HashCode.Combine("StringInterp", s.Segments.Count),
+                BinaryOpNode bin => HashCode.Combine("Binary", bin.Operator, 
                     GetExpressionHash(bin.Left), GetExpressionHash(bin.Right)),
-                UnaryExpressionNode un => HashCode.Combine("Unary", un.Operator, 
+                UnaryOpNode un => HashCode.Combine("Unary", un.Operator, 
                     GetExpressionHash(un.Operand)),
                 _ => node.GetHashCode()
             };
@@ -255,23 +254,30 @@ namespace MookDialogueScript
                     return new RuntimeValue(n.Value);
 
                 case StringInterpolationExpressionNode i:
-                    var result = new System.Text.StringBuilder();
-                    foreach (var segment in i.Segments)
+                    var sb = Helper.GetStringBuilder();
+                    try
                     {
-                        switch (segment)
+                        foreach (var segment in i.Segments)
                         {
-                            case TextNode t:
-                                result.Append(t.Text);
-                                break;
+                            switch (segment)
+                            {
+                                case TextNode t:
+                                    sb.Append(t.Text);
+                                    break;
 
-                            case InterpolationNode interpolation:
-                                // 简化插值表达式处理，只评估表达式
-                                var interpolationValue = await EvaluateExpression(interpolation.Expression);
-                                result.Append(interpolationValue.ToString());
-                                break;
+                                case InterpolationNode interpolation:
+                                    // 简化插值表达式处理，只评估表达式
+                                    var interpolationValue = await EvaluateExpression(interpolation.Expression);
+                                    sb.Append(interpolationValue.ToString());
+                                    break;
+                            }
                         }
+                        return new RuntimeValue(sb.ToString());
                     }
-                    return new RuntimeValue(result.ToString());
+                    finally
+                    {
+                        Helper.ReturnStringBuilder(sb);
+                    }
 
                 case BooleanNode b:
                     return new RuntimeValue(b.Value);
@@ -683,12 +689,8 @@ namespace MookDialogueScript
                     return string.Empty;
 
                 case CallCommandNode c:
-                    var args = new List<RuntimeValue>();
-                    foreach (var arg in c.Parameters)
-                    {
-                        args.Add(await EvaluateExpression(arg));
-                    }
-                    await _context.CallFunction(c.FunctionName, args);
+                    // 直接计算调用表达式，但不返回结果
+                    await EvaluateExpression(c.Call);
                     return string.Empty;
 
                 case WaitCommandNode w:
@@ -706,7 +708,8 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 统一调用可调用对象的方法
+        /// 调用可调用对象的方法（处理各种委托类型和可调用对象）
+        /// 注意：不再处理字符串函数名回退，该职责由ProcessFunctionCall负责
         /// </summary>
         /// <param name="callee">被调用对象</param>
         /// <param name="args">参数列表</param>
@@ -774,10 +777,6 @@ namespace MookDialogueScript
                         }
                         throw ExceptionFactory.CreateCallableNotSupportedException($"委托类型 {del.GetType().Name}", line, column);
 
-                    // 字符串类型（如果被当作函数名）
-                    case string funcName:
-                        return await _context.CallFunction(funcName, args, line, column);
-
                     default:
                         throw ExceptionFactory.CreateCallableNotSupportedException(callee?.GetType().Name ?? "null", line, column);
                 }
@@ -816,98 +815,76 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 处理函数调用逻辑（从 EvaluateCallExpression 中提取）
+        /// 处理函数调用逻辑，实现三层调用架构：
+        /// 1. 函数值优先：如果callee求值结果是Function类型，直接调用
+        /// 2. 对象可转Delegate：通过InvokeCallable处理各种委托类型
+        /// 3. 按名调用：仅对IdentifierNode进行函数名查找（兜底机制）
         /// </summary>
         private async Task<RuntimeValue> ProcessFunctionCall(CallExpressionNode call, List<RuntimeValue> args)
         {
-            switch (call.Callee)
+            // 第1层：统一求值callee表达式
+            var calleeValue = await EvaluateExpression(call.Callee);
+            
+            // 第2层：函数值优先 - 如果求值结果是函数值，直接调用
+            if (calleeValue.Type == RuntimeValue.ValueType.Function)
             {
-                case IdentifierNode identifier:
-                    // 简单的函数调用：identifier(args)
-                    // 优先检查是否为函数名
-                    if (_context.HasFunction(identifier.Name))
-                    {
-                        return await _context.CallFunction(identifier.Name, args, call.Line, call.Column);
-                    }
-                    
-                    // 检查是否为函数值变量
-                    var identifierValue = _context.GetVariable(identifier.Name);
-                    if (identifierValue.Type == RuntimeValue.ValueType.Function)
-                    {
-                        return await _context.CallFunctionValue(identifierValue, args, call.Line, call.Column);
-                    }
-                    
-                    // 使用统一异常系统
-                    var availableFunctions = _context.GetAllFunctionNames();
-                    throw ExceptionFactory.CreateFunctionNotFoundException(identifier.Name, availableFunctions, call.Line, call.Column);
-
-                case MemberAccessNode memberAccess:
-                    // 成员方法调用：obj.method(args)
-                    var targetValue = await EvaluateExpression(memberAccess.Target);
-
-                    // 检查是否为已注册对象的方法
-                    if (targetValue.Type == RuntimeValue.ValueType.Object &&
-                        _context.TryGetObjectName(targetValue.Value, out var objectName))
-                    {
-                        string functionKey = $"{objectName}.{memberAccess.MemberName}";
-                        if (_context.HasFunction(functionKey))
-                        {
-                            return await _context.CallFunction(functionKey, args, call.Line, call.Column);
-                        }
-                    }
-
-                    // 尝试获取成员作为函数值
-                    var memberValue = await EvaluateMemberAccess(memberAccess);
-                    
-                    // 显式检查 Null 值，提供更精确的错误信息
-                    if (memberValue.Type == RuntimeValue.ValueType.Null)
-                    {
-                        throw ExceptionFactory.CreateFunctionMemberNotBoundException(
-                            targetValue.Value?.GetType().Name ?? "unknown", 
-                            memberAccess.MemberName, 
-                            call.Line, 
-                            call.Column);
-                    }
-                    
-                    // 统一处理 MethodReference 类型
-                    if (memberValue.Type == RuntimeValue.ValueType.Object && memberValue.Value is MethodReference methodRef)
-                    {
-                        // 通过函数管理器调用方法引用
-                        return await _context.CallFunction(methodRef.FunctionKey, args, call.Line, call.Column);
-                    }
-                    else if (memberValue.Type == RuntimeValue.ValueType.Function)
-                    {
-                        return await _context.CallFunctionValue(memberValue, args, call.Line, call.Column);
-                    }
-                    
-                    // 回退到可调用对象处理
-                    return await InvokeCallable(memberValue.Value, args, call.Line, call.Column);
-
-                case VariableNode variable:
-                    // 变量可调用：$fn(args)
-                    var varValue = _context.GetVariable(variable.Name);
-                    
-                    // 优先检查是否为函数值
-                    if (varValue.Type == RuntimeValue.ValueType.Function)
-                    {
-                        return await _context.CallFunctionValue(varValue, args, call.Line, call.Column);
-                    }
-                    
-                    // 回退到原有的可调用对象处理
-                    return await InvokeCallable(varValue.Value, args, call.Line, call.Column);
-
+                return await _context.CallFunctionValue(calleeValue, args, call.Line, call.Column);
+            }
+            
+            // 第3层：IdentifierNode的按名调用兜底机制
+            if (call.Callee is IdentifierNode identifier)
+            {
+                // 检查是否为注册的函数名（兜底机制）
+                if (_context.HasFunction(identifier.Name))
+                {
+                    return await _context.CallFunction(identifier.Name, args, call.Line, call.Column);
+                }
+                
+                // 函数未找到，使用统一异常系统
+                var availableFunctions = _context.GetAllFunctionNames();
+                throw ExceptionFactory.CreateFunctionNotFoundException(identifier.Name, availableFunctions, call.Line, call.Column);
+            }
+            
+            // 第4层：对象可转Delegate - 处理所有其他情况（成员访问、变量、表达式结果等）
+            // 特殊处理MethodReference类型（注册对象的方法）
+            if (calleeValue.Type == RuntimeValue.ValueType.Object && calleeValue.Value is MethodReference methodRef)
+            {
+                // 通过函数管理器调用已注册的方法引用
+                return await _context.CallFunction(methodRef.FunctionKey, args, call.Line, call.Column);
+            }
+            
+            // 检查调用值是否为null或无效
+            if (calleeValue.Type == RuntimeValue.ValueType.Null || calleeValue.Value == null)
+            {
+                // 提供更精确的错误信息
+                string calleeDescription = FormatCalleeDescription(call.Callee);
+                throw ExceptionFactory.CreateCallableNotSupportedException(
+                    $"表达式 '{calleeDescription}' 的求值结果为null", 
+                    call.Line, 
+                    call.Column);
+            }
+            
+            // 通过InvokeCallable处理委托转换和其他可调用对象
+            return await InvokeCallable(calleeValue.Value, args, call.Line, call.Column);
+        }
+        
+        /// <summary>
+        /// 格式化callee表达式的描述文本（用于错误报告）
+        /// </summary>
+        private string FormatCalleeDescription(ExpressionNode callee)
+        {
+            switch (callee)
+            {
+                case IdentifierNode id:
+                    return id.Name;
+                case VariableNode var:
+                    return $"${var.Name}";
+                case MemberAccessNode member:
+                    return $"{FormatCalleeDescription(member.Target)}.{member.MemberName}";
+                case CallExpressionNode call:
+                    return $"{FormatCalleeDescription(call.Callee)}(...)";
                 default:
-                    // 其他类型的被调用者，先求值再调用
-                    var calleeValue = await EvaluateExpression(call.Callee);
-                    
-                    // 检查是否为函数值
-                    if (calleeValue.Type == RuntimeValue.ValueType.Function)
-                    {
-                        return await _context.CallFunctionValue(calleeValue, args, call.Line, call.Column);
-                    }
-                    
-                    // 回退到原有的可调用对象处理
-                    return await InvokeCallable(calleeValue.Value, args, call.Line, call.Column);
+                    return callee.GetType().Name;
             }
         }
 

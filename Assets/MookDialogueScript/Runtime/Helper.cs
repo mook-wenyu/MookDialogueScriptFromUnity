@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Text;
 using System.Threading.Tasks;
 using UnityEngine.Scripting;
 
@@ -79,6 +80,12 @@ namespace MookDialogueScript
         private static readonly Dictionary<(Type, Type), Func<object, object>> _conversionCache =
             new Dictionary<(Type, Type), Func<object, object>>();
 
+        // StringBuilder 对象池：高频字符串构建优化
+        private static readonly ConcurrentQueue<StringBuilder> _stringBuilderPool = new();
+        private const int MAX_STRINGBUILDER_POOL_SIZE = 20;
+        private const int MAX_STRINGBUILDER_CAPACITY = 8192;
+        private const int INITIAL_STRINGBUILDER_CAPACITY = 256;
+
         // 大小写不敏感的字符串比较器
         private static readonly StringComparer _stringComparer = StringComparer.OrdinalIgnoreCase;
         
@@ -125,6 +132,9 @@ namespace MookDialogueScript
             {
                 _compiledFunctions.Clear();
             }
+            
+            // 清理 StringBuilder 池
+            while (_stringBuilderPool.TryDequeue(out _)) { }
         }
 
         /// <summary>
@@ -142,6 +152,7 @@ namespace MookDialogueScript
                 ["BoundMethods"] = _boundMethodCache.Count,
                 ["Functions"] = _functionCache.Count,
                 ["CompiledFunctions"] = _compiledFunctions.Count,
+                ["StringBuilderPool"] = _stringBuilderPool.Count,
                 ["Conversions"] = _conversionCache.Count,
                 ["MemberHitRate"] = CalculateHitRate(_memberCacheHits, _memberCacheMisses),
                 ["MethodHitRate"] = CalculateHitRate(_methodCacheHits, _methodCacheMisses),
@@ -389,6 +400,59 @@ namespace MookDialogueScript
             
             return (memberMemory + methodMemory + functionMemory + conversionMemory) / 1024;
         }
+        #endregion
+
+        #region StringBuilder 对象池
+
+        /// <summary>
+        /// 从对象池获取 StringBuilder
+        /// </summary>
+        [Preserve]
+        public static StringBuilder GetStringBuilder()
+        {
+            if (_stringBuilderPool.TryDequeue(out var sb))
+            {
+                sb.Clear(); // 清空内容但保留容量
+                return sb;
+            }
+            
+            return new StringBuilder(INITIAL_STRINGBUILDER_CAPACITY);
+        }
+
+        /// <summary>
+        /// 归还 StringBuilder 到对象池
+        /// </summary>
+        [Preserve]
+        public static void ReturnStringBuilder(StringBuilder sb)
+        {
+            if (sb == null) return;
+            
+            // 只缓存容量合理的 StringBuilder，避免内存浪费
+            if (sb.Capacity <= MAX_STRINGBUILDER_CAPACITY && 
+                _stringBuilderPool.Count < MAX_STRINGBUILDER_POOL_SIZE)
+            {
+                _stringBuilderPool.Enqueue(sb);
+            }
+        }
+
+        /// <summary>
+        /// 使用 StringBuilder 池的便捷方法
+        /// </summary>
+        [Preserve]
+        public static string BuildString(Action<StringBuilder> buildAction)
+        {
+            var sb = GetStringBuilder();
+            try
+            {
+                buildAction(sb);
+                return sb.ToString();
+            }
+            finally
+            {
+                ReturnStringBuilder(sb);
+            }
+        }
+
         #endregion
 
         #region 高性能成员访问
@@ -1130,7 +1194,6 @@ namespace MookDialogueScript
                     for (int i = 0; i < Math.Min(args.Count, parameters.Length); i++)
                     {
                         var paramType = parameters[i].ParameterType;
-                        var arg = ConvertToNativeType(args[i]);
                         nativeArgs[i] = ConvertToNativeType(args[i], paramType);
                     }
 
@@ -1179,7 +1242,6 @@ namespace MookDialogueScript
                     for (int i = 0; i < Math.Min(args.Count, parameters.Length); i++)
                     {
                         var paramType = parameters[i].ParameterType;
-                        var arg = ConvertToNativeType(args[i]);
                         nativeArgs[i] = ConvertToNativeType(args[i], paramType);
                     }
 
@@ -1231,5 +1293,44 @@ namespace MookDialogueScript
 
         #endregion
 
+        #region 语义分析支持工具
+        
+        /// <summary>
+        /// 检查大小写不敏感的函数名匹配（用于语义分析）
+        /// </summary>
+        public static string FindCaseInsensitiveMatch(string target, IEnumerable<string> candidates)
+        {
+            return candidates.FirstOrDefault(c => 
+                string.Equals(c, target, StringComparison.OrdinalIgnoreCase) && 
+                !string.Equals(c, target, StringComparison.Ordinal));
+        }
+        
+        /// <summary>
+        /// 检查两个字符串是否只有大小写不同
+        /// </summary>
+        public static bool IsOnlyCaseDifferent(string str1, string str2)
+        {
+            return string.Equals(str1, str2, StringComparison.OrdinalIgnoreCase) && 
+                   !string.Equals(str1, str2, StringComparison.Ordinal);
+        }
+        
+        /// <summary>
+        /// 获取字符串相似度（0.0-1.0）
+        /// </summary>
+        public static double GetStringSimilarity(string source, string target)
+        {
+            if (string.IsNullOrEmpty(source) && string.IsNullOrEmpty(target))
+                return 1.0;
+                
+            if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(target))
+                return 0.0;
+                
+            var distance = Utils.LevenshteinDistance(source, target);
+            var maxLength = Math.Max(source.Length, target.Length);
+            
+            return 1.0 - (double)distance / maxLength;
+        }
+        
+        #endregion
     }
 }

@@ -515,55 +515,8 @@ namespace MookDialogueScript
         /// <returns>建议字符串，如果没有相似项则返回 null</returns>
         private static string GetSimilarNameSuggestion(string target, IEnumerable<string> candidates, int maxSuggestions = 3)
         {
-            if (string.IsNullOrEmpty(target) || candidates == null)
-                return null;
-
-            var similarities = candidates
-                .Select(c => new { Name = c, Distance = LevenshteinDistance(target.ToLower(), c.ToLower()) })
-                .Where(s => s.Distance <= Math.Max(2, target.Length / 2)) // 限制编辑距离
-                .OrderBy(s => s.Distance)
-                .ThenBy(s => s.Name)
-                .Take(maxSuggestions)
-                .Select(s => s.Name)
-                .ToList();
-
-            if (similarities.Any())
-            {
-                return $"你是否想要: {string.Join(", ", similarities)}";
-            }
-
-            return null;
+            return Utils.GenerateSuggestionMessage(target, candidates, maxSuggestions);
         }
 
-        /// <summary>
-        /// 计算两个字符串之间的Levenshtein编辑距离
-        /// </summary>
-        /// <param name="s1">字符串1</param>
-        /// <param name="s2">字符串2</param>
-        /// <returns>编辑距离</returns>
-        private static int LevenshteinDistance(string s1, string s2)
-        {
-            if (string.IsNullOrEmpty(s1)) return s2?.Length ?? 0;
-            if (string.IsNullOrEmpty(s2)) return s1.Length;
-
-            int[,] d = new int[s1.Length + 1, s2.Length + 1];
-
-            for (int i = 0; i <= s1.Length; i++)
-                d[i, 0] = i;
-
-            for (int j = 0; j <= s2.Length; j++)
-                d[0, j] = j;
-
-            for (int i = 1; i <= s1.Length; i++)
-            {
-                for (int j = 1; j <= s2.Length; j++)
-                {
-                    int cost = s1[i - 1] == s2[j - 1] ? 0 : 1;
-                    d[i, j] = Math.Min(Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1), d[i - 1, j - 1] + cost);
-                }
-            }
-
-            return d[s1.Length, s2.Length];
-        }
     }
 }

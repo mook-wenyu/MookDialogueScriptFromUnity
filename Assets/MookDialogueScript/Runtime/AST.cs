@@ -387,37 +387,24 @@ namespace MookDialogueScript
     }
 
     /// <summary>
-    /// 调用命令节点
+    /// 调用命令节点 - 统一通过表达式驱动
     /// </summary>
     public class CallCommandNode : CommandNode
     {
         /// <summary>
-        /// 函数名称
+        /// 调用表达式
         /// </summary>
-        public string FunctionName { get; }
+        public ExpressionNode Call { get; }
 
-        /// <summary>
-        /// 参数列表
-        /// </summary>
-        public List<ExpressionNode> Parameters { get; }
-
-        public CallCommandNode(string functionName, List<ExpressionNode> parameters, int line, int column)
+        public CallCommandNode(ExpressionNode call, int line, int column)
             : base(line, column)
         {
-            FunctionName = functionName;
-            Parameters = parameters;
+            Call = call ?? throw new ArgumentNullException(nameof(call));
         }
 
         public override string ToString()
         {
-            StringBuilder sb = new StringBuilder();
-            sb.Append($"调用命令节点: {FunctionName}(");
-            if (Parameters is {Count: > 0})
-            {
-                sb.Append(string.Join(", ", Parameters));
-            }
-            sb.Append(")");
-            return sb.ToString();
+            return $"调用命令节点: {Call}";
         }
     }
 

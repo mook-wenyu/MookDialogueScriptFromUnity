@@ -28,9 +28,9 @@ namespace MookDialogueScript
     }
 
     /// <summary>
-    /// 类型信息
+    /// 类型信息 - 使用类避免循环引用问题
     /// </summary>
-    public class TypeInfo
+    public class TypeInfo : IEquatable<TypeInfo>
     {
         /// <summary>
         /// 类型类别
@@ -57,7 +57,7 @@ namespace MookDialogueScript
         /// </summary>
         public TypeInfo ValueType { get; }
 
-        private TypeInfo(TypeKind kind, Type clrType = null, TypeInfo elementType = null, TypeInfo keyType = null, TypeInfo valueType = null)
+        private TypeInfo(TypeKind kind, Type clrType = null, TypeInfo elementType = default, TypeInfo keyType = default, TypeInfo valueType = default)
         {
             Kind = kind;
             ClrType = clrType;
@@ -66,18 +66,58 @@ namespace MookDialogueScript
             ValueType = valueType;
         }
 
-        // 静态工厂方法
-        public static TypeInfo Number => new TypeInfo(TypeKind.Number, typeof(double));
-        public static TypeInfo String => new TypeInfo(TypeKind.String, typeof(string));
-        public static TypeInfo Boolean => new TypeInfo(TypeKind.Boolean, typeof(bool));
-        public static TypeInfo Null => new TypeInfo(TypeKind.Null);
-        public static TypeInfo Function => new TypeInfo(TypeKind.Function);
-        public static TypeInfo Any => new TypeInfo(TypeKind.Any);
-        public static TypeInfo Error => new TypeInfo(TypeKind.Error);
+        // 预定义的单例类型（静态只读字段）
+        public static readonly TypeInfo Number = new TypeInfo(TypeKind.Number, typeof(double));
+        public static readonly TypeInfo String = new TypeInfo(TypeKind.String, typeof(string));
+        public static readonly TypeInfo Boolean = new TypeInfo(TypeKind.Boolean, typeof(bool));
+        public static readonly TypeInfo Null = new TypeInfo(TypeKind.Null);
+        public static readonly TypeInfo Function = new TypeInfo(TypeKind.Function);
+        public static readonly TypeInfo Any = new TypeInfo(TypeKind.Any);
+        public static readonly TypeInfo Error = new TypeInfo(TypeKind.Error);
         
+        // 复合类型的工厂方法
         public static TypeInfo Object(Type clrType) => new TypeInfo(TypeKind.Object, clrType);
         public static TypeInfo Array(TypeInfo elementType) => new TypeInfo(TypeKind.Array, elementType: elementType);
         public static TypeInfo Dictionary(TypeInfo keyType, TypeInfo valueType) => new TypeInfo(TypeKind.Dictionary, keyType: keyType, valueType: valueType);
+
+        /// <summary>
+        /// 值语义判等：比较所有字段是否相等
+        /// </summary>
+        public bool Equals(TypeInfo other)
+        {
+            if (other == null) return false;
+            
+            return Kind == other.Kind &&
+                   ClrType == other.ClrType &&
+                   (ElementType?.Equals(other.ElementType) ?? other.ElementType == null) &&
+                   (KeyType?.Equals(other.KeyType) ?? other.KeyType == null) &&
+                   (ValueType?.Equals(other.ValueType) ?? other.ValueType == null);
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is TypeInfo other && Equals(other);
+        }
+
+        /// <summary>
+        /// 与 Equals 一致的哈希值计算
+        /// </summary>
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = 17;
+                hash = hash * 31 + Kind.GetHashCode();
+                hash = hash * 31 + (ClrType?.GetHashCode() ?? 0);
+                hash = hash * 31 + ElementType.GetHashCode();
+                hash = hash * 31 + KeyType.GetHashCode();
+                hash = hash * 31 + ValueType.GetHashCode();
+                return hash;
+            }
+        }
+
+        public static bool operator ==(TypeInfo left, TypeInfo right) => left.Equals(right);
+        public static bool operator !=(TypeInfo left, TypeInfo right) => !left.Equals(right);
 
         public override string ToString()
         {
@@ -276,7 +316,7 @@ namespace MookDialogueScript
             
             if (targetType.Kind == TypeKind.Object && targetType.ClrType != null)
             {
-                var memberInfo = GetMemberInfo(targetType.ClrType, node.MemberName);
+                var memberInfo = ResolveMember(targetType.ClrType, node.MemberName);
                 if (memberInfo != null)
                 {
                     return FromClrType(memberInfo.MemberType);
@@ -310,39 +350,39 @@ namespace MookDialogueScript
             }
         }
 
-        private static MemberInfo GetMemberInfo(Type type, string memberName)
+        public static ResolvedMemberInfo ResolveMember(Type type, string memberName)
         {
             const BindingFlags flags = BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.IgnoreCase;
             
             // 查找属性
             var property = type.GetProperty(memberName, flags);
             if (property != null)
-                return new MemberInfo(property.PropertyType, MemberKind.Property, property.CanWrite);
+                return new ResolvedMemberInfo(property.PropertyType, MemberKind.Property, property.CanWrite);
 
             // 查找字段
             var field = type.GetField(memberName, flags);
             if (field != null)
-                return new MemberInfo(field.FieldType, MemberKind.Field, !field.IsInitOnly);
+                return new ResolvedMemberInfo(field.FieldType, MemberKind.Field, !field.IsInitOnly);
 
             // 查找方法
             var methods = type.GetMethods(flags).Where(m => string.Equals(m.Name, memberName, StringComparison.OrdinalIgnoreCase)).ToArray();
             if (methods.Length > 0)
-                return new MemberInfo(typeof(Delegate), MemberKind.Method, false);
+                return new ResolvedMemberInfo(typeof(Delegate), MemberKind.Method, false);
 
             return null;
         }
     }
 
     /// <summary>
-    /// 成员信息
+    /// 已解析的成员信息
     /// </summary>
-    public class MemberInfo
+    public class ResolvedMemberInfo
     {
         public Type MemberType { get; }
         public MemberKind Kind { get; }
         public bool CanWrite { get; }
 
-        public MemberInfo(Type memberType, MemberKind kind, bool canWrite)
+        public ResolvedMemberInfo(Type memberType, MemberKind kind, bool canWrite)
         {
             MemberType = memberType;
             Kind = kind;
@@ -413,14 +453,14 @@ namespace MookDialogueScript
             if (_variables.TryGetValue(name, out var type))
                 return type;
             
-            return _parent?.GetVariableType(name) ?? TypeInfo.Error;
+            return _parent?.GetVariableType(name) ?? TypeInfo.Any;
         }
 
         public TypeInfo GetIdentifierType(string name)
         {
             // 先查找变量
             var varType = GetVariableType(name);
-            if (varType.Kind != TypeKind.Error)
+            if (varType.Kind != TypeKind.Error && varType.Kind != TypeKind.Any)
                 return varType;
 
             // 再查找函数
@@ -428,7 +468,7 @@ namespace MookDialogueScript
             if (funcInfo != null)
                 return TypeInfo.Function;
 
-            return TypeInfo.Error;
+            return TypeInfo.Any;
         }
 
         public FunctionInfo GetFunctionInfo(string name)
@@ -515,7 +555,7 @@ namespace MookDialogueScript
             // 从 FunctionManager 获取内置函数
             if (_functionManager != null)
             {
-                var functionNames = _functionManager.GetAllFunctionNames();
+                var functionNames = _functionManager.GetFunctionNames();
                 foreach (var name in functionNames)
                 {
                     var functionInfo = CreateFunctionInfoFromManager(name);
@@ -553,44 +593,9 @@ namespace MookDialogueScript
         /// </summary>
         public string GetSimilarNodeName(string nodeName)
         {
-            return _nodeNames.Keys
-                .Where(name => LevenshteinDistance(name.ToLower(), nodeName.ToLower()) <= 2)
-                .OrderBy(name => LevenshteinDistance(name.ToLower(), nodeName.ToLower()))
-                .FirstOrDefault();
+            return Utils.GetMostSimilarString(nodeName, _nodeNames.Keys);
         }
 
-        /// <summary>
-        /// 计算编辑距离（用于相似名称建议）
-        /// </summary>
-        private static int LevenshteinDistance(string source, string target)
-        {
-            if (string.IsNullOrEmpty(source))
-                return string.IsNullOrEmpty(target) ? 0 : target.Length;
-
-            if (string.IsNullOrEmpty(target))
-                return source.Length;
-
-            var matrix = new int[source.Length + 1, target.Length + 1];
-
-            for (int i = 0; i <= source.Length; i++)
-                matrix[i, 0] = i;
-
-            for (int j = 0; j <= target.Length; j++)
-                matrix[0, j] = j;
-
-            for (int i = 1; i <= source.Length; i++)
-            {
-                for (int j = 1; j <= target.Length; j++)
-                {
-                    int cost = (target[j - 1] == source[i - 1]) ? 0 : 1;
-                    matrix[i, j] = Math.Min(
-                        Math.Min(matrix[i - 1, j] + 1, matrix[i, j - 1] + 1),
-                        matrix[i - 1, j - 1] + cost);
-                }
-            }
-
-            return matrix[source.Length, target.Length];
-        }
 
         /// <summary>
         /// 获取所有节点名
@@ -853,6 +858,12 @@ namespace MookDialogueScript
         /// 获取相似节点名建议
         /// </summary>
         string GetSimilarNodeName(string nodeName);
+        
+        /// <summary>
+        /// 获取所有节点名（可选，用于大小写一致性检查等）
+        /// </summary>
+        /// <returns>所有节点名的枚举，如果不支持则返回null</returns>
+        IEnumerable<string> GetAllNodeNames();
     }
 
     /// <summary>
@@ -873,6 +884,7 @@ namespace MookDialogueScript
         public const string SEM012 = "SEM012"; // 函数名大小写不一致
         public const string SEM013 = "SEM013"; // 参数计数不匹配
         public const string SEM014 = "SEM014"; // 参数类型不兼容
+        public const string SEM016 = "SEM016"; // 不支持重载
 
         // 成员访问相关错误
         public const string SEM020 = "SEM020"; // 成员不存在
@@ -904,16 +916,18 @@ namespace MookDialogueScript
     {
         private readonly AnalysisOptions _options;
         private readonly IGlobalNodeProvider _nodeProvider;
+        private readonly FunctionManager _functionManager;
         private SemanticReport _report;
         
         // 缓存机制
         private readonly Dictionary<int, SemanticReport> _reportCache = new();
         private int _lastManagersHashCode = 0;
         
-        public SemanticAnalyzer(AnalysisOptions options = null, IGlobalNodeProvider nodeProvider = null)
+        public SemanticAnalyzer(AnalysisOptions options = null, IGlobalNodeProvider nodeProvider = null, FunctionManager functionManager = null)
         {
             _options = options ?? new AnalysisOptions();
             _nodeProvider = nodeProvider;
+            _functionManager = functionManager;
         }
 
         /// <summary>
@@ -1392,25 +1406,55 @@ namespace MookDialogueScript
                 return;
             }
 
-            // 检查目标节点是否存在
-            if (!scopeManager.GlobalScope.NodeExists(targetNode))
+            // 使用统一的节点提供者检查目标节点是否存在
+            bool nodeExists;
+            string suggestion = null;
+            
+            if (_nodeProvider != null)
             {
-                var suggestion = scopeManager.GlobalScope.GetSimilarNodeName(targetNode);
+                // 优先使用外部节点提供者
+                nodeExists = _nodeProvider.NodeExists(targetNode);
+                if (!nodeExists)
+                {
+                    suggestion = _nodeProvider.GetSimilarNodeName(targetNode);
+                }
+            }
+            else
+            {
+                // 回退到全局符号表
+                nodeExists = scopeManager.GlobalScope.NodeExists(targetNode);
+                if (!nodeExists)
+                {
+                    suggestion = scopeManager.GlobalScope.GetSimilarNodeName(targetNode);
+                }
+            }
+            
+            if (!nodeExists)
+            {
                 var suggestionText = suggestion != null ? $"，你是否想要跳转到 '{suggestion}'?" : "";
                 _report.AddError("SEM060", $"跳转目标节点 '{targetNode}' 不存在{suggestionText}", jumpCmd.Line, jumpCmd.Column, suggestion);
                 return;
             }
 
-            // 检查大小写一致性
-            var actualNodeName = scopeManager.GlobalScope.GetAllNodeNames()
-                .FirstOrDefault(name => string.Equals(name, targetNode, StringComparison.OrdinalIgnoreCase));
-            
-            if (actualNodeName != null && !string.Equals(actualNodeName, targetNode, StringComparison.Ordinal))
+            // 检查大小写一致性（使用外部提供者或全局符号表）
+            string actualNodeName = null;
+            if (_nodeProvider != null)
             {
-                if (_options.CaseInconsistencyAsWarning)
+                // 外部节点提供者不一定提供所有节点名列表，跳过大小写检查
+                // 或者可以扩展IGlobalNodeProvider接口来支持获取所有节点名
+            }
+            else
+            {
+                actualNodeName = scopeManager.GlobalScope.GetAllNodeNames()
+                    .FirstOrDefault(name => string.Equals(name, targetNode, StringComparison.OrdinalIgnoreCase));
+                
+                if (actualNodeName != null && !string.Equals(actualNodeName, targetNode, StringComparison.Ordinal))
                 {
-                    _report.AddWarning("SEM061", $"跳转目标 '{targetNode}' 与实际节点名 '{actualNodeName}' 大小写不一致", 
-                        jumpCmd.Line, jumpCmd.Column, $"使用 '{actualNodeName}'");
+                    if (_options.CaseInconsistencyAsWarning)
+                    {
+                        _report.AddWarning("SEM061", $"跳转目标 '{targetNode}' 与实际节点名 '{actualNodeName}' 大小写不一致", 
+                            jumpCmd.Line, jumpCmd.Column, $"使用 '{actualNodeName}'");
+                    }
                 }
             }
 
@@ -1426,19 +1470,8 @@ namespace MookDialogueScript
         /// </summary>
         private void AnalyzeCallCommand(CallCommandNode callCmd, ScopeManager scopeManager)
         {
-            // 验证函数是否存在
-            if (!scopeManager.GlobalScope.IsDefined(callCmd.FunctionName))
-            {
-                var suggestion = GetSimilarFunctionName(callCmd.FunctionName, scopeManager.CurrentScope);
-                var suggestionText = suggestion != null ? $"，你是否想要调用 '{suggestion}'?" : "";
-                _report.AddError("SEM010", $"未定义的函数 '{callCmd.FunctionName}'{suggestionText}", callCmd.Line, callCmd.Column, suggestion);
-            }
-
-            // 验证参数表达式
-            foreach (var param in callCmd.Parameters)
-            {
-                ValidateExpression(param, scopeManager);
-            }
+            // 验证调用表达式
+            ValidateExpression(callCmd.Call, scopeManager);
         }
 
         /// <summary>
@@ -1726,7 +1759,7 @@ namespace MookDialogueScript
             }
             else if (node.Callee is MemberAccessNode memberAccessNode)
             {
-                // 成员函数调用 - 新增支持
+                // 成员函数调用
                 return ValidateMemberFunctionCall(memberAccessNode, node, argumentTypes, symbolTable);
             }
             else if (calleeType.Kind == TypeKind.Object && calleeType.ClrType != null && typeof(Delegate).IsAssignableFrom(calleeType.ClrType))
@@ -1734,14 +1767,23 @@ namespace MookDialogueScript
                 // Delegate 对象调用
                 return ValidateDelegateCall(node, calleeType, argumentTypes);
             }
+            else if (calleeType.Kind == TypeKind.Any)
+            {
+                // 目标为 Any 时，按配置发出 Warning，但继续分析
+                if (_options.UnknownTypeOperationSeverity == DiagnosticSeverity.Warning)
+                {
+                    _report.AddWarning("SEM010", $"调用未知类型 '{calleeType}' 的值，可能导致运行时错误", 
+                        node.Line, node.Column, "检查表达式的类型是否正确");
+                }
+                return TypeInfo.Any;
+            }
             else
             {
-                // 使用统一错误码
-                _report.AddError(ErrorCode.CALLABLE_NOT_SUPPORTED.ToString(), 
-                    $"无法调用类型 {calleeType} 的值", 
-                    node.Line, node.Column, 
-                    "确保对象是函数、委托或具有 Invoke 方法的类型");
-                return TypeInfo.Error;
+                // 不可调用类型
+                var actualType = calleeType.ToString();
+                _report.AddError("SEM010", $"类型 '{actualType}' 不支持调用操作", 
+                    node.Line, node.Column, "确保对象是函数、委托或具有 Invoke 方法的类型");
+                return TypeInfo.Any; // 返回 Any 而非 Error，允许继续分析
             }
         }
 
@@ -1766,23 +1808,46 @@ namespace MookDialogueScript
         /// </summary>
         private TypeInfo ValidateNamedFunctionCall(string functionName, CallExpressionNode node, List<TypeInfo> argumentTypes, ISymbolTable symbolTable)
         {
+            // 优先使用 FunctionManager 的签名进行严格校验
+            if (_functionManager != null)
+            {
+                try
+                {
+                    var signature = _functionManager.GetFunctionSignature(functionName, node.Line, node.Column);
+                    if (signature != null)
+                    {
+                        return ValidateParametersWithSignature(signature, argumentTypes, node);
+                    }
+                }
+                catch (SemanticException ex) when (ex.Message.Contains("SEM016"))
+                {
+                    // 重载冲突错误直接转发
+                    _report.AddError("SEM016", ex.Message.Split(':')[1].Trim(), node.Line, node.Column, 
+                        "请改用唯一签名的方法或通过包装统一到一个委托");
+                    return TypeInfo.Any;
+                }
+            }
+
+            // 回退到符号表查找
             var functionInfo = symbolTable.GetFunctionInfo(functionName);
             if (functionInfo == null)
             {
-                // 使用ExceptionFactory的逻辑来获取建议
-                var suggestion = GetSimilarFunctionName(functionName, symbolTable);
-                
-                string suggestionText = null;
-                if (suggestion != null)
+                // 检查是否有大小写不一致的匹配
+                var caseInsensitiveMatch = Utils.FindCaseInsensitiveMatch(functionName, GetAvailableFunctionNames(symbolTable));
+                if (caseInsensitiveMatch != null)
                 {
-                    suggestionText = $"你是否想要: {suggestion}";
+                    _report.AddError("SEM012", $"未找到函数 '{functionName}'，但找到大小写不一致的 '{caseInsensitiveMatch}'", 
+                        node.Line, node.Column, $"使用 '{caseInsensitiveMatch}'");
+                    return TypeInfo.Any;
                 }
                 
-                _report.AddError(ErrorCode.SA_FUNC_NOT_FOUND.ToString(), 
-                    $"语义分析：未找到函数 '{functionName}'", 
-                    node.Line, node.Column, 
-                    suggestionText);
-                return TypeInfo.Error;
+                // 使用Utils获取相似名称建议
+                var suggestion = Utils.GetMostSimilarString(functionName, GetAvailableFunctionNames(symbolTable));
+                var suggestionText = suggestion != null ? $"，你是否想要调用 '{suggestion}'?" : "";
+                
+                _report.AddError("SEM011", $"未定义的函数 '{functionName}'{suggestionText}", 
+                    node.Line, node.Column, suggestion);
+                return TypeInfo.Any; // 返回 Any 而非 Error，允许继续分析
             }
 
             // 检查大小写一致性
@@ -1792,13 +1857,10 @@ namespace MookDialogueScript
                     node.Line, node.Column, $"使用 '{functionInfo.Name}'");
             }
 
-            // 检查参数数量
-            ValidateFunctionArguments(functionInfo, node.Arguments, node);
-            
-            // 检查参数类型（如果有详细类型信息）
-            ValidateArgumentTypes(functionInfo, argumentTypes, node);
+            // 检查参数数量和类型
+            ValidateFunctionArguments(functionInfo, argumentTypes, node);
 
-            return functionInfo.ReturnType;
+            return functionInfo.ReturnType ?? TypeInfo.Any;
         }
 
         /// <summary>
@@ -1826,14 +1888,14 @@ namespace MookDialogueScript
 
             if (targetType.Kind == TypeKind.Object && targetType.ClrType != null)
             {
-                var memberInfo = GetMemberInfo(targetType.ClrType, memberAccess.MemberName);
+                var memberInfo = TypeInference.ResolveMember(targetType.ClrType, memberAccess.MemberName);
                 
                 if (memberInfo == null)
                 {
                     var suggestion = GetSimilarMemberName(targetType.ClrType, memberAccess.MemberName);
                     string suggestionText = suggestion != null ? $"你是否想要: {suggestion}" : null;
                     
-                    _report.AddError(ErrorCode.SA_MEMBER_UNKNOWN.ToString(),
+                    _report.AddError("SEM020",
                         $"类型 {targetType.ClrType.Name} 不包含成员 '{memberAccess.MemberName}'",
                         node.Line, node.Column,
                         suggestionText);
@@ -1841,19 +1903,25 @@ namespace MookDialogueScript
                 }
 
                 // 检查成员是否可调用
-                if (memberInfo.Type == MemberAccessor.AccessorType.Method)
+                if (memberInfo.Kind == MemberKind.Method)
                 {
                     // 方法调用 - 可以进行基本的参数数量检查
-                    if (memberInfo.Method != null)
+                    // 重新获取方法信息
+                    var methods = targetType.ClrType.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.IgnoreCase)
+                        .Where(m => string.Equals(m.Name, memberAccess.MemberName, StringComparison.OrdinalIgnoreCase))
+                        .ToArray();
+                    
+                    if (methods.Length > 0)
                     {
-                        var parameters = memberInfo.Method.GetParameters();
+                        var method = methods[0]; // 使用第一个重载
+                        var parameters = method.GetParameters();
                         int expectedArgCount = parameters.Length;
                         int actualArgCount = argumentTypes.Count;
                         int minRequiredArgs = parameters.Count(p => !p.HasDefaultValue);
 
                         if (actualArgCount < minRequiredArgs)
                         {
-                            _report.AddError(ErrorCode.ARG_MISMATCH.ToString(),
+                            _report.AddError("SEM013",
                                 $"参数数量不匹配：期望至少 {minRequiredArgs} 个，实际 {actualArgCount} 个",
                                 node.Line, node.Column,
                                 "检查函数调用的参数数量是否正确");
@@ -1866,7 +1934,7 @@ namespace MookDialogueScript
                         
                         if (!hasParamsParameter && actualArgCount > expectedArgCount)
                         {
-                            _report.AddError(ErrorCode.ARG_MISMATCH.ToString(),
+                            _report.AddError("SEM013",
                                 $"参数数量不匹配：期望最多 {expectedArgCount} 个，实际 {actualArgCount} 个",
                                 node.Line, node.Column,
                                 "检查函数调用的参数数量是否正确");
@@ -1874,20 +1942,20 @@ namespace MookDialogueScript
                         }
 
                         // 返回方法的返回类型
-                        return TypeInference.FromClrType(memberInfo.Method.ReturnType);
+                        return TypeInference.FromClrType(method.ReturnType);
                     }
                 }
-                else if (memberInfo.Type == MemberAccessor.AccessorType.Property)
+                else if (memberInfo.Kind == MemberKind.Property)
                 {
                     // 属性访问，检查类型是否可调用
-                    var propertyType = GetMemberType(memberInfo);
+                    var propertyType = memberInfo.MemberType;
                     var propertyTypeInfo = TypeInference.FromClrType(propertyType);
                     
                     if (propertyTypeInfo.Kind == TypeKind.Function || 
                         (propertyTypeInfo.Kind == TypeKind.Object && typeof(Delegate).IsAssignableFrom(propertyType)))
                     {
                         // 可调用的属性，发出未验证警告
-                        _report.AddWarning(ErrorCode.SA_CALL_UNVERIFIED.ToString(),
+                        _report.AddWarning("SEM010",
                             $"成员 '{memberAccess.MemberName}' 可能可调用但无法确认参数签名",
                             node.Line, node.Column,
                             "运行时验证");
@@ -1895,24 +1963,24 @@ namespace MookDialogueScript
                     }
                     else
                     {
-                        _report.AddError(ErrorCode.CALLABLE_NOT_SUPPORTED.ToString(),
+                        _report.AddError("SEM010",
                             $"属性 '{memberAccess.MemberName}' 类型 '{propertyTypeInfo}' 不支持调用操作",
                             node.Line, node.Column,
                             "确保成员是方法、函数或委托类型");
                         return TypeInfo.Error;
                     }
                 }
-                else if (memberInfo.Type == MemberAccessor.AccessorType.Field)
+                else if (memberInfo.Kind == MemberKind.Field)
                 {
                     // 字段访问，检查类型是否可调用
-                    var fieldType = GetMemberType(memberInfo);
+                    var fieldType = memberInfo.MemberType;
                     var fieldTypeInfo = TypeInference.FromClrType(fieldType);
                     
                     if (fieldTypeInfo.Kind == TypeKind.Function || 
                         (fieldTypeInfo.Kind == TypeKind.Object && typeof(Delegate).IsAssignableFrom(fieldType)))
                     {
                         // 可调用的字段，发出未验证警告
-                        _report.AddWarning(ErrorCode.SA_CALL_UNVERIFIED.ToString(),
+                        _report.AddWarning("SEM010",
                             $"字段 '{memberAccess.MemberName}' 可能可调用但无法确认参数签名",
                             node.Line, node.Column,
                             "运行时验证");
@@ -1920,7 +1988,7 @@ namespace MookDialogueScript
                     }
                     else
                     {
-                        _report.AddError(ErrorCode.CALLABLE_NOT_SUPPORTED.ToString(),
+                        _report.AddError("SEM010",
                             $"字段 '{memberAccess.MemberName}' 类型 '{fieldTypeInfo}' 不支持调用操作",
                             node.Line, node.Column,
                             "确保成员是方法、函数或委托类型");
@@ -1931,7 +1999,7 @@ namespace MookDialogueScript
             else if (targetType.Kind == TypeKind.Any)
             {
                 // 未知目标类型，发出未验证警告
-                _report.AddWarning(ErrorCode.SA_CALL_UNVERIFIED.ToString(),
+                _report.AddWarning("SEM010",
                     $"成员函数调用未验证：目标类型未知",
                     node.Line, node.Column,
                     "运行时验证");
@@ -1939,14 +2007,14 @@ namespace MookDialogueScript
             }
             else
             {
-                _report.AddError(ErrorCode.SA_MEMBER_UNKNOWN.ToString(),
+                _report.AddError("SEM020",
                     $"无法访问类型 {targetType} 的成员",
                     node.Line, node.Column);
                 return TypeInfo.Error;
             }
 
             // 默认情况：无法确定但不阻断执行
-            _report.AddWarning(ErrorCode.SA_CALL_UNVERIFIED.ToString(),
+            _report.AddWarning("SEM010",
                 $"成员函数调用未验证",
                 node.Line, node.Column,
                 "运行时验证");
@@ -2010,7 +2078,7 @@ namespace MookDialogueScript
 
             if (targetType.Kind == TypeKind.Object && targetType.ClrType != null)
             {
-                var memberInfo = GetMemberInfo(targetType.ClrType, node.MemberName);
+                var memberInfo = TypeInference.ResolveMember(targetType.ClrType, node.MemberName);
                 if (memberInfo == null)
                 {
                     var suggestion = GetSimilarMemberName(targetType.ClrType, node.MemberName);
@@ -2020,30 +2088,13 @@ namespace MookDialogueScript
                     return TypeInfo.Error;
                 }
 
-                // 检查大小写一致性（如果 Helper 返回的访问器有名称信息）
-                if (memberInfo != null && !string.IsNullOrEmpty(memberInfo.Name) && 
-                    !string.Equals(memberInfo.Name, node.MemberName, StringComparison.Ordinal) && 
-                    _options.CaseInconsistencyAsWarning)
-                {
-                    _report.AddWarning("SEM021", $"成员名 '{node.MemberName}' 与实际定义 '{memberInfo.Name}' 大小写不一致", 
-                        node.Line, node.Column, $"使用 '{memberInfo.Name}'");
-                }
-
-                // 根据成员类型返回相应的类型信息
-                switch (memberInfo.Type)
-                {
-                    case MemberAccessor.AccessorType.Method:
-                        return TypeInfo.Function;
-                    case MemberAccessor.AccessorType.Property:
-                    case MemberAccessor.AccessorType.Field:
-                        return TypeInference.FromClrType(GetMemberType(memberInfo));
-                    default:
-                        return TypeInfo.Any;
-                }
+                // 返回成员类型信息
+                return TypeInference.FromClrType(memberInfo.MemberType);
             }
 
-            _report.AddError("SEM020", $"无法访问类型 {targetType} 的成员", node.Line, node.Column);
-            return TypeInfo.Error;
+            // 对于未知类型，发出警告但返回 Any 继续分析
+            AddUnknownTypeWarning("成员访问", targetType, node);
+            return TypeInfo.Any;
         }
 
         /// <summary>
@@ -2215,24 +2266,24 @@ namespace MookDialogueScript
         /// <summary>
         /// 获取成员信息的备用实现（如果Helper方法不可用）
         /// </summary>
-        private MemberInfo GetMemberInfoFallback(Type type, string memberName)
+        private ResolvedMemberInfo ResolveMemberFallback(Type type, string memberName)
         {
             const BindingFlags flags = BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.IgnoreCase;
             
             // 查找属性
             var property = type.GetProperty(memberName, flags);
             if (property != null)
-                return new MemberInfo(property.PropertyType, MemberKind.Property, property.CanWrite);
+                return new ResolvedMemberInfo(property.PropertyType, MemberKind.Property, property.CanWrite);
 
             // 查找字段
             var field = type.GetField(memberName, flags);
             if (field != null)
-                return new MemberInfo(field.FieldType, MemberKind.Field, !field.IsInitOnly);
+                return new ResolvedMemberInfo(field.FieldType, MemberKind.Field, !field.IsInitOnly);
 
             // 查找方法
             var methods = type.GetMethods(flags).Where(m => string.Equals(m.Name, memberName, StringComparison.OrdinalIgnoreCase)).ToArray();
             if (methods.Length > 0)
-                return new MemberInfo(typeof(Delegate), MemberKind.Method, false);
+                return new ResolvedMemberInfo(typeof(Delegate), MemberKind.Method, false);
 
             return null;
         }
@@ -2349,52 +2400,172 @@ namespace MookDialogueScript
         /// </summary>
         private string GetSimilarName(string target, IEnumerable<string> candidates)
         {
-            if (string.IsNullOrEmpty(target) || candidates == null)
-                return null;
-
-            var similarities = candidates
-                .Select(c => new { Name = c, Distance = LevenshteinDistance(target.ToLower(), c.ToLower()) })
-                .Where(s => s.Distance <= Math.Max(2, target.Length / 2)) // 限制编辑距离
-                .OrderBy(s => s.Distance)
-                .ThenBy(s => s.Name)
-                .Take(1)
-                .Select(s => s.Name)
-                .FirstOrDefault();
-
-            return similarities;
+            return Utils.GetMostSimilarString(target, candidates);
         }
 
         /// <summary>
-        /// 计算编辑距离
+        /// 获取可用的函数名列表
         /// </summary>
-        private static int LevenshteinDistance(string source, string target)
+        private IEnumerable<string> GetAvailableFunctionNames(ISymbolTable symbolTable)
         {
-            if (string.IsNullOrEmpty(source))
-                return string.IsNullOrEmpty(target) ? 0 : target.Length;
-
-            if (string.IsNullOrEmpty(target))
-                return source.Length;
-
-            var matrix = new int[source.Length + 1, target.Length + 1];
-
-            for (int i = 0; i <= source.Length; i++)
-                matrix[i, 0] = i;
-
-            for (int j = 0; j <= target.Length; j++)
-                matrix[0, j] = j;
-
-            for (int i = 1; i <= source.Length; i++)
+            if (symbolTable is GlobalSymbolTable globalTable)
             {
-                for (int j = 1; j <= target.Length; j++)
+                return globalTable.GetLocalFunctionNames();
+            }
+            return Enumerable.Empty<string>();
+        }
+
+        /// <summary>
+        /// 验证函数参数（数量和类型）
+        /// </summary>
+        private void ValidateFunctionArguments(FunctionInfo functionInfo, List<TypeInfo> argumentTypes, CallExpressionNode node)
+        {
+            // 检查参数数量
+            var expectedMin = functionInfo.MinParameters;
+            var expectedMax = functionInfo.MaxParameters;
+            var actualCount = argumentTypes.Count;
+
+            if (actualCount < expectedMin)
+            {
+                _report.AddError("SEM013", $"参数数量不足：期望至少 {expectedMin} 个参数，实际提供 {actualCount} 个", 
+                    node.Line, node.Column, $"请检查函数 '{functionInfo.Name}' 的参数定义");
+                return;
+            }
+
+            if (expectedMax != int.MaxValue && actualCount > expectedMax)
+            {
+                _report.AddError("SEM013", $"参数数量过多：期望至多 {expectedMax} 个参数，实际提供 {actualCount} 个", 
+                    node.Line, node.Column, $"请检查函数 '{functionInfo.Name}' 的参数定义");
+                return;
+            }
+
+            // 检查参数类型（如果有类型信息）
+            if (functionInfo.ParameterTypes != null && functionInfo.ParameterTypes.Count > 0)
+            {
+                for (int i = 0; i < Math.Min(actualCount, functionInfo.ParameterTypes.Count); i++)
                 {
-                    int cost = (target[j - 1] == source[i - 1]) ? 0 : 1;
-                    matrix[i, j] = Math.Min(
-                        Math.Min(matrix[i - 1, j] + 1, matrix[i, j - 1] + 1),
-                        matrix[i - 1, j - 1] + cost);
+                    var expectedType = functionInfo.ParameterTypes[i];
+                    var actualType = argumentTypes[i];
+                    
+                    if (expectedType.Kind != TypeKind.Any && actualType.Kind != TypeKind.Any && !AreTypesCompatible(actualType, expectedType))
+                    {
+                        _report.AddError("SEM014", $"参数 {i + 1} 类型不兼容：期望 {expectedType}，实际 {actualType}", 
+                            node.Line, node.Column, $"请检查传递给函数 '{functionInfo.Name}' 的参数类型");
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 检查两个类型是否兼容（包含数值类型的窄/宽转换）
+        /// </summary>
+        private bool AreTypesCompatible(TypeInfo actualType, TypeInfo expectedType)
+        {
+            // 相同类型
+            if (actualType.Equals(expectedType))
+                return true;
+
+            // Any 类型兼容所有类型
+            if (actualType.Kind == TypeKind.Any || expectedType.Kind == TypeKind.Any)
+                return true;
+
+            // 数值类型兼容性（数值窄/宽转换和装箱）
+            if (actualType.Kind == TypeKind.Number && expectedType.Kind == TypeKind.Number)
+                return true;
+
+            // Object 类型的继承关系
+            if (actualType.Kind == TypeKind.Object && expectedType.Kind == TypeKind.Object)
+            {
+                if (actualType.ClrType != null && expectedType.ClrType != null)
+                {
+                    return expectedType.ClrType.IsAssignableFrom(actualType.ClrType);
                 }
             }
 
-            return matrix[source.Length, target.Length];
+            return false;
         }
+
+        /// <summary>
+        /// 使用函数签名进行严格的参数校验
+        /// </summary>
+        private TypeInfo ValidateParametersWithSignature(FunctionSignature signature, List<TypeInfo> argTypes, CallExpressionNode node)
+        {
+            var actualCount = argTypes.Count;
+            var minRequired = signature.MinRequiredParameters;
+            var maxAllowed = signature.MaxParameters;
+            
+            // 参数数量检查
+            if (actualCount < minRequired)
+            {
+                _report.AddError("SEM013",
+                    $"函数 '{signature.Name}' 参数不足：期望至少 {minRequired} 个，实际 {actualCount} 个",
+                    node.Line, node.Column,
+                    $"函数签名：{signature.FormatSignature()}");
+                return TypeInfo.Any;
+            }
+            
+            if (actualCount > maxAllowed)
+            {
+                _report.AddError("SEM013",
+                    $"函数 '{signature.Name}' 参数过多：期望最多 {maxAllowed} 个，实际 {actualCount} 个",
+                    node.Line, node.Column,
+                    $"函数签名：{signature.FormatSignature()}");
+                return TypeInfo.Any;
+            }
+            
+            // 参数类型检查
+            for (int i = 0; i < Math.Min(actualCount, signature.Parameters.Count); i++)
+            {
+                var expectedTypeName = signature.Parameters[i].TypeName;
+                var actualType = argTypes[i];
+                
+                if (!IsTypeCompatibleWithScriptType(actualType, expectedTypeName))
+                {
+                    _report.AddError("SEM014",
+                        $"参数 {i + 1} '{signature.Parameters[i].Name}' 类型不匹配：期望 {expectedTypeName}，实际 {actualType}",
+                        node.Line, node.Column,
+                        $"函数签名：{signature.FormatSignature()}");
+                }
+            }
+            
+            // 返回函数的返回类型
+            return MapScriptTypeToTypeInfo(signature.ReturnTypeName);
+        }
+
+        /// <summary>
+        /// 检查类型是否与脚本类型名兼容
+        /// </summary>
+        private bool IsTypeCompatibleWithScriptType(TypeInfo actualType, string expectedTypeName)
+        {
+            if (actualType.Kind == TypeKind.Any)
+                return true; // Any 类型与任何类型都兼容
+
+            return expectedTypeName switch
+            {
+                "Number" => actualType.Kind == TypeKind.Number,
+                "String" => actualType.Kind == TypeKind.String,
+                "Boolean" => actualType.Kind == TypeKind.Boolean,
+                "Function" => actualType.Kind == TypeKind.Function,
+                "Object" => actualType.Kind == TypeKind.Object || actualType.Kind == TypeKind.Array || actualType.Kind == TypeKind.Dictionary,
+                _ => true // 未知类型名，假设兼容
+            };
+        }
+
+        /// <summary>
+        /// 将脚本类型名映射到 TypeInfo
+        /// </summary>
+        private TypeInfo MapScriptTypeToTypeInfo(string typeName)
+        {
+            return typeName switch
+            {
+                "Number" => TypeInfo.Number,
+                "String" => TypeInfo.String,
+                "Boolean" => TypeInfo.Boolean,
+                "Function" => TypeInfo.Function,
+                "Object" => TypeInfo.Object(typeof(object)),
+                _ => TypeInfo.Any
+            };
+        }
+
     }
 }

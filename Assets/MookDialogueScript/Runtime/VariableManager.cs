@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Linq;
@@ -78,6 +79,13 @@ namespace MookDialogueScript
 
         // 内置变量字典：变量名 -> (getter, setter)
         private readonly Dictionary<string, (Func<object> getter, Action<object> setter)> _builtinVariables = new(StringComparer.OrdinalIgnoreCase);
+
+        // 哈希优化：标准化名称哈希 -> 原始变量名
+        private readonly ConcurrentDictionary<int, string> _scriptHashToName = new();
+        private readonly ConcurrentDictionary<int, string> _builtinHashToName = new();
+        
+        // 名称哈希缓存
+        private readonly ConcurrentDictionary<string, int> _nameHashCache = new();
         #endregion
 
         #region 变量注册
@@ -263,6 +271,86 @@ namespace MookDialogueScript
         }
         #endregion
 
+        #region 哈希优化方法
+
+        /// <summary>
+        /// 获取变量名的标准化哈希值
+        /// </summary>
+        private int GetStandardHash(string name)
+        {
+            return _nameHashCache.GetOrAdd(name, n => n.ToLowerInvariant().GetHashCode());
+        }
+
+        /// <summary>
+        /// 优化的变量设置方法
+        /// </summary>
+        public void SetVariableOptimized(string name, RuntimeValue value)
+        {
+            var hash = GetStandardHash(name);
+            
+            // 检查是否为脚本变量
+            if (_scriptHashToName.TryGetValue(hash, out var existingName))
+            {
+                _scriptVariables[existingName] = value; // 更新现有变量
+                return;
+            }
+            
+            // 检查是否为内置变量（只读检查）
+            if (_builtinHashToName.TryGetValue(hash, out var builtinName))
+            {
+                var (getter, setter) = _builtinVariables[builtinName];
+                if (setter != null)
+                {
+                    setter(value.Value);
+                    return;
+                }
+                else
+                {
+                    MLogger.Error($"变量 '{name}' 是只读的，无法设置");
+                    return;
+                }
+            }
+            
+            // 新变量，添加到脚本变量
+            _scriptVariables[name] = value;
+            _scriptHashToName[hash] = name;
+        }
+
+        /// <summary>
+        /// 优化的变量获取方法
+        /// </summary>
+        public RuntimeValue GetVariableOptimized(string name)
+        {
+            var hash = GetStandardHash(name);
+            
+            // 优先检查脚本变量
+            if (_scriptHashToName.TryGetValue(hash, out var scriptName))
+            {
+                return _scriptVariables[scriptName];
+            }
+            
+            // 检查内置变量
+            if (_builtinHashToName.TryGetValue(hash, out var builtinName))
+            {
+                var (getter, setter) = _builtinVariables[builtinName];
+                var value = getter();
+                return Helper.ConvertToRuntimeValue(value);
+            }
+            
+            return RuntimeValue.Null;
+        }
+
+        /// <summary>
+        /// 检查变量是否存在（优化版本）
+        /// </summary>
+        public bool HasVariableOptimized(string name)
+        {
+            var hash = GetStandardHash(name);
+            return _scriptHashToName.ContainsKey(hash) || _builtinHashToName.ContainsKey(hash);
+        }
+
+        #endregion
+
         #region 变量管理
         /// <summary>
         /// 获取所有脚本变量（用于保存状态）
@@ -446,6 +534,10 @@ namespace MookDialogueScript
         public void RegisterBuiltinVariable(string name, Func<object> getter, Action<object> setter)
         {
             _builtinVariables[name] = (getter, setter);
+            
+            // 同时更新哈希索引
+            var hash = GetStandardHash(name);
+            _builtinHashToName[hash] = name;
         }
 
         /// <summary>
@@ -456,6 +548,10 @@ namespace MookDialogueScript
         public void RegisterScriptVariable(string name, RuntimeValue value)
         {
             _scriptVariables[name] = value;
+            
+            // 同时更新哈希索引
+            var hash = GetStandardHash(name);
+            _scriptHashToName[hash] = name;
         }
 
         /// <summary>
