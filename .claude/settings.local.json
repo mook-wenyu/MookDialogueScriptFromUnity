@@ -21,7 +21,8 @@
       "Bash(git push:*)",
       "Bash(python:*)",
       "Bash(grep:*)",
-      "mcp__sequential-thinking__sequentialthinking"
+      "mcp__sequential-thinking__sequentialthinking",
+      "mcp__RepoMapper__repo_map"
     ],
     "deny": [],
     "ask": []

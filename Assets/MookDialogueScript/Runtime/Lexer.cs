@@ -299,21 +299,6 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 批量字符比较：一次性检查多个字符模式
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool IsSequence(string sequence)
-        {
-            int seqLength = sequence.Length;
-            if (_position + seqLength > _sourceLength) return false;
-
-            // 使用 Span 进行高效比较
-            var sourceSpan = _sourceChars.AsSpan(_position, seqLength);
-            var sequenceSpan = sequence.AsSpan();
-            return sourceSpan.SequenceEqual(sequenceSpan);
-        }
-
-        /// <summary>
         /// 优化的命令开始检查
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -332,22 +317,30 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 优化的换行字符检查
+        /// 换行符
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool IsNewlineChar(char c)
+        private bool IsNewline(char c)
         {
-            // 简单直接的比较，编译器会优化
-            return c == '\n' || c == '\r';
+            return c is '\n' or '\r';
         }
 
         /// <summary>
-        /// 优化的引号检查：避免重复的 switch 语句
+        /// 换行符或者文件末尾
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool IsQuoteChar(char c)
+        private bool IsNewlineOrEOF(char c)
         {
-            return c == '\'' || c == '"';
+            return c is '\n' or '\r' or '\0';
+        }
+
+        /// <summary>
+        /// 空格或缩进
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool IsSpaceOrIndent(char c)
+        {
+            return c is ' ' or '\t';
         }
 
         /// <summary>
@@ -369,6 +362,7 @@ namespace MookDialogueScript
             return _currentChar == '=' && _nextChar == '=' &&
                    GetCharAt(_position + 2) == '=';
         }
+
         private void ClassifyLineAtColumn1(out bool isEmptyOrCommentLine, out bool hasMixedIndent)
         {
             isEmptyOrCommentLine = false;
@@ -391,7 +385,7 @@ namespace MookDialogueScript
             hasMixedIndent = sawSpace && sawTab;
 
             // 空行或到达文件末尾
-            if (c is '\n' or '\r' or '\0')
+            if (IsNewlineOrEOF(c))
             {
                 isEmptyOrCommentLine = true;
                 return;
@@ -467,7 +461,7 @@ namespace MookDialogueScript
         private bool ShouldSkipIndentation()
         {
             // 在行首仅对 EOF/换行跳过缩进处理；注释判定由调用方负责
-            return _currentChar is '\0' or '\n' or '\r';
+            return IsNewlineOrEOF(_currentChar);
         }
 
         /// <summary>
@@ -478,7 +472,7 @@ namespace MookDialogueScript
             var indent = 0;
             bool seenSpace = false;
             bool seenTab = false;
-            while (_currentChar is ' ' or '\t')
+            while (IsSpaceOrIndent(_currentChar))
             {
                 if (_currentChar == ' ') seenSpace = true;
                 else if (_currentChar == '\t') seenTab = true;
@@ -499,7 +493,7 @@ namespace MookDialogueScript
         {
             _indentStack.Push(indent);
             _currentIndent = indent;
-            return new Token(TokenType.INDENT, string.Empty, _line, _column);
+            return TokenFactory.IndentToken(_line, _column);
         }
 
         /// <summary>
@@ -520,7 +514,7 @@ namespace MookDialogueScript
             {
                 // 先返回一个 DEDENT，其余的记录到 pending 里，保持“每次只返回一个 Token”
                 _pendingDedent = popCount - 1;
-                return new Token(TokenType.DEDENT, string.Empty, _line, _column);
+                return TokenFactory.DedentToken(_line, _column);
             }
 
             // 如果没有发生弹栈，但目标缩进与现有层级仍不一致，说明缩进不匹配
@@ -607,7 +601,7 @@ namespace MookDialogueScript
             {
                 Advance();
             }
-            if (_currentChar is '\n' or '\r')
+            if (IsNewline(_currentChar))
             {
                 Advance();
                 _line++;
@@ -622,14 +616,14 @@ namespace MookDialogueScript
 
                 // 跳过前导空白（仅预读，不改变真实位置）
                 char c = GetCharAt(p);
-                while (c == ' ' || c == '\t')
+                while (c is ' ' or '\t')
                 {
                     p++;
                     c = GetCharAt(p);
                 }
 
                 bool isCommentLine = c == '/' && GetCharAt(p + 1) == '/';
-                bool isEmptyLine = c is '\n' or '\r' or '\0';
+                bool isEmptyLine = IsNewlineOrEOF(c);
 
                 if (!(isCommentLine || isEmptyLine))
                 {
@@ -639,7 +633,7 @@ namespace MookDialogueScript
 
                 // 将“预读到的这一行”（注释行或空行）整体消耗掉到换行符末尾
                 // 真正推进：跳过前导空白
-                while (_currentChar is ' ' or '\t')
+                while (IsSpaceOrIndent(_currentChar))
                 {
                     Advance();
                 }
@@ -659,7 +653,7 @@ namespace MookDialogueScript
                     Advance();
                 }
 
-                if (_currentChar is '\n' or '\r')
+                if (IsNewline(_currentChar))
                 {
                     Advance();
                     _line++;
@@ -678,19 +672,19 @@ namespace MookDialogueScript
                 if (_pendingDedent > 0)
                 {
                     _pendingDedent--;
-                    return new Token(TokenType.DEDENT, string.Empty, _line, _column);
+                    return TokenFactory.DedentToken(_line, _column);
                 }
                 if (_indentStack.Count > 1)
                 {
                     _indentStack.Pop();
                     _currentIndent = _indentStack.Peek();
-                    return new Token(TokenType.DEDENT, string.Empty, _line, _column);
+                    return TokenFactory.DedentToken(_line, _column);
                 }
-                return new Token(TokenType.EOF, string.Empty, _line, _column);
+                return TokenFactory.EOFToken(_line, _column);
             }
 
             // 5) 折叠结果统一返回一个 NEWLINE
-            return new Token(TokenType.NEWLINE, "\n", currentLine, _column);
+            return TokenFactory.NewLineToken(currentLine, _column);
         }
 
         /// <summary>
@@ -731,7 +725,7 @@ namespace MookDialogueScript
                 // 这里暂时只验证键名格式，值的验证在后续处理中进行
                 if (!string.IsNullOrEmpty(key))
                 {
-                    return new Token(TokenType.IDENTIFIER, key, startLine, startColumn);
+                    return TokenFactory.IdentifierToken(key, startLine, startColumn);
                 }
 
                 MLogger.Warning($"词法警告: 第{startLine}行，第{startColumn}列，元数据缺少键名");
@@ -742,7 +736,7 @@ namespace MookDialogueScript
                 if (!string.IsNullOrEmpty(key))
                 {
                     // 键值
-                    return new Token(TokenType.TEXT, key, startLine, startColumn);
+                    return TokenFactory.TextToken(key, startLine, startColumn);
                 }
 
                 MLogger.Warning($"词法警告: 第{startLine}行，第{startColumn}列，元数据缺少键值");
@@ -775,8 +769,7 @@ namespace MookDialogueScript
                 }
                 Advance();
             }
-
-            return new Token(TokenType.NUMBER, GetRange(startPosition, _position), startLine, startColumn);
+            return TokenFactory.NumberToken(GetRange(startPosition, _position), startLine, startColumn);
         }
 
         /// <summary>
@@ -886,8 +879,7 @@ namespace MookDialogueScript
                 resultBuilder.Append(_currentChar);
                 Advance();
             }
-
-            return new Token(TokenType.TEXT, resultBuilder.ToString(), startLine, startColumn);
+            return TokenFactory.TextToken(resultBuilder.ToString(), startLine, startColumn);
         }
 
         /// <summary>
@@ -897,12 +889,7 @@ namespace MookDialogueScript
         {
             if (!_isInStringMode) return false;
 
-            return _stringQuoteType switch
-            {
-                '\'' => c == '\'', // 英文单引号
-                '"' => c == '"',   // 英文双引号
-                _ => false
-            };
+            return _stringQuoteType == c;
         }
 
         /// <summary>
@@ -926,8 +913,7 @@ namespace MookDialogueScript
                     Advance();
                 }
             }
-
-            return new Token(TokenType.VARIABLE, GetRange(startPosition, _position), startLine, startColumn);
+            return TokenFactory.VariableToken(GetRange(startPosition, _position), startLine, startColumn);
         }
 
         /// <summary>
@@ -954,10 +940,9 @@ namespace MookDialogueScript
             // 检查是否是关键字
             if (_keywords.TryGetValue(text, out var type))
             {
-                return new Token(type, text, startLine, startColumn);
+                return TokenFactory.CreateToken(type, text, startLine, startColumn);
             }
-
-            return new Token(TokenType.IDENTIFIER, text, startLine, startColumn);
+            return TokenFactory.IdentifierToken(text, startLine, startColumn);
         }
 
         /// <summary>
@@ -975,7 +960,7 @@ namespace MookDialogueScript
                 Advance(); // 跳过第一个 <
                 Advance(); // 跳过第二个 <
                 _isInCommandMode = true;
-                return new Token(TokenType.COMMAND_START, "<<", startLine, startColumn);
+                return TokenFactory.CreateToken(TokenType.COMMAND_START, "<<", startLine, startColumn);
             }
             if (IsCommandEnd())
             {
@@ -985,8 +970,9 @@ namespace MookDialogueScript
                 Advance(); // 跳过第一个 >
                 Advance(); // 跳过第二个 >
                 _isInCommandMode = false;
-                return new Token(TokenType.COMMAND_END, ">>", startLine, startColumn);
+                return TokenFactory.CreateToken(TokenType.COMMAND_END, ">>", startLine, startColumn);
             }
+            
             return null;
         }
 
@@ -1000,7 +986,7 @@ namespace MookDialogueScript
             if (_pendingDedent > 0)
             {
                 _pendingDedent--;
-                return new Token(TokenType.DEDENT, string.Empty, _line, _column);
+                return TokenFactory.DedentToken(_line, _column);
             }
 
             // 如果已到输入末尾，优先补齐所有未关闭的缩进
@@ -1010,9 +996,9 @@ namespace MookDialogueScript
                 {
                     _indentStack.Pop();
                     _currentIndent = _indentStack.Peek();
-                    return new Token(TokenType.DEDENT, string.Empty, _line, _column);
+                    return TokenFactory.DedentToken(_line, _column);
                 }
-                return new Token(TokenType.EOF, string.Empty, _line, _column);
+                return TokenFactory.EOFToken(_line, _column);
             }
 
             while (_currentChar != '\0')
@@ -1064,7 +1050,7 @@ namespace MookDialogueScript
                         SkipComment();
                         if (_currentChar == '\0')
                         {
-                            return new Token(TokenType.EOF, string.Empty, _line, _column);
+                            return TokenFactory.EOFToken(_line, _column);
                         }
                         if (_currentChar != '\n' && _currentChar != '\r')
                         {
@@ -1099,7 +1085,7 @@ namespace MookDialogueScript
                         Advance();
                         Advance();
                         _isInNodeContent = false;
-                        return new Token(TokenType.NODE_END, "===", startLine, startColumn);
+                        return TokenFactory.CreateToken(TokenType.NODE_END, "===", startLine, startColumn);
                     }
                 }
 
@@ -1127,15 +1113,13 @@ namespace MookDialogueScript
                     int startLine = _line;
                     int startColumn = _column;
                     Advance();
-
                     // 在元数据模式下，这是分隔符
                     if (!_isInNodeContent)
                     {
-                        return new Token(TokenType.METADATA_SEPARATOR, ":", startLine, startColumn);
+                        return TokenFactory.CreateToken(TokenType.METADATA_SEPARATOR, ":", startLine, startColumn);
                     }
-
                     // 在集合内，这是普通冒号
-                    return new Token(TokenType.COLON, ":", startLine, startColumn);
+                    return TokenFactory.CreateToken(TokenType.COLON, ":", startLine, startColumn);
                 }
 
                 // 在集合外，处理节点标记 ---（且不在命令/插值/字符串模式）
@@ -1155,7 +1139,7 @@ namespace MookDialogueScript
                             Advance();
                             Advance();
                             _isInNodeContent = true;
-                            return new Token(TokenType.NODE_START, "---", startLine, startColumn);
+                            return TokenFactory.CreateToken(TokenType.NODE_START, "---", startLine, startColumn);
                         }
                     }
                 }
@@ -1197,7 +1181,7 @@ namespace MookDialogueScript
                     _isInStringMode = true;
                     _stringQuoteType = quoteChar;
                     Advance();
-                    return new Token(TokenType.QUOTE, quoteChar.ToString(), startLine, startColumn);
+                    return TokenFactory.CreateToken(TokenType.QUOTE, quoteChar.ToString(), startLine, startColumn);
                 }
 
                 // 处理字符串结束引号
@@ -1209,7 +1193,7 @@ namespace MookDialogueScript
                     Advance();
                     _isInStringMode = false;
                     _stringQuoteType = '\0';
-                    return new Token(TokenType.QUOTE, quoteChar.ToString(), startLine, startColumn);
+                    return TokenFactory.CreateToken(TokenType.QUOTE, quoteChar.ToString(), startLine, startColumn);
                 }
 
                 // 12. 处理操作符和标点符号
@@ -1220,14 +1204,14 @@ namespace MookDialogueScript
                         int startLine = _line;
                         int startColumn = _column;
                         Advance();
-                        return new Token(TokenType.LEFT_PAREN, "(", startLine, startColumn);
+                        return TokenFactory.CreateToken(TokenType.LEFT_PAREN, "(", startLine, startColumn);
                     }
                     case ')':
                     {
                         int startLine = _line;
                         int startColumn = _column;
                         Advance();
-                        return new Token(TokenType.RIGHT_PAREN, ")", startLine, startColumn);
+                        return TokenFactory.CreateToken(TokenType.RIGHT_PAREN, ")", startLine, startColumn);
                     }
                     case '{':
                     {
@@ -1235,7 +1219,7 @@ namespace MookDialogueScript
                         int startColumn = _column;
                         Advance();
                         _isInInterpolation = true;
-                        return new Token(TokenType.LEFT_BRACE, "{", startLine, startColumn);
+                        return TokenFactory.CreateToken(TokenType.LEFT_BRACE, "{", startLine, startColumn);
                     }
                     case '}':
                     {
@@ -1243,28 +1227,28 @@ namespace MookDialogueScript
                         int startColumn = _column;
                         Advance();
                         _isInInterpolation = false;
-                        return new Token(TokenType.RIGHT_BRACE, "}", startLine, startColumn);
+                        return TokenFactory.CreateToken(TokenType.RIGHT_BRACE, "}", startLine, startColumn);
                     }
                     case '[':
                     {
                         int startLine = _line;
                         int startColumn = _column;
                         Advance();
-                        return new Token(TokenType.LEFT_BRACKET, "[", startLine, startColumn);
+                        return TokenFactory.CreateToken(TokenType.LEFT_BRACKET, "[", startLine, startColumn);
                     }
                     case ']':
                     {
                         int startLine = _line;
                         int startColumn = _column;
                         Advance();
-                        return new Token(TokenType.RIGHT_BRACKET, "]", startLine, startColumn);
+                        return TokenFactory.CreateToken(TokenType.RIGHT_BRACKET, "]", startLine, startColumn);
                     }
                     case '#':
                     {
                         int startLine = _line;
                         int startColumn = _column;
                         Advance();
-                        return new Token(TokenType.HASH, "#", startLine, startColumn);
+                        return TokenFactory.CreateToken(TokenType.HASH, "#", startLine, startColumn);
                     }
                     case '.':
                     {
@@ -1274,21 +1258,23 @@ namespace MookDialogueScript
                         int startLine = _line;
                         int startColumn = _column;
                         Advance();
-                        return new Token(TokenType.DOT, ".", startLine, startColumn);
+                        
+                        return TokenFactory.CreateToken(TokenType.DOT, ".", startLine, startColumn);
                     }
                     case ',':
                     {
                         int startLine = _line;
                         int startColumn = _column;
                         Advance();
-                        return new Token(TokenType.COMMA, ",", startLine, startColumn);
+                        
+                        return TokenFactory.CreateToken(TokenType.COMMA, ",", startLine, startColumn);
                     }
                     case '+':
                     {
                         int startLine = _line;
                         int startColumn = _column;
                         Advance();
-                        return new Token(TokenType.PLUS, "+", startLine, startColumn);
+                        return TokenFactory.CreateToken(TokenType.PLUS, "+", startLine, startColumn);
                     }
                     case '-':
                     {
@@ -1299,30 +1285,30 @@ namespace MookDialogueScript
                         {
                             // -> 识别为 ARROW
                             Advance();
-                            return new Token(TokenType.ARROW, "->", startLine, startColumn);
+                            return TokenFactory.CreateToken(TokenType.ARROW, "->", startLine, startColumn);
                         }
-                        return new Token(TokenType.MINUS, "-", startLine, startColumn);
+                        return TokenFactory.CreateToken(TokenType.MINUS, "-", startLine, startColumn);
                     }
                     case '*':
                     {
                         int startLine = _line;
                         int startColumn = _column;
                         Advance();
-                        return new Token(TokenType.MULTIPLY, "*", startLine, startColumn);
+                        return TokenFactory.CreateToken(TokenType.MULTIPLY, "*", startLine, startColumn);
                     }
                     case '/':
                     {
                         int startLine = _line;
                         int startColumn = _column;
                         Advance();
-                        return new Token(TokenType.DIVIDE, "/", startLine, startColumn);
+                        return TokenFactory.CreateToken(TokenType.DIVIDE, "/", startLine, startColumn);
                     }
                     case '%':
                     {
                         int startLine = _line;
                         int startColumn = _column;
                         Advance();
-                        return new Token(TokenType.MODULO, "%", startLine, startColumn);
+                        return TokenFactory.CreateToken(TokenType.MODULO, "%", startLine, startColumn);
                     }
                     case '=':
                     {
@@ -1332,9 +1318,9 @@ namespace MookDialogueScript
                         if (_currentChar == '=')
                         {
                             Advance();
-                            return new Token(TokenType.EQUALS, "==", startLine, startColumn);
+                            return TokenFactory.CreateToken(TokenType.EQUALS, "==", startLine, startColumn);
                         }
-                        return new Token(TokenType.ASSIGN, "=", startLine, startColumn);
+                        return TokenFactory.CreateToken(TokenType.ASSIGN, "=", startLine, startColumn);
                     }
                     case '!':
                     {
@@ -1344,9 +1330,9 @@ namespace MookDialogueScript
                         if (_currentChar == '=')
                         {
                             Advance();
-                            return new Token(TokenType.NOT_EQUALS, "!=", startLine, startColumn);
+                            return TokenFactory.CreateToken(TokenType.NOT_EQUALS, "!=", startLine, startColumn);
                         }
-                        return new Token(TokenType.NOT, "!", startLine, startColumn);
+                        return TokenFactory.CreateToken(TokenType.NOT, "!", startLine, startColumn);
                     }
                     case '>':
                     {
@@ -1356,9 +1342,9 @@ namespace MookDialogueScript
                         if (_currentChar == '=')
                         {
                             Advance();
-                            return new Token(TokenType.GREATER_EQUALS, ">=", startLine, startColumn);
+                            return TokenFactory.CreateToken(TokenType.GREATER_EQUALS, ">=", startLine, startColumn);
                         }
-                        return new Token(TokenType.GREATER, ">", startLine, startColumn);
+                        return TokenFactory.CreateToken(TokenType.GREATER, ">", startLine, startColumn);
                     }
                     case '<':
                     {
@@ -1368,9 +1354,9 @@ namespace MookDialogueScript
                         if (_currentChar == '=')
                         {
                             Advance();
-                            return new Token(TokenType.LESS_EQUALS, "<=", startLine, startColumn);
+                            return TokenFactory.CreateToken(TokenType.LESS_EQUALS, "<=", startLine, startColumn);
                         }
-                        return new Token(TokenType.LESS, "<", startLine, startColumn);
+                        return TokenFactory.CreateToken(TokenType.LESS, "<", startLine, startColumn);
                     }
                     case '&':
                     {
@@ -1380,7 +1366,7 @@ namespace MookDialogueScript
                         if (_currentChar == '&')
                         {
                             Advance();
-                            return new Token(TokenType.AND, "&&", startLine, startColumn);
+                            return TokenFactory.CreateToken(TokenType.AND, "&&", startLine, startColumn);
                         }
                         break;
                     }
@@ -1392,7 +1378,7 @@ namespace MookDialogueScript
                         if (_currentChar == '|')
                         {
                             Advance();
-                            return new Token(TokenType.OR, "||", startLine, startColumn);
+                            return TokenFactory.CreateToken(TokenType.OR, "||", startLine, startColumn);
                         }
                         break;
                     }
@@ -1403,7 +1389,7 @@ namespace MookDialogueScript
             }
 
             // 文件结束
-            return new Token(TokenType.EOF, string.Empty, _line, _column);
+            return TokenFactory.EOFToken(_line, _column);
         }
     }
 }
