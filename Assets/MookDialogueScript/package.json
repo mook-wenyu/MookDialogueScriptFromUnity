@@ -5,9 +5,9 @@
     "name": "WenYu",
     "url": "https://github.com/mook-wenyu"
   },
-  "version": "0.6.0",
+  "version": "0.7.0",
   "unity": "2021.4",
-  "description": "一个简单易用的对话脚本系统，支持严格类型检查和函数签名验证",
+  "description": "高性能对话脚本系统，支持并发处理、函数签名验证和严格类型检查",
   "keywords": [
     "dialogue",
     "script"

@@ -22,7 +22,9 @@
       "Bash(python:*)",
       "Bash(grep:*)",
       "mcp__sequential-thinking__sequentialthinking",
-      "mcp__RepoMapper__repo_map"
+      "mcp__RepoMapper__repo_map",
+      "Bash(find:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

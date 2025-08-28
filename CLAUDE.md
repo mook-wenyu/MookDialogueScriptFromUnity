@@ -6,9 +6,25 @@
 
 MookDialogueScript 是为 Unity 游戏开发设计的轻量级对话脚本系统。它提供了一种自定义脚本语言，用于创建复杂的对话系统和分支叙事。
 
-当前版本：**0.6.0**，包含完整的函数签名系统和严格类型检查。
+当前版本：**0.7.0**，包含高性能词法分析器架构和并发优化。
 
-## 版本 0.6.0 新功能
+## 版本 0.7.0 新功能
+
+### 🚀 高性能词法分析器架构
+- **组合设计模式**：重构词法分析器为组件化架构，遵循"组合优于继承"原则
+- **专用分词器系统**：每种Token类型都有专门的处理器，提升解析精度和性能
+- **高性能并发池**：新增 `ConcurrentLexerPool`，支持无锁并发、线程本地缓存和自适应调整
+- **完整资源管理**：实现 `IDisposable` 模式，自动管理内存和线程资源
+- **Unity Profiler集成**：内置性能监控标记，便于性能分析和优化
+
+### ⚡ 性能优化亮点
+- **无锁并发设计**：使用 `ConcurrentBag` 和原子操作，避免锁竞争
+- **线程本地存储**：每个线程维护独立的小池，减少跨线程开销
+- **智能对象复用**：基于使用模式的自适应池大小调整
+- **零分配优化**：关键路径使用 `AggressiveInlining`，减少调用开销
+- **共享组件复用**：线程安全组件在线程间共享，减少内存占用
+
+## 版本 0.6.0 功能
 
 ### 🎯 函数签名系统 (FunctionSignature)
 - **完整的类型安全**：函数注册时自动构建详细签名信息，包含参数名、类型、默认值
@@ -27,7 +43,13 @@ MookDialogueScript 是为 Unity 游戏开发设计的轻量级对话脚本系统
 
 对话系统遵循经典的解释器模式，包含以下关键组件：
 
-- **词法分析器** (`Assets/MookDialogueScript/Runtime/Lexer.cs`): 对 `.mds` 脚本文件进行词法分析
+- **词法分析器** (`Assets/MookDialogueScript/Runtime/Lexers/`): 高性能组件化词法分析架构
+  - `LexerRefactored.cs`: 重构后的主词法分析器，采用组合设计模式
+  - `ConcurrentLexerPool.cs`: 高性能并发对象池，支持无锁并发和线程本地缓存
+  - `LexerFactory.cs`: 词法分析器组件工厂
+  - `Core/`: 核心组件（字符流、分类器、状态管理、缩进处理）
+  - `Tokenizers/`: 专用Token处理器（字符串、数字、标识符、符号等）
+  - `Interfaces/`: 通用接口定义
 - **语法解析器** (`Assets/MookDialogueScript/Runtime/Parser.cs`): 从标记构建抽象语法树 (AST)
 - **解释器** (`Assets/MookDialogueScript/Runtime/Interpreter.cs`): 执行 AST 节点
 - **异常处理** (`Assets/MookDialogueScript/Runtime/ScriptException.cs`): 完整的异常类层次结构
@@ -168,7 +190,7 @@ if (report.HasErrors)
 
 ## 包信息
 
-- **版本**: 0.6.0 (在 `Assets/MookDialogueScript/package.json` 中定义)
+- **版本**: 0.7.0 (在 `Assets/MookDialogueScript/package.json` 中定义)
 - **Unity 版本**: 2021.4+
 - **许可证**: Apache-2.0
 - **包名**: `com.wenyu.dialoguescript`
