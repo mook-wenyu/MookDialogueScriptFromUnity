@@ -1,350 +1,586 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using MookDialogueScript.Incremental.Contracts;
 
 namespace MookDialogueScript.Incremental.FileSystem
 {
     /// <summary>
-    /// 文件变更类型
+    /// 文件变更检测器实现
+    /// 基于FileSystemWatcher实现文件系统监控，支持防抖动和批量处理
     /// </summary>
-    public enum FileChangeType
+    public sealed class FileChangeDetector : IFileChangeDetector
     {
-        /// <summary>文件创建</summary>
-        Created,
-        
-        /// <summary>文件修改</summary>
-        Changed,
-        
-        /// <summary>文件修改（别名）</summary>
-        Modified = Changed,
-        
-        /// <summary>文件删除</summary>
-        Deleted,
-        
-        /// <summary>文件重命名</summary>
-        Renamed,
-        
-        /// <summary>文件移动</summary>
-        Moved
-    }
-
-    /// <summary>
-    /// 文件变更事件参数
-    /// </summary>
-    public class FileChangeEventArgs : EventArgs
-    {
-        /// <summary>
-        /// 文件路径
-        /// </summary>
-        public string FilePath { get; set; }
-
-        /// <summary>
-        /// 变更类型
-        /// </summary>
-        public FileChangeType ChangeType { get; set; }
-
-        /// <summary>
-        /// 旧文件路径（用于重命名和移动）
-        /// </summary>
-        public string OldFilePath { get; set; }
-
-        /// <summary>
-        /// 变更时间
-        /// </summary>
-        public DateTime Timestamp { get; set; } = DateTime.UtcNow;
-
-        /// <summary>
-        /// 文件大小
-        /// </summary>
-        public long FileSize { get; set; }
-
-        /// <summary>
-        /// 附加信息
-        /// </summary>
-        public Dictionary<string, object> Properties { get; set; } = new Dictionary<string, object>();
-
-        /// <summary>
-        /// 创建文件变更事件参数
-        /// </summary>
-        /// <param name="filePath">文件路径</param>
-        /// <param name="changeType">变更类型</param>
-        /// <param name="oldFilePath">旧文件路径</param>
-        public FileChangeEventArgs(string filePath, FileChangeType changeType, string oldFilePath = null)
-        {
-            FilePath = filePath ?? throw new ArgumentNullException(nameof(filePath));
-            ChangeType = changeType;
-            OldFilePath = oldFilePath;
-        }
-
-        public override string ToString()
-        {
-            var info = $"{ChangeType}: {FilePath}";
-            if (!string.IsNullOrEmpty(OldFilePath))
-            {
-                info += $" (from {OldFilePath})";
-            }
-            return info;
-        }
-    }
-
-    /// <summary>
-    /// 文件变更检测器接口
-    /// </summary>
-    public interface IFileChangeDetector : IDisposable
-    {
-        /// <summary>
-        /// 是否正在监控
-        /// </summary>
-        bool IsWatching { get; }
-
-        /// <summary>
-        /// 监控的路径
-        /// </summary>
-        string WatchPath { get; }
-
-        /// <summary>
-        /// 文件过滤模式
-        /// </summary>
-        string FilePattern { get; }
-
-        /// <summary>
-        /// 文件变更事件
-        /// </summary>
-        event EventHandler<FileChangeEventArgs> FileChanged;
-
-        /// <summary>
-        /// 开始监控指定路径
-        /// </summary>
-        /// <param name="path">监控路径</param>
-        /// <param name="pattern">文件模式（如 "*.mds"）</param>
-        /// <param name="includeSubdirectories">是否包含子目录</param>
-        void StartWatching(string path, string pattern = "*.*", bool includeSubdirectories = true);
-
-        /// <summary>
-        /// 停止监控
-        /// </summary>
-        void StopWatching();
-
-        /// <summary>
-        /// 检查指定文件是否被监控
-        /// </summary>
-        /// <param name="filePath">文件路径</param>
-        /// <returns>是否被监控</returns>
-        bool IsFileWatched(string filePath);
-
-        /// <summary>
-        /// 获取监控统计信息
-        /// </summary>
-        /// <returns>监控统计</returns>
-        FileWatcherStatistics GetStatistics();
-    }
-
-    /// <summary>
-    /// 文件监控器统计信息
-    /// </summary>
-    public struct FileWatcherStatistics
-    {
-        /// <summary>
-        /// 监控的文件数量
-        /// </summary>
-        public int WatchedFileCount { get; set; }
-
-        /// <summary>
-        /// 检测到的变更次数
-        /// </summary>
-        public long ChangeDetectionCount { get; set; }
-
-        /// <summary>
-        /// 变更事件触发次数
-        /// </summary>
-        public long EventTriggerCount { get; set; }
-
-        /// <summary>
-        /// 最后一次变更时间
-        /// </summary>
-        public DateTime LastChangeTime { get; set; }
-
-        /// <summary>
-        /// 监控开始时间
-        /// </summary>
-        public DateTime StartTime { get; set; }
-
-        /// <summary>
-        /// 错误次数
-        /// </summary>
-        public long ErrorCount { get; set; }
-
-        public override string ToString()
-        {
-            return $"FileWatcher: Files={WatchedFileCount}, Changes={ChangeDetectionCount}, " +
-                   $"Events={EventTriggerCount}, Errors={ErrorCount}";
-        }
-    }
-
-    /// <summary>
-    /// 默认的文件变更检测器实现
-    /// </summary>
-    public class DefaultFileChangeDetector : IFileChangeDetector
-    {
-        private System.IO.FileSystemWatcher _watcher;
+        #region 字段
+        private readonly IncrementalCacheOptions _options;
+        private FileSystemWatcher _watcher;
+        private readonly Dictionary<string, FileMetadata> _fileMetadataCache;
+        private readonly Dictionary<string, DateTime> _pendingChanges;
+        private readonly Timer _debounceTimer;
+        private readonly object _lock = new();
         private volatile bool _disposed;
-        private FileWatcherStatistics _statistics;
+        private volatile bool _isWatching;
+        #endregion
+
+        #region 属性
+        /// <summary>
+        /// 当前是否正在监控
+        /// </summary>
+        public bool IsWatching => _isWatching && !_disposed;
 
         /// <summary>
-        /// 是否正在监控
+        /// 当前监控的路径
         /// </summary>
-        public bool IsWatching { get; private set; }
+        public string WatchingPath { get; private set; }
+        #endregion
 
-        /// <summary>
-        /// 监控的路径
-        /// </summary>
-        public string WatchPath { get; private set; }
-
-        /// <summary>
-        /// 文件过滤模式
-        /// </summary>
-        public string FilePattern { get; private set; }
-
+        #region 事件
         /// <summary>
         /// 文件变更事件
         /// </summary>
-        public event EventHandler<FileChangeEventArgs> FileChanged;
+        public event EventHandler<FileChangedEventArgs> FileChanged;
+        #endregion
 
+        #region 构造函数
         /// <summary>
-        /// 开始监控指定路径
+        /// 初始化文件变更检测器
         /// </summary>
-        public void StartWatching(string path, string pattern = "*.*", bool includeSubdirectories = true)
+        /// <param name="options">缓存配置选项</param>
+        public FileChangeDetector(IncrementalCacheOptions options)
         {
-            if (_disposed)
-                throw new ObjectDisposedException(nameof(DefaultFileChangeDetector));
+            _options = options ?? throw new ArgumentNullException(nameof(options));
+            _fileMetadataCache = new Dictionary<string, FileMetadata>(StringComparer.OrdinalIgnoreCase);
+            _pendingChanges = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+            
+            // 初始化防抖动定时器
+            _debounceTimer = new Timer(ProcessPendingChanges, null, Timeout.Infinite, Timeout.Infinite);
+        }
+        #endregion
+
+        #region IFileChangeDetector 实现
+        /// <summary>
+        /// 开始监控指定目录或文件
+        /// </summary>
+        /// <param name="path">要监控的路径</param>
+        /// <param name="includeSubdirectories">是否包含子目录</param>
+        /// <param name="cancellationToken">取消令牌</param>
+        /// <returns>监控任务</returns>
+        public async Task StartWatchingAsync(string path, bool includeSubdirectories = true, CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
 
             if (string.IsNullOrEmpty(path))
-                throw new ArgumentException("Path cannot be null or empty", nameof(path));
+                throw new ArgumentException("路径不能为空", nameof(path));
 
-            if (!System.IO.Directory.Exists(path))
-                throw new System.IO.DirectoryNotFoundException($"Directory not found: {path}");
+            if (!Directory.Exists(path) && !File.Exists(path))
+                throw new DirectoryNotFoundException($"路径不存在: {path}");
 
-            StopWatching();
-
-            _watcher = new System.IO.FileSystemWatcher(path, pattern)
+            await Task.Run(() =>
             {
-                IncludeSubdirectories = includeSubdirectories,
-                NotifyFilter = System.IO.NotifyFilters.FileName | 
-                              System.IO.NotifyFilters.LastWrite | 
-                              System.IO.NotifyFilters.CreationTime
-            };
+                lock (_lock)
+                {
+                    // 停止当前监控
+                    StopWatchingInternal();
 
-            _watcher.Changed += OnFileSystemEvent;
-            _watcher.Created += OnFileSystemEvent;
-            _watcher.Deleted += OnFileSystemEvent;
-            _watcher.Renamed += OnFileRenamed;
+                    try
+                    {
+                        // 确定监控路径和过滤器
+                        string watchPath;
+                        string filter;
 
-            _watcher.EnableRaisingEvents = true;
-            IsWatching = true;
-            WatchPath = path;
-            FilePattern = pattern;
-            _statistics.StartTime = DateTime.UtcNow;
+                        if (File.Exists(path))
+                        {
+                            watchPath = Path.GetDirectoryName(path) ?? path;
+                            filter = Path.GetFileName(path);
+                        }
+                        else
+                        {
+                            watchPath = path;
+                            filter = "*.*";
+                        }
+
+                        // 创建文件系统监控器
+                        _watcher = new FileSystemWatcher(watchPath, filter)
+                        {
+                            IncludeSubdirectories = includeSubdirectories,
+                            NotifyFilter = NotifyFilters.CreationTime | NotifyFilters.LastWrite | 
+                                          NotifyFilters.FileName | NotifyFilters.Size
+                        };
+
+                        // 订阅事件
+                        _watcher.Created += OnFileChanged;
+                        _watcher.Changed += OnFileChanged;
+                        _watcher.Deleted += OnFileChanged;
+                        _watcher.Renamed += OnFileRenamed;
+                        _watcher.Error += OnWatcherError;
+
+                        // 启动监控
+                        _watcher.EnableRaisingEvents = true;
+                        _isWatching = true;
+                        WatchingPath = path;
+
+                        // 预加载文件元数据缓存
+                        _ = Task.Run(() => PreloadFileMetadata(watchPath, includeSubdirectories), cancellationToken);
+                    }
+                    catch
+                    {
+                        _watcher?.Dispose();
+                        _watcher = null;
+                        throw;
+                    }
+                }
+            }, cancellationToken);
         }
 
         /// <summary>
         /// 停止监控
         /// </summary>
-        public void StopWatching()
+        /// <param name="cancellationToken">取消令牌</param>
+        /// <returns>停止任务</returns>
+        public async Task StopWatchingAsync(CancellationToken cancellationToken = default)
+        {
+            await Task.Run(() =>
+            {
+                lock (_lock)
+                {
+                    StopWatchingInternal();
+                }
+            }, cancellationToken);
+        }
+
+        /// <summary>
+        /// 检查单个文件是否已变更
+        /// </summary>
+        /// <param name="filePath">文件路径</param>
+        /// <param name="lastModified">上次修改时间</param>
+        /// <param name="cancellationToken">取消令牌</param>
+        /// <returns>是否已变更</returns>
+        public async Task<bool> IsFileChangedAsync(string filePath, DateTime lastModified, CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            if (string.IsNullOrEmpty(filePath))
+                return false;
+
+            return await Task.Run(() =>
+            {
+                try
+                {
+                    if (!File.Exists(filePath))
+                        return true; // 文件不存在，认为已变更
+
+                    var fileInfo = new FileInfo(filePath);
+                    return fileInfo.LastWriteTimeUtc > lastModified;
+                }
+                catch
+                {
+                    return true; // 出现异常，保守认为已变更
+                }
+            }, cancellationToken);
+        }
+
+        /// <summary>
+        /// 获取文件元数据
+        /// </summary>
+        /// <param name="filePath">文件路径</param>
+        /// <param name="cancellationToken">取消令牌</param>
+        /// <returns>文件元数据</returns>
+        public async Task<FileMetadata> GetFileMetadataAsync(string filePath, CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            if (string.IsNullOrEmpty(filePath))
+                return null;
+
+            return await Task.Run(() =>
+            {
+                try
+                {
+                    // 检查缓存
+                    lock (_lock)
+                    {
+                        if (_fileMetadataCache.TryGetValue(filePath, out var cached))
+                        {
+                            return cached;
+                        }
+                    }
+
+                    // 创建新的元数据
+                    var fileInfo = new FileInfo(filePath);
+                    var metadata = FileMetadata.FromFileInfo(fileInfo);
+
+                    // 缓存元数据
+                    lock (_lock)
+                    {
+                        _fileMetadataCache[filePath] = metadata;
+                    }
+
+                    return metadata;
+                }
+                catch
+                {
+                    return FileMetadata.CreateEmpty(filePath);
+                }
+            }, cancellationToken);
+        }
+
+        /// <summary>
+        /// 批量检查多个文件的变更状态
+        /// </summary>
+        /// <param name="fileInfos">文件信息集合</param>
+        /// <param name="cancellationToken">取消令牌</param>
+        /// <returns>变更状态字典</returns>
+        public async Task<Dictionary<string, bool>> BatchCheckFilesAsync(
+            IEnumerable<(string filePath, DateTime lastModified)> fileInfos,
+            CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            var results = new Dictionary<string, bool>();
+            var fileInfosList = fileInfos?.ToList() ?? new List<(string, DateTime)>();
+
+            if (fileInfosList.Count == 0)
+                return results;
+
+            // 并行检查文件变更状态
+            var semaphore = new SemaphoreSlim(_options.WarmupConcurrency);
+            var tasks = fileInfosList.Select(async fileInfo =>
+            {
+                await semaphore.WaitAsync(cancellationToken);
+                try
+                {
+                    var isChanged = await IsFileChangedAsync(fileInfo.filePath, fileInfo.lastModified, cancellationToken);
+                    return new { FilePath = fileInfo.filePath, IsChanged = isChanged };
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            });
+
+            var checkResults = await Task.WhenAll(tasks);
+
+            foreach (var result in checkResults)
+            {
+                results[result.FilePath] = result.IsChanged;
+            }
+
+            return results;
+        }
+        #endregion
+
+        #region 私有方法
+        /// <summary>
+        /// 停止监控（内部方法）
+        /// </summary>
+        private void StopWatchingInternal()
         {
             if (_watcher != null)
             {
                 _watcher.EnableRaisingEvents = false;
+                _watcher.Created -= OnFileChanged;
+                _watcher.Changed -= OnFileChanged;
+                _watcher.Deleted -= OnFileChanged;
+                _watcher.Renamed -= OnFileRenamed;
+                _watcher.Error -= OnWatcherError;
                 _watcher.Dispose();
                 _watcher = null;
             }
 
-            IsWatching = false;
-            WatchPath = null;
-            FilePattern = null;
+            _isWatching = false;
+            WatchingPath = null;
+
+            // 停止防抖动定时器
+            _debounceTimer.Change(Timeout.Infinite, Timeout.Infinite);
+
+            // 处理剩余的待处理变更
+            ProcessPendingChanges(null);
         }
 
         /// <summary>
-        /// 检查指定文件是否被监控
+        /// 预加载文件元数据缓存
         /// </summary>
-        public bool IsFileWatched(string filePath)
-        {
-            if (!IsWatching || string.IsNullOrEmpty(filePath))
-                return false;
-
-            try
-            {
-                var fullPath = System.IO.Path.GetFullPath(filePath);
-                var watchPath = System.IO.Path.GetFullPath(WatchPath);
-                
-                return fullPath.StartsWith(watchPath, StringComparison.OrdinalIgnoreCase);
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// 获取监控统计信息
-        /// </summary>
-        public FileWatcherStatistics GetStatistics()
-        {
-            return _statistics;
-        }
-
-        private void OnFileSystemEvent(object sender, System.IO.FileSystemEventArgs e)
+        /// <param name="path">路径</param>
+        /// <param name="includeSubdirectories">是否包含子目录</param>
+        private void PreloadFileMetadata(string path, bool includeSubdirectories)
         {
             try
             {
-                var changeType = e.ChangeType switch
+                var searchOption = includeSubdirectories ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+                var files = Directory.EnumerateFiles(path, "*.*", searchOption)
+                    .Where(file => ShouldMonitorFile(file))
+                    .Take(1000); // 限制预加载文件数量
+
+                Parallel.ForEach(files, new ParallelOptions { MaxDegreeOfParallelism = _options.WarmupConcurrency }, file =>
                 {
-                    System.IO.WatcherChangeTypes.Created => FileChangeType.Created,
-                    System.IO.WatcherChangeTypes.Changed => FileChangeType.Changed,
-                    System.IO.WatcherChangeTypes.Deleted => FileChangeType.Deleted,
-                    _ => FileChangeType.Changed
-                };
-
-                var args = new FileChangeEventArgs(e.FullPath, changeType);
-                
-                _statistics.ChangeDetectionCount++;
-                _statistics.LastChangeTime = DateTime.UtcNow;
-
-                FileChanged?.Invoke(this, args);
-                _statistics.EventTriggerCount++;
+                    try
+                    {
+                        var metadata = FileMetadata.FromFilePath(file);
+                        lock (_lock)
+                        {
+                            _fileMetadataCache[file] = metadata;
+                        }
+                    }
+                    catch
+                    {
+                        // 忽略预加载失败的文件
+                    }
+                });
             }
             catch
             {
-                _statistics.ErrorCount++;
+                // 预加载失败不应该影响主要功能
             }
         }
 
-        private void OnFileRenamed(object sender, System.IO.RenamedEventArgs e)
+        /// <summary>
+        /// 检查是否应该监控指定文件
+        /// </summary>
+        /// <param name="filePath">文件路径</param>
+        /// <returns>是否应该监控</returns>
+        private bool ShouldMonitorFile(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath))
+                return false;
+
+            var fileName = Path.GetFileName(filePath);
+            var fileExtension = Path.GetExtension(filePath);
+
+            // 检查文件扩展名
+            if (_options.MonitoredFileExtensions.Count > 0 && 
+                !_options.MonitoredFileExtensions.Contains(fileExtension))
+            {
+                return false;
+            }
+
+            // 检查排除的文件模式
+            foreach (var pattern in _options.ExcludedFilePatterns)
+            {
+                if (IsMatchPattern(fileName, pattern))
+                    return false;
+            }
+
+            // 检查排除的目录模式
+            var directory = Path.GetDirectoryName(filePath);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                foreach (var pattern in _options.ExcludedDirectoryPatterns)
+                {
+                    if (directory.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+                        return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// 检查文件名是否匹配模式
+        /// </summary>
+        /// <param name="fileName">文件名</param>
+        /// <param name="pattern">匹配模式</param>
+        /// <returns>是否匹配</returns>
+        private static bool IsMatchPattern(string fileName, string pattern)
+        {
+            if (string.IsNullOrEmpty(fileName) || string.IsNullOrEmpty(pattern))
+                return false;
+
+            // 简单的通配符匹配
+            if (pattern.Contains('*'))
+            {
+                var regex = pattern.Replace("*", ".*").Replace("?", ".");
+                return System.Text.RegularExpressions.Regex.IsMatch(fileName, $"^{regex}$", 
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            }
+
+            return fileName.Equals(pattern, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// 文件变更事件处理
+        /// </summary>
+        private void OnFileChanged(object sender, FileSystemEventArgs e)
+        {
+            if (_disposed || !ShouldMonitorFile(e.FullPath))
+                return;
+
+            lock (_lock)
+            {
+                _pendingChanges[e.FullPath] = DateTime.UtcNow;
+                
+                // 重置防抖动定时器
+                _debounceTimer.Change(_options.FileChangeDebounceTime, Timeout.InfiniteTimeSpan);
+            }
+        }
+
+        /// <summary>
+        /// 文件重命名事件处理
+        /// </summary>
+        private void OnFileRenamed(object sender, RenamedEventArgs e)
+        {
+            if (_disposed)
+                return;
+
+            // 处理旧文件删除
+            if (ShouldMonitorFile(e.OldFullPath))
+            {
+                lock (_lock)
+                {
+                    _fileMetadataCache.Remove(e.OldFullPath);
+                    _pendingChanges[e.OldFullPath] = DateTime.UtcNow;
+                }
+
+                FireFileChangedEvent(e.OldFullPath, FileChangeType.Deleted);
+            }
+
+            // 处理新文件创建
+            if (ShouldMonitorFile(e.FullPath))
+            {
+                lock (_lock)
+                {
+                    _pendingChanges[e.FullPath] = DateTime.UtcNow;
+                    
+                    // 重置防抖动定时器
+                    _debounceTimer.Change(_options.FileChangeDebounceTime, Timeout.InfiniteTimeSpan);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 文件监控错误事件处理
+        /// </summary>
+        private void OnWatcherError(object sender, ErrorEventArgs e)
+        {
+            // 记录错误但继续运行
+            // 在实际应用中，这里应该记录日志
+        }
+
+        /// <summary>
+        /// 处理待处理的文件变更
+        /// </summary>
+        /// <param name="state">定时器状态</param>
+        private void ProcessPendingChanges(object state)
+        {
+            Dictionary<string, DateTime> changesToProcess;
+
+            lock (_lock)
+            {
+                if (_pendingChanges.Count == 0)
+                    return;
+
+                changesToProcess = new Dictionary<string, DateTime>(_pendingChanges);
+                _pendingChanges.Clear();
+            }
+
+            // 批量处理文件变更
+            _ = Task.Run(async () =>
+            {
+                foreach (var kvp in changesToProcess)
+                {
+                    try
+                    {
+                        await ProcessFileChange(kvp.Key);
+                    }
+                    catch
+                    {
+                        // 忽略处理单个文件变更时的错误
+                    }
+                }
+            });
+        }
+
+        /// <summary>
+        /// 处理单个文件变更
+        /// </summary>
+        /// <param name="filePath">文件路径</param>
+        private async Task ProcessFileChange(string filePath)
         {
             try
             {
-                var args = new FileChangeEventArgs(e.FullPath, FileChangeType.Renamed, e.OldFullPath);
-                
-                _statistics.ChangeDetectionCount++;
-                _statistics.LastChangeTime = DateTime.UtcNow;
+                FileMetadata oldMetadata = null;
+                FileMetadata newMetadata = null;
+                FileChangeType changeType;
 
-                FileChanged?.Invoke(this, args);
-                _statistics.EventTriggerCount++;
+                lock (_lock)
+                {
+                    _fileMetadataCache.TryGetValue(filePath, out oldMetadata);
+                }
+
+                if (File.Exists(filePath))
+                {
+                    newMetadata = await GetFileMetadataAsync(filePath);
+                    changeType = oldMetadata == null ? FileChangeType.Created : FileChangeType.Modified;
+                }
+                else
+                {
+                    changeType = FileChangeType.Deleted;
+                    lock (_lock)
+                    {
+                        _fileMetadataCache.Remove(filePath);
+                    }
+                }
+
+                FireFileChangedEvent(filePath, changeType, oldMetadata, newMetadata);
             }
             catch
             {
-                _statistics.ErrorCount++;
+                // 处理文件变更失败，忽略错误
             }
         }
 
+        /// <summary>
+        /// 触发文件变更事件
+        /// </summary>
+        /// <param name="filePath">文件路径</param>
+        /// <param name="changeType">变更类型</param>
+        /// <param name="oldMetadata">旧元数据</param>
+        /// <param name="newMetadata">新元数据</param>
+        private void FireFileChangedEvent(string filePath, FileChangeType changeType, 
+            FileMetadata oldMetadata = null, FileMetadata newMetadata = null)
+        {
+            try
+            {
+                var eventArgs = new FileChangedEventArgs(filePath, changeType, DateTime.UtcNow, oldMetadata, newMetadata);
+                FileChanged?.Invoke(this, eventArgs);
+            }
+            catch
+            {
+                // 事件处理失败不应该影响检测器本身
+            }
+        }
+
+        /// <summary>
+        /// 检查是否已释放资源
+        /// </summary>
+        private void ThrowIfDisposed()
+        {
+            if (_disposed)
+                throw new ObjectDisposedException(nameof(FileChangeDetector));
+        }
+        #endregion
+
+        #region IDisposable 实现
         /// <summary>
         /// 释放资源
         /// </summary>
         public void Dispose()
         {
-            if (!_disposed)
+            if (_disposed)
+                return;
+
+            _disposed = true;
+
+            lock (_lock)
             {
-                StopWatching();
-                _disposed = true;
+                StopWatchingInternal();
+                _debounceTimer.Dispose();
+                _fileMetadataCache.Clear();
+                _pendingChanges.Clear();
             }
         }
+        #endregion
     }
 }

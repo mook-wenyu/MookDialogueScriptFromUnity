@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Runtime.CompilerServices;
 using Unity.Profiling;
-using UnityEngine.Profiling;
 
 namespace MookDialogueScript.Lexers
 {

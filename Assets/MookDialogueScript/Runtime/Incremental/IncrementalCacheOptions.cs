@@ -1,314 +1,376 @@
 using System;
+using System.Collections.Generic;
 
 namespace MookDialogueScript.Incremental
 {
     /// <summary>
     /// 增量缓存配置选项
-    /// 用于配置增量缓存管理器的行为参数
+    /// 定义缓存系统的各种参数和行为配置
     /// </summary>
-    public class IncrementalCacheOptions
+    public sealed class IncrementalCacheOptions
     {
         /// <summary>
-        /// 最大缓存项数量
-        /// 默认值：5000
+        /// 是否启用缓存系统
         /// </summary>
-        public int MaxItems { get; set; } = 5000;
+        public bool EnableCache { get; set; } = true;
 
         /// <summary>
-        /// 默认TTL（生存时间）
-        /// 默认值：1小时
+        /// 是否启用文件系统监控
         /// </summary>
-        public TimeSpan? DefaultTtl { get; set; } = TimeSpan.FromHours(1);
+        public bool EnableFileWatcher { get; set; } = true;
 
         /// <summary>
-        /// 是否启用统计功能
-        /// 默认值：true
+        /// 是否启用解析结果缓存
+        /// </summary>
+        public bool EnableParseResultCache { get; set; } = true;
+
+        /// <summary>
+        /// 是否启用变量声明缓存
+        /// </summary>
+        public bool EnableVariableDeclarationCache { get; set; } = true;
+
+        /// <summary>
+        /// 是否启用持久化缓存
+        /// </summary>
+        public bool EnablePersistentCache { get; set; } = true;
+
+        /// <summary>
+        /// 最大缓存大小（内存中的项数）
+        /// </summary>
+        public int MaxCacheSize { get; set; } = 1000;
+
+        /// <summary>
+        /// 最大内存使用量（字节）
+        /// </summary>
+        public long MaxMemoryUsage { get; set; } = 100 * 1024 * 1024; // 100MB
+
+        /// <summary>
+        /// 缓存过期时间
+        /// </summary>
+        public TimeSpan CacheExpiration { get; set; } = TimeSpan.FromHours(24);
+
+        /// <summary>
+        /// 清理过期缓存的间隔时间
+        /// </summary>
+        public TimeSpan CleanupInterval { get; set; } = TimeSpan.FromMinutes(30);
+
+        /// <summary>
+        /// 文件变更检测的延迟时间（防抖动）
+        /// </summary>
+        public TimeSpan FileChangeDebounceTime { get; set; } = TimeSpan.FromMilliseconds(500);
+
+        /// <summary>
+        /// 批处理操作的最大项数
+        /// </summary>
+        public int MaxBatchSize { get; set; } = 100;
+
+        /// <summary>
+        /// 预热缓存的最大并发数
+        /// </summary>
+        public int WarmupConcurrency { get; set; } = Environment.ProcessorCount;
+
+        /// <summary>
+        /// 持久化缓存的存储路径
+        /// </summary>
+        public string PersistentCachePath { get; set; }
+
+        /// <summary>
+        /// 缓存序列化格式
+        /// </summary>
+        public CacheSerializationFormat SerializationFormat { get; set; } = CacheSerializationFormat.Binary;
+
+        /// <summary>
+        /// 是否启用缓存压缩
+        /// </summary>
+        public bool EnableCacheCompression { get; set; } = true;
+
+        /// <summary>
+        /// 缓存压缩级别（1-9）
+        /// </summary>
+        public int CompressionLevel { get; set; } = 6;
+
+        /// <summary>
+        /// 是否启用缓存统计收集
         /// </summary>
         public bool EnableStatistics { get; set; } = true;
 
         /// <summary>
-        /// 自动清理间隔时间
-        /// 默认值：5分钟
+        /// 统计数据保留时间
         /// </summary>
-        public TimeSpan CleanupInterval { get; set; } = TimeSpan.FromMinutes(5);
+        public TimeSpan StatisticsRetention { get; set; } = TimeSpan.FromDays(7);
 
         /// <summary>
-        /// 是否启用依赖关系追踪
-        /// 默认值：true
+        /// 日志记录级别
         /// </summary>
-        public bool EnableDependencyTracking { get; set; } = true;
+        public CacheLogLevel LogLevel { get; set; } = CacheLogLevel.Warning;
 
         /// <summary>
-        /// 是否启用级联失效
-        /// 当依赖项失效时，自动失效相关的依赖者
-        /// 默认值：true
+        /// 监控的文件扩展名集合
         /// </summary>
-        public bool EnableCascadeInvalidation { get; set; } = true;
-
-        /// <summary>
-        /// 最大依赖深度
-        /// 用于限制级联失效的递归深度，防止循环依赖导致的无限递归
-        /// 默认值：10
-        /// </summary>
-        public int MaxDependencyDepth { get; set; } = 10;
-
-        /// <summary>
-        /// 是否启用自动刷新
-        /// 当缓存项过期时是否自动刷新
-        /// 默认值：false
-        /// </summary>
-        public bool EnableAutoRefresh { get; set; } = false;
-
-        /// <summary>
-        /// 自动刷新间隔时间
-        /// 默认值：30分钟
-        /// </summary>
-        public TimeSpan AutoRefreshInterval { get; set; } = TimeSpan.FromMinutes(30);
-
-        /// <summary>
-        /// 内存压力阈值（字节）
-        /// 当估算内存使用超过此阈值时，触发额外的清理操作
-        /// 默认值：50MB
-        /// </summary>
-        public long MemoryPressureThreshold { get; set; } = 50 * 1024 * 1024; // 50MB
-
-        /// <summary>
-        /// 是否启用内存监控
-        /// 默认值：true
-        /// </summary>
-        public bool EnableMemoryMonitoring { get; set; } = true;
-
-        /// <summary>
-        /// 预热缓存大小
-        /// 在缓存初始化时预分配的容量
-        /// 默认值：100
-        /// </summary>
-        public int WarmupCacheSize { get; set; } = 100;
-
-        /// <summary>
-        /// 缓存项最小访问间隔
-        /// 用于防止频繁访问相同项时的重复统计
-        /// 默认值：1秒
-        /// </summary>
-        public TimeSpan MinAccessInterval { get; set; } = TimeSpan.FromSeconds(1);
-
-        /// <summary>
-        /// 默认配置实例
-        /// </summary>
-        public static IncrementalCacheOptions Default => new IncrementalCacheOptions();
-
-        /// <summary>
-        /// 高性能配置
-        /// 适用于高并发、大数据量场景
-        /// </summary>
-        public static IncrementalCacheOptions HighPerformance => new IncrementalCacheOptions
+        public HashSet<string> MonitoredFileExtensions { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            MaxItems = 10000,
-            DefaultTtl = TimeSpan.FromHours(6),
-            CleanupInterval = TimeSpan.FromMinutes(10),
-            EnableDependencyTracking = true,
-            EnableCascadeInvalidation = true,
-            MaxDependencyDepth = 15,
-            MemoryPressureThreshold = 100 * 1024 * 1024, // 100MB
-            WarmupCacheSize = 500,
-            MinAccessInterval = TimeSpan.FromMilliseconds(500)
+            ".mds", ".md", ".dialogue"
         };
 
         /// <summary>
-        /// 内存优化配置
-        /// 适用于内存受限的环境
+        /// 排除监控的目录模式
         /// </summary>
-        public static IncrementalCacheOptions MemoryOptimized => new IncrementalCacheOptions
+        public HashSet<string> ExcludedDirectoryPatterns { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            MaxItems = 1000,
-            DefaultTtl = TimeSpan.FromMinutes(30),
-            CleanupInterval = TimeSpan.FromMinutes(2),
-            EnableDependencyTracking = false,
-            EnableCascadeInvalidation = false,
-            MaxDependencyDepth = 5,
-            MemoryPressureThreshold = 10 * 1024 * 1024, // 10MB
-            WarmupCacheSize = 50,
-            MinAccessInterval = TimeSpan.FromSeconds(2)
+            ".git", ".svn", "bin", "obj", "temp", "tmp"
         };
 
         /// <summary>
-        /// 开发调试配置
-        /// 适用于开发和调试环境
+        /// 排除监控的文件模式
         /// </summary>
-        public static IncrementalCacheOptions Development => new IncrementalCacheOptions
+        public HashSet<string> ExcludedFilePatterns { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            MaxItems = 500,
-            DefaultTtl = TimeSpan.FromMinutes(10),
-            CleanupInterval = TimeSpan.FromMinutes(1),
-            EnableStatistics = true,
-            EnableDependencyTracking = true,
-            EnableCascadeInvalidation = true,
-            MaxDependencyDepth = 8,
-            EnableMemoryMonitoring = true,
-            WarmupCacheSize = 20,
-            MinAccessInterval = TimeSpan.FromMilliseconds(100)
+            "*.tmp", "*.temp", "*.bak", "*~"
         };
 
         /// <summary>
-        /// 禁用配置
-        /// 最小化缓存功能，主要用于测试或禁用缓存的场景
+        /// 缓存键生成策略
         /// </summary>
-        public static IncrementalCacheOptions Disabled => new IncrementalCacheOptions
-        {
-            MaxItems = 10,
-            DefaultTtl = TimeSpan.FromSeconds(1),
-            CleanupInterval = TimeSpan.Zero,
-            EnableStatistics = false,
-            EnableDependencyTracking = false,
-            EnableCascadeInvalidation = false,
-            EnableAutoRefresh = false,
-            EnableMemoryMonitoring = false,
-            WarmupCacheSize = 0,
-            MinAccessInterval = TimeSpan.Zero
-        };
+        public CacheKeyStrategy KeyStrategy { get; set; } = CacheKeyStrategy.FilePath;
 
         /// <summary>
-        /// 克隆当前配置
+        /// 是否在启动时验证缓存完整性
         /// </summary>
-        /// <returns>配置副本</returns>
-        public IncrementalCacheOptions Clone()
+        public bool ValidateIntegrityOnStartup { get; set; } = true;
+
+        /// <summary>
+        /// 是否在关闭时自动保存缓存
+        /// </summary>
+        public bool AutoSaveOnShutdown { get; set; } = true;
+
+        /// <summary>
+        /// 线程安全模式
+        /// </summary>
+        public ThreadSafetyMode ThreadSafetyMode { get; set; } = ThreadSafetyMode.Full;
+
+        /// <summary>
+        /// 创建默认配置
+        /// </summary>
+        /// <returns>默认配置实例</returns>
+        public static IncrementalCacheOptions CreateDefault()
+        {
+            return new IncrementalCacheOptions();
+        }
+
+        /// <summary>
+        /// 创建高性能配置（启用所有优化）
+        /// </summary>
+        /// <returns>高性能配置实例</returns>
+        public static IncrementalCacheOptions CreateHighPerformance()
         {
             return new IncrementalCacheOptions
             {
-                MaxItems = MaxItems,
-                DefaultTtl = DefaultTtl,
-                EnableStatistics = EnableStatistics,
-                CleanupInterval = CleanupInterval,
-                EnableDependencyTracking = EnableDependencyTracking,
-                EnableCascadeInvalidation = EnableCascadeInvalidation,
-                MaxDependencyDepth = MaxDependencyDepth,
-                EnableAutoRefresh = EnableAutoRefresh,
-                AutoRefreshInterval = AutoRefreshInterval,
-                MemoryPressureThreshold = MemoryPressureThreshold,
-                EnableMemoryMonitoring = EnableMemoryMonitoring,
-                WarmupCacheSize = WarmupCacheSize,
-                MinAccessInterval = MinAccessInterval
+                MaxCacheSize = 5000,
+                MaxMemoryUsage = 500 * 1024 * 1024, // 500MB
+                WarmupConcurrency = Environment.ProcessorCount * 2,
+                EnableCacheCompression = true,
+                CompressionLevel = 3, // 快速压缩
+                CleanupInterval = TimeSpan.FromMinutes(15),
+                FileChangeDebounceTime = TimeSpan.FromMilliseconds(200),
+                ThreadSafetyMode = ThreadSafetyMode.Full
+            };
+        }
+
+        /// <summary>
+        /// 创建内存优化配置（最小化内存使用）
+        /// </summary>
+        /// <returns>内存优化配置实例</returns>
+        public static IncrementalCacheOptions CreateMemoryOptimized()
+        {
+            return new IncrementalCacheOptions
+            {
+                MaxCacheSize = 500,
+                MaxMemoryUsage = 50 * 1024 * 1024, // 50MB
+                EnableCacheCompression = true,
+                CompressionLevel = 9, // 最大压缩
+                CleanupInterval = TimeSpan.FromMinutes(10),
+                CacheExpiration = TimeSpan.FromHours(6),
+                EnablePersistentCache = false // 减少磁盘使用
+            };
+        }
+
+        /// <summary>
+        /// 创建调试配置（详细日志和统计）
+        /// </summary>
+        /// <returns>调试配置实例</returns>
+        public static IncrementalCacheOptions CreateDebug()
+        {
+            return new IncrementalCacheOptions
+            {
+                LogLevel = CacheLogLevel.Debug,
+                EnableStatistics = true,
+                StatisticsRetention = TimeSpan.FromDays(30),
+                ValidateIntegrityOnStartup = true,
+                ThreadSafetyMode = ThreadSafetyMode.Full
             };
         }
 
         /// <summary>
         /// 验证配置的有效性
         /// </summary>
-        /// <returns>验证结果</returns>
-        public ValidationResult Validate()
+        /// <returns>验证结果和错误信息</returns>
+        public (bool isValid, string errorMessage) Validate()
         {
-            var result = new ValidationResult();
+            if (MaxCacheSize <= 0)
+                return (false, "MaxCacheSize 必须大于 0");
 
-            if (MaxItems <= 0)
-            {
-                result.AddError($"MaxItems 必须大于 0，当前值：{MaxItems}");
-            }
+            if (MaxMemoryUsage <= 0)
+                return (false, "MaxMemoryUsage 必须大于 0");
 
-            if (MaxDependencyDepth <= 0)
-            {
-                result.AddError($"MaxDependencyDepth 必须大于 0，当前值：{MaxDependencyDepth}");
-            }
+            if (MaxBatchSize <= 0)
+                return (false, "MaxBatchSize 必须大于 0");
 
-            if (CleanupInterval < TimeSpan.Zero)
-            {
-                result.AddError($"CleanupInterval 不能为负数，当前值：{CleanupInterval}");
-            }
+            if (WarmupConcurrency <= 0)
+                return (false, "WarmupConcurrency 必须大于 0");
 
-            if (MemoryPressureThreshold <= 0)
-            {
-                result.AddError($"MemoryPressureThreshold 必须大于 0，当前值：{MemoryPressureThreshold}");
-            }
+            if (CompressionLevel < 1 || CompressionLevel > 9)
+                return (false, "CompressionLevel 必须在 1-9 范围内");
 
-            if (WarmupCacheSize < 0)
-            {
-                result.AddError($"WarmupCacheSize 不能为负数，当前值：{WarmupCacheSize}");
-            }
+            if (EnablePersistentCache && string.IsNullOrWhiteSpace(PersistentCachePath))
+                return (false, "启用持久化缓存时，PersistentCachePath 不能为空");
 
-            if (MinAccessInterval < TimeSpan.Zero)
-            {
-                result.AddError($"MinAccessInterval 不能为负数，当前值：{MinAccessInterval}");
-            }
-
-            return result;
+            return (true, null);
         }
 
-        public override string ToString()
+        /// <summary>
+        /// 克隆配置对象
+        /// </summary>
+        /// <returns>配置对象的副本</returns>
+        public IncrementalCacheOptions Clone()
         {
-            return $"IncrementalCacheOptions: MaxItems={MaxItems}, TTL={DefaultTtl}, " +
-                   $"Cleanup={CleanupInterval}, Dependencies={EnableDependencyTracking}, " +
-                   $"Cascade={EnableCascadeInvalidation}, MaxDepth={MaxDependencyDepth}";
+            return new IncrementalCacheOptions
+            {
+                EnableCache = EnableCache,
+                EnableFileWatcher = EnableFileWatcher,
+                EnableParseResultCache = EnableParseResultCache,
+                EnableVariableDeclarationCache = EnableVariableDeclarationCache,
+                EnablePersistentCache = EnablePersistentCache,
+                MaxCacheSize = MaxCacheSize,
+                MaxMemoryUsage = MaxMemoryUsage,
+                CacheExpiration = CacheExpiration,
+                CleanupInterval = CleanupInterval,
+                FileChangeDebounceTime = FileChangeDebounceTime,
+                MaxBatchSize = MaxBatchSize,
+                WarmupConcurrency = WarmupConcurrency,
+                PersistentCachePath = PersistentCachePath,
+                SerializationFormat = SerializationFormat,
+                EnableCacheCompression = EnableCacheCompression,
+                CompressionLevel = CompressionLevel,
+                EnableStatistics = EnableStatistics,
+                StatisticsRetention = StatisticsRetention,
+                LogLevel = LogLevel,
+                MonitoredFileExtensions = new HashSet<string>(MonitoredFileExtensions, StringComparer.OrdinalIgnoreCase),
+                ExcludedDirectoryPatterns = new HashSet<string>(ExcludedDirectoryPatterns, StringComparer.OrdinalIgnoreCase),
+                ExcludedFilePatterns = new HashSet<string>(ExcludedFilePatterns, StringComparer.OrdinalIgnoreCase),
+                KeyStrategy = KeyStrategy,
+                ValidateIntegrityOnStartup = ValidateIntegrityOnStartup,
+                AutoSaveOnShutdown = AutoSaveOnShutdown,
+                ThreadSafetyMode = ThreadSafetyMode
+            };
         }
     }
 
     /// <summary>
-    /// 配置验证结果
+    /// 缓存序列化格式
     /// </summary>
-    public class ValidationResult
+    public enum CacheSerializationFormat
     {
-        private readonly System.Collections.Generic.List<string> _errors = new System.Collections.Generic.List<string>();
-        private readonly System.Collections.Generic.List<string> _warnings = new System.Collections.Generic.List<string>();
+        /// <summary>
+        /// 二进制格式（最快，最小）
+        /// </summary>
+        Binary,
 
         /// <summary>
-        /// 是否有错误
+        /// JSON格式（可读，兼容性好）
         /// </summary>
-        public bool HasErrors => _errors.Count > 0;
+        Json,
 
         /// <summary>
-        /// 是否有警告
+        /// MessagePack格式（快速，紧凑）
         /// </summary>
-        public bool HasWarnings => _warnings.Count > 0;
+        MessagePack
+    }
+
+    /// <summary>
+    /// 缓存日志级别
+    /// </summary>
+    public enum CacheLogLevel
+    {
+        /// <summary>
+        /// 调试信息
+        /// </summary>
+        Debug,
 
         /// <summary>
-        /// 错误列表
+        /// 信息
         /// </summary>
-        public System.Collections.Generic.IReadOnlyList<string> Errors => _errors.AsReadOnly();
+        Info,
 
         /// <summary>
-        /// 警告列表
+        /// 警告
         /// </summary>
-        public System.Collections.Generic.IReadOnlyList<string> Warnings => _warnings.AsReadOnly();
+        Warning,
 
         /// <summary>
-        /// 是否验证通过（无错误）
+        /// 错误
         /// </summary>
-        public bool IsValid => !HasErrors;
+        Error,
 
         /// <summary>
-        /// 添加错误信息
+        /// 禁用日志
         /// </summary>
-        /// <param name="message">错误信息</param>
-        public void AddError(string message)
-        {
-            if (!string.IsNullOrWhiteSpace(message))
-            {
-                _errors.Add(message);
-            }
-        }
+        None
+    }
+
+    /// <summary>
+    /// 缓存键生成策略
+    /// </summary>
+    public enum CacheKeyStrategy
+    {
+        /// <summary>
+        /// 使用文件路径作为键
+        /// </summary>
+        FilePath,
 
         /// <summary>
-        /// 添加警告信息
+        /// 使用文件路径哈希作为键
         /// </summary>
-        /// <param name="message">警告信息</param>
-        public void AddWarning(string message)
-        {
-            if (!string.IsNullOrWhiteSpace(message))
-            {
-                _warnings.Add(message);
-            }
-        }
+        FilePathHash,
 
-        public override string ToString()
-        {
-            var result = $"验证结果: Valid={IsValid}";
-            if (HasErrors)
-            {
-                result += $", Errors={_errors.Count}";
-            }
-            if (HasWarnings)
-            {
-                result += $", Warnings={_warnings.Count}";
-            }
-            return result;
-        }
+        /// <summary>
+        /// 使用文件内容哈希作为键
+        /// </summary>
+        ContentHash,
+
+        /// <summary>
+        /// 使用组合哈希（路径+内容）作为键
+        /// </summary>
+        CompositeHash
+    }
+
+    /// <summary>
+    /// 线程安全模式
+    /// </summary>
+    public enum ThreadSafetyMode
+    {
+        /// <summary>
+        /// 无线程安全（仅单线程使用）
+        /// </summary>
+        None,
+
+        /// <summary>
+        /// 基本线程安全（读操作安全）
+        /// </summary>
+        Basic,
+
+        /// <summary>
+        /// 完全线程安全（所有操作安全）
+        /// </summary>
+        Full
     }
 }

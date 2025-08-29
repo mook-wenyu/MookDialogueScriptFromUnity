@@ -7,48 +7,6 @@ using UnityEngine.Scripting;
 namespace MookDialogueScript
 {
     /// <summary>
-    /// 全局节点查找提供者实现
-    /// </summary>
-    public class RunnerNodeProvider : IGlobalNodeProvider
-    {
-        private readonly DialogueContext _context;
-
-        public RunnerNodeProvider(DialogueContext context)
-        {
-            _context = context ?? throw new ArgumentNullException(nameof(context));
-        }
-
-        /// <summary>
-        /// 查找节点是否存在
-        /// </summary>
-        public bool NodeExists(string nodeName)
-        {
-            return _context.HasNode(nodeName);
-        }
-
-        /// <summary>
-        /// 获取相似节点名建议
-        /// </summary>
-        public string GetSimilarNodeName(string nodeName)
-        {
-            // 获取所有节点名
-            var allNodes = _context.GetAllNodeNames();
-
-            // 使用统一的Utils工具类找出最相似的节点名
-            return Utils.GetMostSimilarString(nodeName, allNodes);
-        }
-
-        /// <summary>
-        /// 获取所有节点名（用于语义分析）
-        /// </summary>
-        public IEnumerable<string> GetAllNodeNames()
-        {
-            return _context.GetAllNodeNames();
-        }
-
-    }
-
-    /// <summary>
     /// 运行器，负责运行对话
     /// </summary>
     public class Runner

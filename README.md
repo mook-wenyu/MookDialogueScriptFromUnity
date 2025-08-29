@@ -10,7 +10,7 @@ MookDialogueScript 是一个轻量级的对话脚本系统，专为 Unity 游戏
 - 🏗️ 架构重构升级：5层模块化设计，完整SOLID原则（v0.8.0新增）
 - ⚡ 高性能对象池系统：通用池架构和全局管理（v0.8.0新增）
 - 🎯 完整语义分析系统：分层架构设计和插件化规则（v0.8.0新增）
-- 🚀 增量缓存系统：智能缓存管理和依赖追踪（v0.8.0新增）
+- 🚀 增量缓存系统：智能缓存管理和依赖追踪，支持多种预设配置（v0.8.0新增）
 - 高性能词法分析器架构（v0.7.0新增）
 - 支持并发处理和对象池优化（v0.7.0新增）
 - 支持变量系统和条件判断
@@ -756,6 +756,37 @@ var $damage dice(8, 3)
 // 在对话中使用
 战士: 我攻击敌人，造成了{dice(6, 2)}点伤害！
 ```
+
+### 增量缓存系统
+
+MookDialogueScript v0.8.0 引入了完整的增量缓存系统，支持智能缓存管理和依赖追踪：
+
+```csharp
+// 使用预设缓存配置快速启用
+var runner = new Runner("DialogueScripts", CacheConfigType.Development);
+// 或者
+var runner = new Runner("DialogueScripts", CacheConfigType.Production);
+
+// 自定义缓存配置
+var runner = Runner.CreateWithCustomCache("DialogueScripts", options =>
+{
+    options.MaxCacheSize = 1000;
+    options.MaxMemoryUsage = 100 * 1024 * 1024; // 100MB
+    options.EnableFileWatcher = true;
+});
+
+// 获取缓存统计
+var stats = runner.GetCacheStatistics();
+Debug.Log($"缓存命中率: {stats.HitRatio:P2}");
+```
+
+支持的预设配置：
+- `CacheConfigType.Development`：开发环境（详细日志，大内存）
+- `CacheConfigType.Production`：生产环境（持久化缓存，优化性能）
+- `CacheConfigType.Performance`：性能优先（大缓存，最大并发）
+- `CacheConfigType.MemoryFriendly`：内存友好（小缓存，压缩存储）
+
+详细的缓存集成使用指南请参考 [CacheIntegrationGuide.md](Assets/MookDialogueScript/Documentation/CacheIntegrationGuide.md)。
 
 ## 更新说明
 

@@ -114,11 +114,8 @@ namespace MookDialogueScript.Pooling
             
             if (_pools.TryRemove(poolKey, out var pool))
             {
-                if (pool is IDisposable disposablePool)
-                {
-                    disposablePool.Dispose();
-                }
-                
+                pool?.Dispose();
+
                 return true;
             }
 
@@ -349,36 +346,31 @@ namespace MookDialogueScript.Pooling
         public void Dispose()
         {
             Dispose(true);
-            GC.SuppressFinalize(this);
         }
 
         private void Dispose(bool disposing)
         {
-            if (!_disposed)
+            if (_disposed) return;
+            if (disposing)
             {
-                if (disposing)
+                // 释放所有池
+                foreach (var pool in _pools.Values)
                 {
-                    // 释放所有池
-                    foreach (var pool in _pools.Values)
+                    if (pool == null) continue;
+                    try
                     {
-                        if (pool is IDisposable disposablePool)
-                        {
-                            try
-                            {
-                                disposablePool.Dispose();
-                            }
-                            catch (Exception ex)
-                            {
-                                Debug.LogWarning($"释放池时发生错误: {ex.Message}");
-                            }
-                        }
+                        pool.Dispose();
                     }
-
-                    _pools.Clear();
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"释放池时发生错误: {ex.Message}");
+                    }
                 }
 
-                _disposed = true;
+                _pools.Clear();
             }
+
+            _disposed = true;
         }
         #endregion
     }

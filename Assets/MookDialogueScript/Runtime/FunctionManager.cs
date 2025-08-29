@@ -294,7 +294,7 @@ namespace MookDialogueScript
                 }
 
                 _compiledFunctions[name] = CompileMethod(function.Method, function.Target);
-                
+
                 // 构建并注册函数签名
                 var signature = CreateFunctionSignature(name, function.Method, function.Target);
                 _functionSignatures[name] = signature;
@@ -348,7 +348,7 @@ namespace MookDialogueScript
             // 处理 Task 返回类型
             if (clrType == typeof(Task))
                 return "Object";
-            
+
             if (clrType.IsGenericType && clrType.GetGenericTypeDefinition() == typeof(Task<>))
             {
                 var innerType = clrType.GetGenericArguments()[0];
@@ -357,10 +357,10 @@ namespace MookDialogueScript
 
             return clrType switch
             {
-                Type t when t == typeof(double) || t == typeof(float) || t == typeof(int) || 
-                           t == typeof(long) || t == typeof(short) || t == typeof(byte) ||
-                           t == typeof(decimal) || t == typeof(uint) || t == typeof(ulong) || 
-                           t == typeof(ushort) || t == typeof(sbyte) => "Number",
+                Type t when t == typeof(double) || t == typeof(float) || t == typeof(int) ||
+                            t == typeof(long) || t == typeof(short) || t == typeof(byte) ||
+                            t == typeof(decimal) || t == typeof(uint) || t == typeof(ulong) ||
+                            t == typeof(ushort) || t == typeof(sbyte) => "Number",
                 Type t when t == typeof(string) => "String",
                 Type t when t == typeof(bool) => "Boolean",
                 Type t when typeof(Delegate).IsAssignableFrom(t) => "Function",
@@ -621,7 +621,7 @@ namespace MookDialogueScript
         public async Task<RuntimeValue> CallFunction(string name, List<RuntimeValue> args, int line = 0, int column = 0)
         {
             Func<List<RuntimeValue>, Task<RuntimeValue>> func;
-            
+
             _functionsLock.EnterReadLock();
             try
             {
@@ -845,15 +845,14 @@ namespace MookDialogueScript
             {
                 if (_functionSignatures.TryGetValue(name, out var signature))
                     return signature;
-                    
+
                 // 检查是否有同名多个签名（重载冲突）
                 var overloadCount = GetOverloadCount(name);
                 if (overloadCount > 1)
                 {
-                    throw new SemanticException($"SEM016: 不支持重载：'{name}'，找到 {overloadCount} 个签名", 
-                        line, column);
+                    MLogger.Error($"SEM016: 不支持重载：'{name}'，找到 {overloadCount} 个签名 行：{line} 列：{column}");
                 }
-                    
+
                 return null;
             }
             finally
@@ -912,7 +911,6 @@ namespace MookDialogueScript
             // 在我们的系统中，不支持重载，所以总是返回 false
             return false;
         }
-
         #endregion
 
         #region 资源管理

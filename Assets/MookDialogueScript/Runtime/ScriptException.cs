@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 
 namespace MookDialogueScript
 {
@@ -9,11 +8,6 @@ namespace MookDialogueScript
     /// </summary>
     public enum ErrorCode
     {
-        // 语义分析错误
-        SA_CALL_UNVERIFIED,         // 函数调用未验证
-        SA_FUNC_NOT_FOUND,          // 语义分析：函数未找到
-        SA_MEMBER_UNKNOWN,          // 成员未知
-        
         // 运行时错误
         FUNC_NOT_FOUND,             // 函数未找到
         FUNC_EXPECTED,              // 期望函数类型
@@ -269,71 +263,6 @@ namespace MookDialogueScript
     }
 
     /// <summary>
-    /// 语义分析异常 - 在语义分析阶段发生的错误
-    /// 包括类型不匹配、未定义的变量或函数、作用域错误等
-    /// </summary>
-    public class SemanticException : ScriptException
-    {
-        /// <summary>
-        /// 初始化 SemanticException 类的新实例
-        /// </summary>
-        public SemanticException()
-        {
-        }
-
-        /// <summary>
-        /// 使用指定的错误消息初始化 SemanticException 类的新实例
-        /// </summary>
-        /// <param name="message">描述语义分析错误的消息</param>
-        public SemanticException(string message) : base(message) { }
-
-        /// <summary>
-        /// 使用指定的错误消息和内部异常初始化 SemanticException 类的新实例
-        /// </summary>
-        /// <param name="message">描述语义分析错误的消息</param>
-        /// <param name="innerException">导致当前异常的异常</param>
-        public SemanticException(string message, Exception innerException) : base(message, innerException) { }
-
-        /// <summary>
-        /// 使用指定的错误消息和位置信息初始化 SemanticException 类的新实例
-        /// </summary>
-        /// <param name="message">描述语义分析错误的消息</param>
-        /// <param name="line">错误发生的行号</param>
-        /// <param name="column">错误发生的列号</param>
-        public SemanticException(string message, int line, int column) : base(message, line, column) { }
-
-        /// <summary>
-        /// 使用指定的错误消息、位置信息和内部异常初始化 SemanticException 类的新实例
-        /// </summary>
-        /// <param name="message">描述语义分析错误的消息</param>
-        /// <param name="line">错误发生的行号</param>
-        /// <param name="column">错误发生的列号</param>
-        /// <param name="innerException">导致当前异常的异常</param>
-        public SemanticException(string message, int line, int column, Exception innerException) : base(message, line, column, innerException) { }
-
-        /// <summary>
-        /// 使用指定的错误码、消息、位置信息和建议初始化 SemanticException 类的新实例
-        /// </summary>
-        /// <param name="errorCode">错误码</param>
-        /// <param name="message">描述语义分析错误的消息</param>
-        /// <param name="line">错误发生的行号</param>
-        /// <param name="column">错误发生的列号</param>
-        /// <param name="suggestion">建议信息</param>
-        public SemanticException(ErrorCode errorCode, string message, int line, int column, string suggestion = null) : base(errorCode, message, line, column, suggestion) { }
-
-        /// <summary>
-        /// 使用指定的错误码、消息、位置信息、建议和内部异常初始化 SemanticException 类的新实例
-        /// </summary>
-        /// <param name="errorCode">错误码</param>
-        /// <param name="message">描述语义分析错误的消息</param>
-        /// <param name="line">错误发生的行号</param>
-        /// <param name="column">错误发生的列号</param>
-        /// <param name="suggestion">建议信息</param>
-        /// <param name="innerException">导致当前异常的异常</param>
-        public SemanticException(ErrorCode errorCode, string message, int line, int column, string suggestion, Exception innerException) : base(errorCode, message, line, column, suggestion, innerException) { }
-    }
-
-    /// <summary>
     /// 解释器运行时异常 - 在脚本执行阶段发生的错误
     /// 包括运行时类型错误、空引用、除零错误、函数调用失败等
     /// </summary>
@@ -474,21 +403,6 @@ namespace MookDialogueScript
             string message = $"类型 '{objectType}' 不支持调用操作";
             string suggestion = "确保对象是函数、委托或具有 Invoke 方法的类型";
             return new InterpreterException(ErrorCode.CALLABLE_NOT_SUPPORTED, message, line, column, suggestion);
-        }
-
-        /// <summary>
-        /// 创建语义分析函数未找到异常
-        /// </summary>
-        /// <param name="functionName">函数名</param>
-        /// <param name="availableFunctions">可用函数名列表</param>
-        /// <param name="line">行号</param>
-        /// <param name="column">列号</param>
-        /// <returns>异常实例</returns>
-        public static SemanticException CreateSemanticFunctionNotFoundException(string functionName, IEnumerable<string> availableFunctions, int line = 0, int column = 0)
-        {
-            string suggestion = GetSimilarNameSuggestion(functionName, availableFunctions);
-            string message = $"语义分析：未找到函数 '{functionName}'";
-            return new SemanticException(ErrorCode.SA_FUNC_NOT_FOUND, message, line, column, suggestion);
         }
 
         /// <summary>

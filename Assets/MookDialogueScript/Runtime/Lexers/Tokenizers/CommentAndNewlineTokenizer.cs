@@ -1,5 +1,3 @@
-using System.Text;
-
 namespace MookDialogueScript.Lexers
 {
     /// <summary>
