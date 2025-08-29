@@ -3,8 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using UnityEngine.Scripting;
-using MookDialogueScript.Semantic.Contracts;
-using MookDialogueScript.Semantic.Core;
 
 namespace MookDialogueScript
 {
@@ -35,7 +33,7 @@ namespace MookDialogueScript
         {
             // 获取所有节点名
             var allNodes = _context.GetAllNodeNames();
-            
+
             // 使用统一的Utils工具类找出最相似的节点名
             return Utils.GetMostSimilarString(nodeName, allNodes);
         }
@@ -57,8 +55,6 @@ namespace MookDialogueScript
     {
         private readonly DialogueContext _context;
         private readonly Interpreter _interpreter;
-        private readonly ISemanticAnalyzer _semanticAnalyzer;
-        private readonly RunnerNodeProvider _nodeProvider;
 
         // 是否正在执行中（等待用户输入等状态）
         private bool _isExecuting;
@@ -76,15 +72,6 @@ namespace MookDialogueScript
         // AST节点执行栈，用于跟踪嵌套执行
         private readonly Stack<(ASTNode node, int index)> _executionStack = new();
 
-        // 语义分析配置
-        private AnalysisOptions _analysisOptions;
-        
-        // 是否启用语义分析
-        private bool _enableSemanticAnalysis = true;
-
-        // 注册的脚本列表，用于语义分析
-        private readonly List<ScriptNode> _registeredScripts = new();
-
         // 是否有可选择的选项
         [Preserve]
         public bool HasChoices => _isCollectingChoices && _currentChoices.Count > 0;
@@ -100,64 +87,6 @@ namespace MookDialogueScript
         /// </summary>
         [Preserve]
         public DialogueContext Context => _context;
-
-        /// <summary>
-        /// 获取语义分析器
-        /// </summary>
-        [Preserve]
-        public ISemanticAnalyzer SemanticAnalyzer => _semanticAnalyzer;
-
-        /// <summary>
-        /// 设置语义分析选项
-        /// </summary>
-        /// <param name="options">分析选项</param>
-        public void SetAnalysisOptions(AnalysisOptions options)
-        {
-            _analysisOptions = options ?? new AnalysisOptions();
-        }
-
-        /// <summary>
-        /// 启用或禁用语义分析
-        /// </summary>
-        /// <param name="enable">是否启用</param>
-        public void SetSemanticAnalysisEnabled(bool enable)
-        {
-            _enableSemanticAnalysis = enable;
-        }
-
-        /// <summary>
-        /// 对脚本进行语义分析
-        /// </summary>
-        /// <param name="script">要分析的脚本</param>
-        /// <returns>语义分析报告</returns>
-        public SemanticReport AnalyzeScript(ScriptNode script)
-        {
-            if (!_enableSemanticAnalysis)
-            {
-                return new SemanticReport(); // 返回空报告
-            }
-
-            var variableManager = _context.GetVariableManager();
-            var functionManager = _context.GetFunctionManager();
-            
-            return _semanticAnalyzer.Analyze(script, variableManager, functionManager);
-        }
-
-        /// <summary>
-        /// 检查脚本是否有语义错误
-        /// </summary>
-        /// <param name="script">要检查的脚本</param>
-        /// <returns>是否有错误</returns>
-        public bool HasSemanticErrors(ScriptNode script)
-        {
-            if (!_enableSemanticAnalysis)
-            {
-                return false;
-            }
-
-            var report = AnalyzeScript(script);
-            return report.HasErrors;
-        }
 
         /// <summary>
         /// 对话开始事件，需要存储对话状态并存档，对话结束前禁止存档
@@ -209,11 +138,6 @@ namespace MookDialogueScript
             _interpreter = new Interpreter(_context);
             // 初始化存储
             Storage = new DialogueStorage();
-
-            // 初始化语义分析器
-            _nodeProvider = new RunnerNodeProvider(_context);
-            _analysisOptions = new AnalysisOptions();
-            _semanticAnalyzer = new CompositeSemanticAnalyzer(_analysisOptions, _nodeProvider);
 
             // 重置状态
             _conditionStates.Clear();
@@ -267,12 +191,6 @@ namespace MookDialogueScript
         public void RegisterScript(ScriptNode script)
         {
             _interpreter.RegisterNodes(script);
-            
-            // 存储脚本用于语义分析
-            if (script != null && !_registeredScripts.Contains(script))
-            {
-                _registeredScripts.Add(script);
-            }
         }
 
         /// <summary>
@@ -400,45 +318,6 @@ namespace MookDialogueScript
             {
                 MLogger.Warning("当前对话尚未结束，无法开始新的对话");
                 return;
-            }
-
-            // 运行前语义把关：检查所有已注册脚本的语义错误
-            if (_enableSemanticAnalysis && _registeredScripts.Count > 0)
-            {
-                bool hasSemanticErrors = false;
-                var errorSummary = new System.Text.StringBuilder();
-                errorSummary.AppendLine("语义分析发现以下错误:");
-                
-                foreach (var script in _registeredScripts)
-                {
-                    var report = AnalyzeScript(script);
-                    if (report.HasErrors)
-                    {
-                        hasSemanticErrors = true;
-                        errorSummary.AppendLine($"脚本错误数: {report.ErrorCount}, 警告数: {report.WarningCount}");
-                        
-                        // 列出前5个错误供参考
-                        var errors = report.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Take(5);
-                        foreach (var error in errors)
-                        {
-                            errorSummary.AppendLine($"  - 第{error.Line}行: {error.Message}");
-                        }
-                        
-                        if (report.ErrorCount > 5)
-                        {
-                            errorSummary.AppendLine($"  ... 还有 {report.ErrorCount - 5} 个错误");
-                        }
-                    }
-                }
-                
-                if (hasSemanticErrors)
-                {
-                    var errorMsg = errorSummary.ToString() + "\n请修复语义错误后再运行对话。";
-                    MLogger.Error(errorMsg);
-                    
-                    // 阻止对话运行
-                    throw new InvalidOperationException(errorMsg);
-                }
             }
 
             NodeDefinitionNode startNode;
@@ -618,7 +497,7 @@ namespace MookDialogueScript
             {
                 // 评估主条件
                 var condition = await _interpreter.EvaluateExpression(conditionNode.Condition);
-                if (condition.Type != RuntimeValue.ValueType.Boolean)
+                if (condition.Type != ValueType.Boolean)
                 {
                     MLogger.Error("条件必须计算为布尔类型");
                     // 默认假设条件为假，继续处理
@@ -637,7 +516,7 @@ namespace MookDialogueScript
                     {
                         var (elifCondition, _) = conditionNode.ElifContents[i];
                         condition = await _interpreter.EvaluateExpression(elifCondition);
-                        if (condition.Type != RuntimeValue.ValueType.Boolean)
+                        if (condition.Type != ValueType.Boolean)
                         {
                             MLogger.Error("Elif 条件必须计算为布尔类型");
                             // 默认假设条件为假，继续处理
@@ -853,7 +732,7 @@ namespace MookDialogueScript
             if (node.Condition != null)
             {
                 var condition = await _interpreter.EvaluateExpression(node.Condition);
-                if (condition.Type != RuntimeValue.ValueType.Boolean)
+                if (condition.Type != ValueType.Boolean)
                 {
                     MLogger.Error("选项条件必须计算为布尔类型");
                     return false;
@@ -1134,7 +1013,7 @@ namespace MookDialogueScript
         {
             // 评估主条件
             var result = await _interpreter.EvaluateExpression(condition.Condition);
-            if (result.Type != RuntimeValue.ValueType.Boolean)
+            if (result.Type != ValueType.Boolean)
             {
                 MLogger.Error("条件必须计算为布尔类型");
                 return condition.ElseContent ?? new List<ContentNode>();
@@ -1149,7 +1028,7 @@ namespace MookDialogueScript
             foreach (var (elifCondition, elifContent) in condition.ElifContents)
             {
                 var elifResult = await _interpreter.EvaluateExpression(elifCondition);
-                if (elifResult.Type != RuntimeValue.ValueType.Boolean)
+                if (elifResult.Type != ValueType.Boolean)
                 {
                     MLogger.Error("Elif条件必须计算为布尔类型");
                     continue;

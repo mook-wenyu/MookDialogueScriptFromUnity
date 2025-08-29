@@ -131,7 +131,7 @@ namespace MookDialogueScript
         public void SaveVariable(string name, RuntimeValue value)
         {
             // 跳过Function类型的变量，因为它们不能被序列化
-            if (value.Type != RuntimeValue.ValueType.Function)
+            if (value.Type != ValueType.Function)
             {
                 variables[name] = value;
             }

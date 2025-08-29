@@ -58,7 +58,7 @@ namespace MookDialogueScript
             _tokenIndex = 0;
             _currentToken = _tokens[0];
         }
-
+        
         // 简易 StringBuilder 池（线程不安全，解析器通常单线程使用）
         private static class StringBuilderPool
         {

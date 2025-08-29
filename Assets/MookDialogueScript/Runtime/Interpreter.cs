@@ -300,12 +300,12 @@ namespace MookDialogueScript
                     // 如果任一操作数是函数调用的结果，确保类型匹配
                     if (op is "-" or "*" or "/" or "%" or ">" or "<" or ">=" or "<=")
                     {
-                        if (left.Type != RuntimeValue.ValueType.Number)
+                        if (left.Type != ValueType.Number)
                         {
                             MLogger.Error($"运算符 '{op}' 的左操作数必须是数值类型");
                             return RuntimeValue.Null;
                         }
-                        if (right.Type != RuntimeValue.ValueType.Number)
+                        if (right.Type != ValueType.Number)
                         {
                             MLogger.Error($"运算符 '{op}' 的右操作数必须是数值类型");
                             return RuntimeValue.Null;
@@ -313,12 +313,12 @@ namespace MookDialogueScript
                     }
                     else if (op is "&&" or "||" or "^")
                     {
-                        if (left.Type != RuntimeValue.ValueType.Boolean)
+                        if (left.Type != ValueType.Boolean)
                         {
                             MLogger.Error($"运算符 '{op}' 的左操作数必须是布尔类型");
                             return RuntimeValue.Null;
                         }
-                        if (right.Type != RuntimeValue.ValueType.Boolean)
+                        if (right.Type != ValueType.Boolean)
                         {
                             MLogger.Error($"运算符 '{op}' 的右操作数必须是布尔类型");
                             return RuntimeValue.Null;
@@ -328,7 +328,7 @@ namespace MookDialogueScript
                     switch (op)
                     {
                         case "+":
-                            if (left.Type == RuntimeValue.ValueType.String || right.Type == RuntimeValue.ValueType.String)
+                            if (left.Type == ValueType.String || right.Type == ValueType.String)
                                 return new RuntimeValue(left.ToString() + right.ToString());
                             return new RuntimeValue((double)left.Value + (double)right.Value);
 
@@ -399,7 +399,7 @@ namespace MookDialogueScript
                     
                     // 检查是否为变量
                     var varValue = _context.GetVariable(identifier.Name);
-                    if (varValue.Type != RuntimeValue.ValueType.Null)
+                    if (varValue.Type != ValueType.Null)
                     {
                         return varValue;
                     }
@@ -421,7 +421,7 @@ namespace MookDialogueScript
         public async Task<double> GetNumberValue(ExpressionNode expression)
         {
             var value = await EvaluateExpression(expression);
-            if (value.Type == RuntimeValue.ValueType.Number)
+            if (value.Type == ValueType.Number)
                 return (double)value.Value;
 
             MLogger.Error("表达式必须计算为数值类型");
@@ -436,7 +436,7 @@ namespace MookDialogueScript
         public async Task<bool> GetBooleanValue(ExpressionNode node)
         {
             var value = await EvaluateExpression(node);
-            if (value.Type == RuntimeValue.ValueType.Boolean)
+            if (value.Type == ValueType.Boolean)
                 return (bool)value.Value;
 
             MLogger.Error("表达式必须计算为布尔类型");
@@ -451,7 +451,7 @@ namespace MookDialogueScript
         public async Task<string> GetStringValue(ExpressionNode node)
         {
             var value = await EvaluateExpression(node);
-            if (value.Type == RuntimeValue.ValueType.String)
+            if (value.Type == ValueType.String)
                 return (string)value.Value;
 
             MLogger.Error("表达式必须计算为字符串类型");
@@ -484,7 +484,7 @@ namespace MookDialogueScript
                                 if (_context.HasVariable(varNode.Name))
                                 {
                                     var value = _context.GetVariable(varNode.Name);
-                                    if (value.Type != RuntimeValue.ValueType.Null && value.Value != null)
+                                    if (value.Type != ValueType.Null && value.Value != null)
                                     {
                                         result.Append(value.ToString());
                                     }
@@ -508,7 +508,7 @@ namespace MookDialogueScript
                                 try
                                 {
                                     var value = await EvaluateExpression(i.Expression);
-                                    if (value.Type != RuntimeValue.ValueType.Null && value.Value != null)
+                                    if (value.Type != ValueType.Null && value.Value != null)
                                     {
                                         result.Append(value.ToString());
                                     }
@@ -624,7 +624,7 @@ namespace MookDialogueScript
 
                         case "add":
                             var current = _context.GetVariable(v.VariableName);
-                            if (current.Type != RuntimeValue.ValueType.Number || value.Type != RuntimeValue.ValueType.Number)
+                            if (current.Type != ValueType.Number || value.Type != ValueType.Number)
                             {
                                 MLogger.Error("Add操作需要数值类型");
                                 return string.Empty;
@@ -634,7 +634,7 @@ namespace MookDialogueScript
 
                         case "sub":
                             current = _context.GetVariable(v.VariableName);
-                            if (current.Type != RuntimeValue.ValueType.Number || value.Type != RuntimeValue.ValueType.Number)
+                            if (current.Type != ValueType.Number || value.Type != ValueType.Number)
                             {
                                 MLogger.Error("Sub操作需要数值类型");
                                 return string.Empty;
@@ -644,7 +644,7 @@ namespace MookDialogueScript
 
                         case "mul":
                             current = _context.GetVariable(v.VariableName);
-                            if (current.Type != RuntimeValue.ValueType.Number || value.Type != RuntimeValue.ValueType.Number)
+                            if (current.Type != ValueType.Number || value.Type != ValueType.Number)
                             {
                                 MLogger.Error("Mul操作需要数值类型");
                                 return string.Empty;
@@ -654,7 +654,7 @@ namespace MookDialogueScript
 
                         case "div":
                             current = _context.GetVariable(v.VariableName);
-                            if (current.Type != RuntimeValue.ValueType.Number || value.Type != RuntimeValue.ValueType.Number)
+                            if (current.Type != ValueType.Number || value.Type != ValueType.Number)
                             {
                                 MLogger.Error("Div操作需要数值类型");
                                 return string.Empty;
@@ -669,7 +669,7 @@ namespace MookDialogueScript
 
                         case "mod":
                             current = _context.GetVariable(v.VariableName);
-                            if (current.Type != RuntimeValue.ValueType.Number || value.Type != RuntimeValue.ValueType.Number)
+                            if (current.Type != ValueType.Number || value.Type != ValueType.Number)
                             {
                                 MLogger.Error("Mod操作需要数值类型");
                                 return string.Empty;
@@ -740,13 +740,13 @@ namespace MookDialogueScript
                         return RuntimeValue.Null;
 
                     // 支持一个参数的委托
-                    case Action<int> action1Int when args.Count >= 1 && args[0].Type == RuntimeValue.ValueType.Number:
+                    case Action<int> action1Int when args.Count >= 1 && args[0].Type == ValueType.Number:
                         action1Int((int)(double)args[0].Value);
                         return RuntimeValue.Null;
                     case Action<string> action1String when args.Count >= 1:
                         action1String(args[0].ToString());
                         return RuntimeValue.Null;
-                    case Func<int, int> func1IntInt when args.Count >= 1 && args[0].Type == RuntimeValue.ValueType.Number:
+                    case Func<int, int> func1IntInt when args.Count >= 1 && args[0].Type == ValueType.Number:
                         return new RuntimeValue((double)func1IntInt((int)(double)args[0].Value));
                     case Func<string, string> func1StringString when args.Count >= 1:
                         return new RuntimeValue(func1StringString(args[0].ToString()));
@@ -771,7 +771,7 @@ namespace MookDialogueScript
                     // 通用委托处理（使用Helper的函数值包装器）
                     case Delegate del:
                         var helperFunc = Helper.CreateFunctionValue(del);
-                        if (helperFunc.Type == RuntimeValue.ValueType.Function)
+                        if (helperFunc.Type == ValueType.Function)
                         {
                             return await _context.CallFunctionValue(helperFunc, args, line, column);
                         }
@@ -826,7 +826,7 @@ namespace MookDialogueScript
             var calleeValue = await EvaluateExpression(call.Callee);
             
             // 第2层：函数值优先 - 如果求值结果是函数值，直接调用
-            if (calleeValue.Type == RuntimeValue.ValueType.Function)
+            if (calleeValue.Type == ValueType.Function)
             {
                 return await _context.CallFunctionValue(calleeValue, args, call.Line, call.Column);
             }
@@ -847,14 +847,14 @@ namespace MookDialogueScript
             
             // 第4层：对象可转Delegate - 处理所有其他情况（成员访问、变量、表达式结果等）
             // 特殊处理MethodReference类型（注册对象的方法）
-            if (calleeValue.Type == RuntimeValue.ValueType.Object && calleeValue.Value is MethodReference methodRef)
+            if (calleeValue.Type == ValueType.Object && calleeValue.Value is MethodReference methodRef)
             {
                 // 通过函数管理器调用已注册的方法引用
                 return await _context.CallFunction(methodRef.FunctionKey, args, call.Line, call.Column);
             }
             
             // 检查调用值是否为null或无效
-            if (calleeValue.Type == RuntimeValue.ValueType.Null || calleeValue.Value == null)
+            if (calleeValue.Type == ValueType.Null || calleeValue.Value == null)
             {
                 // 提供更精确的错误信息
                 string calleeDescription = FormatCalleeDescription(call.Callee);

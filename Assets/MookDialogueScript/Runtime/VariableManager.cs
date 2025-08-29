@@ -372,13 +372,13 @@ namespace MookDialogueScript
             foreach (var kvp in _scriptVariables)
             {
                 // 跳过Function类型的变量，因为它们不能被序列化
-                if (kvp.Value.Type == RuntimeValue.ValueType.Function)
+                if (kvp.Value.Type == ValueType.Function)
                 {
                     continue;
                 }
                 
                 // 对于包含MethodReference的Object类型，创建序列化标记
-                if (kvp.Value.Type == RuntimeValue.ValueType.Object && kvp.Value.Value is MethodReference methodRef)
+                if (kvp.Value.Type == ValueType.Object && kvp.Value.Value is MethodReference methodRef)
                 {
                     // 创建一个特殊的序列化标记，用于重绑定
                     var rebindInfo = new Dictionary<string, object>
@@ -411,7 +411,7 @@ namespace MookDialogueScript
             foreach (var kvp in variables)
             {
                 // 检查是否为MethodReference的序列化标记
-                if (kvp.Value.Type == RuntimeValue.ValueType.Object && 
+                if (kvp.Value.Type == ValueType.Object && 
                     kvp.Value.Value is Dictionary<string, object> dict &&
                     dict.ContainsKey("__type") &&
                     dict["__type"].ToString() == "MethodReference")
@@ -635,7 +635,7 @@ namespace MookDialogueScript
         /// <returns>解析结果，如果无法解析则返回null</returns>
         private RuntimeValue? TryAdvancedMemberResolution(RuntimeValue target, string memberName, DialogueContext context)
         {
-            if (target.Type != RuntimeValue.ValueType.Object || target.Value == null)
+            if (target.Type != ValueType.Object || target.Value == null)
             {
                 return null;
             }
@@ -764,7 +764,7 @@ namespace MookDialogueScript
         {
             switch (target.Type)
             {
-                case RuntimeValue.ValueType.Object when target.Value is Dictionary<string, object> dict:
+                case ValueType.Object when target.Value is Dictionary<string, object> dict:
                     if (dict.TryGetValue(memberName, out var value))
                     {
                         return Helper.ConvertToRuntimeValue(value);
@@ -772,7 +772,7 @@ namespace MookDialogueScript
                     MLogger.Warning($"字典中不存在键: {memberName}");
                     return RuntimeValue.Null;
 
-                case RuntimeValue.ValueType.Object when target.Value != null:
+                case ValueType.Object when target.Value != null:
                     // 尝试通过反射访问成员（受控方式）
                     return GetMemberThroughReflection(target.Value, memberName, context);
 
@@ -845,6 +845,28 @@ namespace MookDialogueScript
                 MLogger.Error($"缓存反射访问成员时出错: {ex.Message}");
                 return RuntimeValue.Null;
             }
+        }
+        #endregion
+
+        #region 便捷方法
+        /// <summary>
+        /// 注册变量（便捷方法）
+        /// </summary>
+        /// <param name="name">变量名</param>
+        /// <param name="value">变量值</param>
+        public void RegisterVariable(string name, RuntimeValue value)
+        {
+            RegisterScriptVariable(name, value);
+        }
+
+        /// <summary>
+        /// 注册对象（便捷方法）
+        /// </summary>
+        /// <param name="name">对象名称</param>
+        /// <param name="instance">对象实例</param>
+        public void RegisterObject(string name, object instance)
+        {
+            RegisterObjectPropertiesAndFields(name, instance);
         }
         #endregion
 

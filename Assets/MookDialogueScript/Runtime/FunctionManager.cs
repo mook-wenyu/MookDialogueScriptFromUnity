@@ -589,7 +589,7 @@ namespace MookDialogueScript
         public async Task<RuntimeValue> CallFunctionValue(RuntimeValue functionValue, List<RuntimeValue> args, int line = 0, int column = 0)
         {
             // 检查函数类型
-            if (functionValue.Type != RuntimeValue.ValueType.Function)
+            if (functionValue.Type != ValueType.Function)
             {
                 throw ExceptionFactory.CreateFunctionExpectedException(functionValue.Type.ToString(), line, column);
             }

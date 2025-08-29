@@ -5,24 +5,26 @@ using System.Threading.Tasks;
 namespace MookDialogueScript
 {
     /// <summary>
+    /// 脚本运行时值类型
+    /// </summary>
+    public enum ValueType
+    {
+        Null,
+        Number,
+        Boolean,
+        String,
+        Object,
+        Array,
+        Function,
+        Any
+    }
+
+    /// <summary>
     /// 脚本运行时值
     /// </summary>
     [Serializable]
     public readonly struct RuntimeValue : IEquatable<RuntimeValue>
     {
-        /// <summary>
-        /// 脚本运行时值类型
-        /// </summary>
-        public enum ValueType
-        {
-            Null,
-            Number,
-            Boolean,
-            String,
-            Object,
-            Function
-        }
-
         public ValueType Type { get; }
         public object Value { get; }
 
@@ -532,7 +534,7 @@ namespace MookDialogueScript
             var result = _variableManager.GetObjectMember(target, memberName, this);
 
             // 如果返回的是MethodReference，需要转换为实际的函数委托
-            if (result.Type == RuntimeValue.ValueType.Object && result.Value is MethodReference methodRef)
+            if (result.Type == ValueType.Object && result.Value is MethodReference methodRef)
             {
                 if (TryGetFunction(methodRef.FunctionKey, out var func))
                 {

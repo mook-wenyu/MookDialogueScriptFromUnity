@@ -198,83 +198,23 @@ namespace MookDialogueScript
     }
 
     /// <summary>
-    /// 语义分析器类型系统
-    /// </summary>
-    public enum TypeKind
-    {
-        // 基元类型
-        Number,
-        String, 
-        Boolean,
-        Null,
-        
-        // 复合类型
-        Object,
-        Array,
-        Dictionary,
-        Function,
-        
-        // 特殊类型
-        Any,  // 未知类型
-        Error // 错误类型
-    }
-
-    /// <summary>
     /// 函数信息
     /// </summary>
     public class FunctionInfo
     {
         public string Name { get; }
-        public MookDialogueScript.Semantic.TypeSystem.TypeInfo ReturnType { get; }
-        public List<MookDialogueScript.Semantic.TypeSystem.TypeInfo> ParameterTypes { get; }
+        public ValueType ReturnType { get; }
+        public List<ValueType> ParameterTypes { get; }
         public int MinParameters { get; }
         public int MaxParameters { get; }
 
-        public FunctionInfo(string name, MookDialogueScript.Semantic.TypeSystem.TypeInfo returnType, List<MookDialogueScript.Semantic.TypeSystem.TypeInfo> parameterTypes, int minParameters = -1, int maxParameters = -1)
+        public FunctionInfo(string name, ValueType returnType, List<ValueType> parameterTypes, int minParameters = -1, int maxParameters = -1)
         {
             Name = name;
             ReturnType = returnType;
-            ParameterTypes = parameterTypes ?? new List<MookDialogueScript.Semantic.TypeSystem.TypeInfo>();
+            ParameterTypes = parameterTypes ?? new List<ValueType>();
             MinParameters = minParameters < 0 ? ParameterTypes.Count : minParameters;
             MaxParameters = maxParameters < 0 ? ParameterTypes.Count : maxParameters;
-        }
-    }
-
-    /// <summary>
-    /// 语义分析器 - 从 CLR 类型解析成员信息
-    /// </summary>
-    public static class SemanticAnalyzer
-    {
-        /// <summary>
-        /// 从 CLR 类型解析成员信息
-        /// </summary>
-        public static MookDialogueScript.Semantic.TypeSystem.ResolvedMemberInfo ResolveMemberInfo(Type objectType, string memberName)
-        {
-            if (objectType == null || string.IsNullOrEmpty(memberName))
-                return null;
-
-            // 查找属性
-            var property = objectType.GetProperty(memberName, BindingFlags.Public | BindingFlags.Instance);
-            if (property != null)
-            {
-                return new MookDialogueScript.Semantic.TypeSystem.ResolvedMemberInfo(property.PropertyType, MookDialogueScript.Semantic.TypeSystem.MemberKind.Property, property.CanWrite);
-            }
-
-            // 查找字段
-            var field = objectType.GetField(memberName, BindingFlags.Public | BindingFlags.Instance);
-            if (field != null)
-            {
-                return new MookDialogueScript.Semantic.TypeSystem.ResolvedMemberInfo(field.FieldType, MookDialogueScript.Semantic.TypeSystem.MemberKind.Field, !field.IsInitOnly);
-            }
-
-            // 查找方法
-            var method = objectType.GetMethod(memberName, BindingFlags.Public | BindingFlags.Instance);
-            if (method != null)
-            {
-                return new MookDialogueScript.Semantic.TypeSystem.ResolvedMemberInfo(method.ReturnType, MookDialogueScript.Semantic.TypeSystem.MemberKind.Method, false);
-            }
-
-            return null;
         }
     }
 }

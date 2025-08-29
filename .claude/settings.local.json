@@ -26,9 +26,24 @@
       "Bash(find:*)",
       "Bash(dir:*)",
       "Bash(mkdir:*)",
-      "Bash(claude mcp add:*)"
+      "Bash(claude mcp add:*)",
+      "Read(/D:\\d\\UnityProjects/**)",
+      "Read(/D:\\d\\UnityProjects\\MookDialogueScriptFromUnity/**)",
+      "Bash(cat:*)",
+      "Read(/D:\\d\\UnityProjects\\MookDialogueScriptFromUnity/**)",
+      "Read(/D:\\d\\UnityProjects\\MookDialogueScriptFromUnity\\Assets\\MookDialogueScript\\Runtime/**)",
+      "Read(/D:\\d\\UnityProjects\\MookDialogueScriptFromUnity\\Assets\\MookDialogueScript\\Runtime/**)",
+      "Bash(curl:*)",
+      "mcp__code-search__qdrant-find",
+      "mcp__code-search__qdrant-store",
+      "Bash(claude -c)",
+      "Bash(claude --continue)",
+      "Bash(claude)"
     ],
     "deny": [],
-    "ask": []
+    "ask": [],
+    "additionalDirectories": [
+      "D:\\d\\UnityProjects\\MookDialogueScriptFromUnity"
+    ]
   }
 }

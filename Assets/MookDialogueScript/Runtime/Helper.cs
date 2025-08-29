@@ -689,7 +689,7 @@ namespace MookDialogueScript
         {
             switch (target.Type)
             {
-                case RuntimeValue.ValueType.String when index.Type == RuntimeValue.ValueType.Number:
+                case ValueType.String when index.Type == ValueType.Number:
                     var str = (string)target.Value;
                     var idx = (int)(double)index.Value;
                     if (idx >= 0 && idx < str.Length)
@@ -698,7 +698,7 @@ namespace MookDialogueScript
                     }
                     throw new InvalidOperationException($"运行时错误: 第{line}行，第{column}列，字符串索引越界（索引: {idx}，长度: {str.Length}）");
 
-                case RuntimeValue.ValueType.Object when target.Value is IDictionary dict:
+                case ValueType.Object when target.Value is IDictionary dict:
                     // 修复字典索引类型错误：将index转换为原生对象而不是强制转换为string
                     var key = ConvertToNativeType(index);
                     if (dict.Contains(key))
@@ -721,8 +721,8 @@ namespace MookDialogueScript
                     throw new InvalidOperationException($"运行时错误: 第{line}行，第{column}列，字典中不存在键: '{key}' " +
                                                         $"（键类型: {keyTypeName}，目标字典键类型: {dictKeyTypeName}）");
 
-                case RuntimeValue.ValueType.Object when target.Value is IList list:
-                    if (index.Type == RuntimeValue.ValueType.Number)
+                case ValueType.Object when target.Value is IList list:
+                    if (index.Type == ValueType.Number)
                     {
                         var listIdx = (int)(double)index.Value;
                         if (listIdx >= 0 && listIdx < list.Count)
@@ -733,8 +733,8 @@ namespace MookDialogueScript
                     }
                     break;
 
-                case RuntimeValue.ValueType.Object when target.Value is Array array:
-                    if (index.Type == RuntimeValue.ValueType.Number)
+                case ValueType.Object when target.Value is Array array:
+                    if (index.Type == ValueType.Number)
                     {
                         var arrayIdx = (int)(double)index.Value;
                         if (arrayIdx >= 0 && arrayIdx < array.Length)
@@ -756,7 +756,7 @@ namespace MookDialogueScript
         /// </summary>
         public static object ConvertToNativeType(RuntimeValue value, Type targetType)
         {
-            if (value.Type == RuntimeValue.ValueType.Null)
+            if (value.Type == ValueType.Null)
             {
                 return null;
             }
@@ -820,7 +820,7 @@ namespace MookDialogueScript
             }
 
             // 数值类型转换
-            if (value.Type == RuntimeValue.ValueType.Number)
+            if (value.Type == ValueType.Number)
             {
                 var doubleValue = (double)value.Value;
                 if (targetType == typeof(int))
@@ -841,7 +841,7 @@ namespace MookDialogueScript
             }
 
             // 布尔类型转换
-            if (value.Type == RuntimeValue.ValueType.Boolean && targetType == typeof(bool))
+            if (value.Type == ValueType.Boolean && targetType == typeof(bool))
             {
                 result = (bool)value.Value;
                 return true;
@@ -869,7 +869,7 @@ namespace MookDialogueScript
         /// <summary>
         /// 创建类型转换器
         /// </summary>
-        private static Func<object, object> CreateTypeConverter(RuntimeValue.ValueType sourceType, Type targetType)
+        private static Func<object, object> CreateTypeConverter(ValueType sourceType, Type targetType)
         {
             // 基本类型转换
             if (targetType == typeof(string))
@@ -881,8 +881,8 @@ namespace MookDialogueScript
             {
                 return sourceType switch
                 {
-                    RuntimeValue.ValueType.Number => (obj) => (int)(double)obj,
-                    RuntimeValue.ValueType.String => (obj) => int.TryParse((string)obj, out var result) ? result : 0,
+                    ValueType.Number => (obj) => (int)(double)obj,
+                    ValueType.String => (obj) => int.TryParse((string)obj, out var result) ? result : 0,
                     _ => (obj) => Convert.ToInt32(obj)
                 };
             }
@@ -891,8 +891,8 @@ namespace MookDialogueScript
             {
                 return sourceType switch
                 {
-                    RuntimeValue.ValueType.Number => (obj) => Convert.ChangeType((double)obj, targetType),
-                    RuntimeValue.ValueType.String => (obj) => double.TryParse((string)obj, out var result) ? Convert.ChangeType(result, targetType) : Convert.ChangeType(0.0, targetType),
+                    ValueType.Number => (obj) => Convert.ChangeType((double)obj, targetType),
+                    ValueType.String => (obj) => double.TryParse((string)obj, out var result) ? Convert.ChangeType(result, targetType) : Convert.ChangeType(0.0, targetType),
                     _ => (obj) => Convert.ChangeType(obj, targetType)
                 };
             }
@@ -901,9 +901,9 @@ namespace MookDialogueScript
             {
                 return sourceType switch
                 {
-                    RuntimeValue.ValueType.Boolean => (obj) => (bool)obj,
-                    RuntimeValue.ValueType.String => (obj) => bool.TryParse((string)obj, out var result) ? result : false,
-                    RuntimeValue.ValueType.Number => (obj) => (double)obj != 0.0,
+                    ValueType.Boolean => (obj) => (bool)obj,
+                    ValueType.String => (obj) => bool.TryParse((string)obj, out var result) ? result : false,
+                    ValueType.Number => (obj) => (double)obj != 0.0,
                     _ => (obj) => Convert.ToBoolean(obj)
                 };
             }
@@ -920,7 +920,7 @@ namespace MookDialogueScript
             if (targetType == typeof(double) || targetType == typeof(float) ||
                 targetType == typeof(int) || targetType == typeof(long))
             {
-                if (value.Type != RuntimeValue.ValueType.Number)
+                if (value.Type != ValueType.Number)
                 {
                     MLogger.Error($"期望数字类型用于 '{targetType.Name}'，但得到了{GetTypeName(value.Type)}");
                 }
@@ -929,7 +929,7 @@ namespace MookDialogueScript
             // 字符串类型转换
             if (targetType == typeof(string))
             {
-                if (value.Type != RuntimeValue.ValueType.String)
+                if (value.Type != ValueType.String)
                 {
                     MLogger.Warning($"期望字符串类型用于 '{targetType.Name}'，但得到了{GetTypeName(value.Type)}");
                 }
@@ -938,7 +938,7 @@ namespace MookDialogueScript
             // 布尔类型转换
             if (targetType == typeof(bool))
             {
-                if (value.Type != RuntimeValue.ValueType.Boolean)
+                if (value.Type != ValueType.Boolean)
                 {
                     MLogger.Error($"期望布尔类型用于 '{targetType.Name}'，但得到了{GetTypeName(value.Type)}");
                 }
@@ -960,16 +960,16 @@ namespace MookDialogueScript
         /// <summary>
         /// 获取类型名称的可读表示
         /// </summary>
-        public static string GetTypeName(RuntimeValue.ValueType type)
+        public static string GetTypeName(ValueType type)
         {
             switch (type)
             {
-                case RuntimeValue.ValueType.Number: return "number";
-                case RuntimeValue.ValueType.String: return "string";
-                case RuntimeValue.ValueType.Boolean: return "boolean";
-                case RuntimeValue.ValueType.Object: return "object";
-                case RuntimeValue.ValueType.Function: return "function";
-                case RuntimeValue.ValueType.Null: return "null";
+                case ValueType.Number: return "number";
+                case ValueType.String: return "string";
+                case ValueType.Boolean: return "boolean";
+                case ValueType.Object: return "object";
+                case ValueType.Function: return "function";
+                case ValueType.Null: return "null";
                 default: return type.ToString();
             }
         }
@@ -999,22 +999,22 @@ namespace MookDialogueScript
         {
             switch (value.Type)
             {
-                case RuntimeValue.ValueType.Number:
+                case ValueType.Number:
                     return ConvertNumberToNativeType((double)value.Value);
 
-                case RuntimeValue.ValueType.Boolean:
+                case ValueType.Boolean:
                     return (bool)value.Value;
 
-                case RuntimeValue.ValueType.String:
+                case ValueType.String:
                     return value.Value.ToString();
 
-                case RuntimeValue.ValueType.Null:
+                case ValueType.Null:
                     return null;
 
-                case RuntimeValue.ValueType.Function:
+                case ValueType.Function:
                     return value.Value; // 函数值直接返回
 
-                case RuntimeValue.ValueType.Object:
+                case ValueType.Object:
                     return value.Value;
 
                 default:
@@ -1050,15 +1050,15 @@ namespace MookDialogueScript
         {
             switch (value.Type)
             {
-                case RuntimeValue.ValueType.Number:
+                case ValueType.Number:
                     return (double)value.Value;
-                case RuntimeValue.ValueType.Boolean:
+                case ValueType.Boolean:
                     return (bool)value.Value ? 1.0 : 0.0;
-                case RuntimeValue.ValueType.String:
+                case ValueType.String:
                     if (double.TryParse(value.Value?.ToString() ?? "", out var result))
                         return result;
                     return 0.0;
-                case RuntimeValue.ValueType.Null:
+                case ValueType.Null:
                     return 0.0;
                 default:
                     return 0.0;
@@ -1073,17 +1073,17 @@ namespace MookDialogueScript
         {
             switch (value.Type)
             {
-                case RuntimeValue.ValueType.String:
+                case ValueType.String:
                     return value.Value?.ToString() ?? "";
-                case RuntimeValue.ValueType.Number:
+                case ValueType.Number:
                     return ((double)value.Value).ToString("G");
-                case RuntimeValue.ValueType.Boolean:
+                case ValueType.Boolean:
                     return (bool)value.Value ? "true" : "false";
-                case RuntimeValue.ValueType.Null:
+                case ValueType.Null:
                     return "";
-                case RuntimeValue.ValueType.Function:
+                case ValueType.Function:
                     return "function";
-                case RuntimeValue.ValueType.Object:
+                case ValueType.Object:
                     return value.Value?.ToString() ?? "object";
                 default:
                     return "";
@@ -1278,7 +1278,7 @@ namespace MookDialogueScript
         /// </summary>
         public static bool IsFunction(RuntimeValue value)
         {
-            return value.Type == RuntimeValue.ValueType.Function && value.Value != null;
+            return value.Type == ValueType.Function && value.Value != null;
         }
 
         /// <summary>
