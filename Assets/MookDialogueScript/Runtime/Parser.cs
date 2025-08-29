@@ -6,6 +6,10 @@ using System.Runtime.CompilerServices;
 
 namespace MookDialogueScript
 {
+    /// <summary>
+    /// 语法分析器
+    /// 标记为旧代码，不可编辑。
+    /// </summary>
     public class Parser
     {
         private readonly List<Token> _tokens;

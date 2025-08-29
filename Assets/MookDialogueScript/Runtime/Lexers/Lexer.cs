@@ -274,7 +274,7 @@ namespace MookDialogueScript.Lexers
         /// 释放资源的核心逻辑
         /// </summary>
         /// <param name="disposing">是否正在释放托管资源</param>
-        protected virtual void Dispose(bool disposing)
+        protected void Dispose(bool disposing)
         {
             if (!_disposed)
             {

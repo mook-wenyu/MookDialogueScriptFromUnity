@@ -1,6 +1,8 @@
 using System;
 using UnityEngine;
 using MookDialogueScript;
+using MookDialogueScript.Semantic.Contracts;
+using MookDialogueScript.Semantic.Core;
 
 /// <summary>
 /// 测试新的 FunctionSignature 系统
@@ -49,9 +51,9 @@ public class FunctionSignatureTest : MonoBehaviour
                 Debug.Log($"- {kvp.Key}: {kvp.Value.FormatSignature()}");
             }
 
-            // 创建 SemanticAnalyzer（传入 FunctionManager）
-            var analyzer = new SemanticAnalyzer(null, null, functionManager);
-            Debug.Log("SemanticAnalyzer 创建成功，已注入 FunctionManager");
+            // 创建 SemanticAnalyzer 使用新架构
+            var analyzer = new CompositeSemanticAnalyzer(null, null);
+            Debug.Log("CompositeSemanticAnalyzer 创建成功");
 
             Debug.Log("=== FunctionSignature 系统测试完成 ===");
         }

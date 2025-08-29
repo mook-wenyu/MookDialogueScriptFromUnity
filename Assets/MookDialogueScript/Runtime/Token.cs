@@ -250,6 +250,11 @@ namespace MookDialogueScript
         public int Line { get; }
         public int Column { get; }
 
+        /// <summary>
+        /// 空Token实例
+        /// </summary>
+        public static readonly Token Empty = new Token(TokenType.EOF, string.Empty, 0, 0);
+
         public Token(TokenType type, string value, int line, int column)
         {
             Type = type;

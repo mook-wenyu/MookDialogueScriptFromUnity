@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using UnityEngine.Scripting;
+using MookDialogueScript.Semantic.Contracts;
+using MookDialogueScript.Semantic.Core;
 
 namespace MookDialogueScript
 {
@@ -55,7 +57,7 @@ namespace MookDialogueScript
     {
         private readonly DialogueContext _context;
         private readonly Interpreter _interpreter;
-        private readonly SemanticAnalyzer _semanticAnalyzer;
+        private readonly ISemanticAnalyzer _semanticAnalyzer;
         private readonly RunnerNodeProvider _nodeProvider;
 
         // 是否正在执行中（等待用户输入等状态）
@@ -103,7 +105,7 @@ namespace MookDialogueScript
         /// 获取语义分析器
         /// </summary>
         [Preserve]
-        public SemanticAnalyzer SemanticAnalyzer => _semanticAnalyzer;
+        public ISemanticAnalyzer SemanticAnalyzer => _semanticAnalyzer;
 
         /// <summary>
         /// 设置语义分析选项
@@ -211,7 +213,7 @@ namespace MookDialogueScript
             // 初始化语义分析器
             _nodeProvider = new RunnerNodeProvider(_context);
             _analysisOptions = new AnalysisOptions();
-            _semanticAnalyzer = new SemanticAnalyzer(_analysisOptions, _nodeProvider);
+            _semanticAnalyzer = new CompositeSemanticAnalyzer(_analysisOptions, _nodeProvider);
 
             // 重置状态
             _conditionStates.Clear();

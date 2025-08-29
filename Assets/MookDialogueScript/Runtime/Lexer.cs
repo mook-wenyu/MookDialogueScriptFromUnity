@@ -5,6 +5,10 @@ using System.Text;
 
 namespace MookDialogueScript
 {
+    /// <summary>
+    /// 词法分析器
+    /// 标记为旧代码，不可编辑。
+    /// </summary>
     public class Lexer
     {
         // 高性能数据结构：使用字符数组替代字符串

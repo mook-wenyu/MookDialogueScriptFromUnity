@@ -6,16 +6,30 @@
 
 MookDialogueScript 是为 Unity 游戏开发设计的轻量级对话脚本系统。它提供了一种自定义脚本语言，用于创建复杂的对话系统和分支叙事。
 
-当前版本：**0.7.0**，包含高性能词法分析器架构和并发优化。
+当前版本：**0.8.0**，完成架构重构，实现高性能模块化设计。
 
-## 版本 0.7.0 新功能
+## 版本 0.8.0 新功能
 
-### 🚀 高性能词法分析器架构
-- **组合设计模式**：重构词法分析器为组件化架构，遵循"组合优于继承"原则
-- **专用分词器系统**：每种Token类型都有专门的处理器，提升解析精度和性能
-- **高性能并发池**：新增 `ConcurrentLexerPool`，支持无锁并发、线程本地缓存和自适应调整
-- **完整资源管理**：实现 `IDisposable` 模式，自动管理内存和线程资源
-- **Unity Profiler集成**：内置性能监控标记，便于性能分析和优化
+### 🏗️ 架构重构升级
+- **语义分析器架构重构**：采用5层架构设计（Contracts → TypeSystem → Symbols → Diagnostics → Core）
+- **对象池系统重构**：统一池管理架构，消除重复代码，提升复用性
+- **解析器组件化**：模块化解析器设计，支持缓存管理和上下文处理
+- **完整SOLID原则**：遵循单一职责、依赖倒置、接口隔离等设计原则
+- **组合优于继承**：全面采用组合模式，提升代码可维护性
+
+### 🎯 语义分析系统
+- **分层架构设计**：清晰的职责分离，支持插件化规则扩展
+- **符号表管理**：完整的作用域管理和符号解析系统
+- **类型系统优化**：强类型检查和兼容性验证
+- **诊断收集器**：统一的错误收集和报告生成机制
+- **缓存优化**：分析结果缓存，避免重复计算
+
+### 🚀 对象池优化
+- **通用池架构**：`UniversalObjectPool<T>` 支持任意类型对象池化
+- **全局池管理器**：`GlobalPoolManager` 统一管理所有对象池
+- **作用域管理**：`ScopedPoolable<T>` 泛型类消除重复代码
+- **专用池优化**：词法分析器和解析器的专用高性能池
+- **统计监控**：完整的池使用统计和性能监控
 
 ### ⚡ 性能优化亮点
 - **无锁并发设计**：使用 `ConcurrentBag` 和原子操作，避免锁竞争
@@ -41,22 +55,39 @@ MookDialogueScript 是为 Unity 游戏开发设计的轻量级对话脚本系统
 
 ### 核心组件
 
-对话系统遵循经典的解释器模式，包含以下关键组件：
+对话系统遵循经典的解释器模式，采用现代化模块架构，包含以下关键组件：
 
 - **词法分析器** (`Assets/MookDialogueScript/Runtime/Lexers/`): 高性能组件化词法分析架构
-  - `LexerRefactored.cs`: 重构后的主词法分析器，采用组合设计模式
-  - `ConcurrentLexerPool.cs`: 高性能并发对象池，支持无锁并发和线程本地缓存
-  - `LexerFactory.cs`: 词法分析器组件工厂
-  - `Core/`: 核心组件（字符流、分类器、状态管理、缩进处理）
-  - `Tokenizers/`: 专用Token处理器（字符串、数字、标识符、符号等）
-  - `Interfaces/`: 通用接口定义
-- **语法解析器** (`Assets/MookDialogueScript/Runtime/Parser.cs`): 从标记构建抽象语法树 (AST)
-- **解释器** (`Assets/MookDialogueScript/Runtime/Interpreter.cs`): 执行 AST 节点
-- **异常处理** (`Assets/MookDialogueScript/Runtime/ScriptException.cs`): 完整的异常类层次结构
-- **语义分析器** (`Assets/MookDialogueScript/Runtime/SemanticAnalyzer.cs`): 严格的语义分析和类型检查
-- **函数签名系统** (`Assets/MookDialogueScript/Runtime/FunctionSignature.cs`): 函数参数和返回类型的完整描述
-- **运行器** (`Assets/MookDialogueScript/Runtime/Runner.cs`): 对话执行的主入口点
-- **抽象语法树** (`Assets/MookDialogueScript/Runtime/AST.cs`): 定义所有 AST 节点类型
+  - `Lexer.cs`: 统一的词法分析器接口和核心实现
+  - 支持无锁并发、线程本地缓存和自适应调整
+  - 完整资源管理和Unity Profiler集成
+  
+- **语法解析器** (`Assets/MookDialogueScript/Runtime/Parsing/`): 模块化解析器系统
+  - `Parser.cs`: 主解析器实现，从标记构建抽象语法树 (AST)
+  - `Components/`: 解析器组件（表达式解析、缓存管理、上下文处理、缓冲管理）
+  - `Interfaces/`: 解析器接口定义，支持组合模式设计
+  
+- **语义分析器** (`Assets/MookDialogueScript/Runtime/Semantic/`): 5层架构语义分析系统
+  - `Contracts/`: 核心接口层（分析器、规则、诊断、符号解析等）
+  - `TypeSystem/`: 类型系统（类型推断、兼容性检查、类型信息）
+  - `Symbols/`: 符号管理（符号表、作用域管理、符号解析）
+  - `Diagnostics/`: 诊断系统（错误收集、诊断代码、报告生成）
+  - `Core/`: 核心实现（组合分析器、分析上下文、符号表工厂）
+  
+- **对象池系统** (`Assets/MookDialogueScript/Runtime/Pooling/`): 统一对象池架构
+  - `Core/`: 核心池实现（通用对象池、全局管理器、作用域管理）
+  - `Specialized/`: 专用对象池（词法分析器池、解析器池）
+  - `Interfaces/`: 对象池接口定义
+  - `PoolOptions.cs` & `PoolStatistics.cs`: 池配置和统计监控
+
+- **集成系统** (`Assets/MookDialogueScript/Runtime/Integration/`): Unity集成层
+  - `Integration.cs`: Unity特定的集成逻辑和生命周期管理
+
+- **核心运行时**:
+  - `Runner.cs`: 对话执行的主入口点，集成所有子系统
+  - `Interpreter.cs`: 执行 AST 节点的解释器
+  - `AST.cs`: 定义所有 AST 节点类型
+  - `SemanticAnalyzer.cs`: 向后兼容的语义分析器外观接口
 
 ### 变量和函数系统
 
@@ -158,12 +189,16 @@ foreach (var kvp in functionManager.GetAllFunctionSignatures())
 
 ### 语义分析集成
 ```csharp
-// 创建带函数签名支持的语义分析器
+// 创建新架构的语义分析器
 var analyzer = new SemanticAnalyzer(
     options: new AnalysisOptions(),
     nodeProvider: nodeProvider,
     functionManager: functionManager  // 注入函数管理器
 );
+
+// 或直接使用核心实现
+var coreAnalyzer = new Semantic.Core.CompositeSemanticAnalyzer(
+    options, nodeProvider);
 
 // 执行严格的语义分析
 var report = analyzer.Analyze(script, variableManager, functionManager);
@@ -171,12 +206,45 @@ var report = analyzer.Analyze(script, variableManager, functionManager);
 // 检查分析结果
 if (report.HasErrors)
 {
-    foreach (var error in report.Errors)
+    foreach (var diagnostic in report.Diagnostics)
     {
-        Debug.LogError($"{error.Code}: {error.Message}");
-        // 示例输出: SEM013: 函数 'calculate' 参数不足：期望至少 2 个，实际 1 个
+        if (diagnostic.Severity == DiagnosticSeverity.Error)
+        {
+            Debug.LogError($"{diagnostic.Code}: {diagnostic.Message} (第{diagnostic.Line}行)");
+        }
     }
+    
+    // 示例输出: SEM013: 函数 'calculate' 参数不足：期望至少 2 个，实际 1 个 (第15行)
 }
+
+// 获取详细的分析统计
+Debug.Log($"错误数: {report.ErrorCount}, 警告数: {report.WarningCount}");
+
+// 使用符号表进行高级查询
+var symbolResolver = analyzer.GetSymbolResolver();
+var variableType = symbolResolver.ResolveVariable("playerHealth");
+var functionInfo = symbolResolver.ResolveFunction("calculateDamage");
+```
+
+### 对象池集成
+```csharp
+// 使用全局池管理器
+var lexerPool = GlobalPoolManager.GetPool<LexerRefactored>();
+using var scopedLexer = lexerPool.GetScoped(); // 自动归还
+var lexer = scopedLexer.Object;
+
+// 获取池统计信息
+var stats = GlobalPoolManager.GetStatistics<LexerRefactored>();
+Debug.Log($"池大小: {stats.PoolSize}, 活跃对象: {stats.ActiveObjects}");
+
+// 配置池选项
+var poolOptions = new PoolOptions
+{
+    InitialSize = 10,
+    MaxSize = 100,
+    GrowthFactor = 2.0f
+};
+GlobalPoolManager.ConfigurePool<Parser>(poolOptions);
 ```
 
 ## 文件结构
@@ -190,7 +258,7 @@ if (report.HasErrors)
 
 ## 包信息
 
-- **版本**: 0.7.0 (在 `Assets/MookDialogueScript/package.json` 中定义)
+- **版本**: 0.8.0 (在 `Assets/MookDialogueScript/package.json` 中定义)
 - **Unity 版本**: 2021.4+
 - **许可证**: Apache-2.0
 - **包名**: `com.wenyu.dialoguescript`

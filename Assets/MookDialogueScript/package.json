@@ -5,12 +5,15 @@
     "name": "WenYu",
     "url": "https://github.com/mook-wenyu"
   },
-  "version": "0.7.0",
+  "version": "0.8.0",
   "unity": "2021.4",
-  "description": "高性能对话脚本系统，支持并发处理、函数签名验证和严格类型检查",
+  "description": "高性能模块化对话脚本系统，采用5层语义分析架构，支持并发处理、严格类型检查和SOLID设计原则",
   "keywords": [
     "dialogue",
-    "script"
+    "script",
+    "semantic-analysis",
+    "object-pooling",
+    "modular-architecture"
   ],
   "license":"Apache-2.0",
   "dependencies": {}
