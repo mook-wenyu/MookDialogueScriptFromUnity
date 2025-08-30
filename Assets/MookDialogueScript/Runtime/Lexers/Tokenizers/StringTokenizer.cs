@@ -14,12 +14,12 @@ namespace MookDialogueScript.Lexers
         /// <summary>
         /// 快速判断是否为字符串相关Token
         /// </summary>
-        public bool CanHandle(CharacterStream stream, LexerState state, CharacterClassifier classifier)
+        public bool CanHandle(CharStream stream, LexerState state)
         {
             char currentChar = stream.CurrentChar;
 
             // 字符串开始引号（不在字符串模式中）
-            if (!state.IsInStringMode && classifier.IsQuote(currentChar))
+            if (!state.IsInStringMode && CharClassifier.IsQuote(currentChar))
                 return true;
 
             // 字符串结束引号（在字符串模式中且匹配引号类型）
@@ -37,12 +37,12 @@ namespace MookDialogueScript.Lexers
         /// <summary>
         /// 处理字符串Token
         /// </summary>
-        public Token TryTokenize(CharacterStream stream, LexerState state, CharacterClassifier classifier)
+        public Token TryTokenize(CharStream stream, LexerState state)
         {
             char currentChar = stream.CurrentChar;
 
             // 处理字符串开始引号
-            if (!state.IsInStringMode && classifier.IsQuote(currentChar))
+            if (!state.IsInStringMode && CharClassifier.IsQuote(currentChar))
             {
                 return HandleStringStart(stream, state, currentChar);
             }
@@ -57,7 +57,7 @@ namespace MookDialogueScript.Lexers
             if (state.IsInStringMode && !IsClosingQuote(currentChar, state.StringQuoteType)
                                      && !state.IsInInterpolation && currentChar != '{')
             {
-                return HandleStringContent(stream, state, classifier);
+                return HandleStringContent(stream, state);
             }
 
             return null;
@@ -66,7 +66,7 @@ namespace MookDialogueScript.Lexers
         /// <summary>
         /// 处理字符串开始引号
         /// </summary>
-        private Token HandleStringStart(CharacterStream stream, LexerState state, char quoteChar)
+        private Token HandleStringStart(CharStream stream, LexerState state, char quoteChar)
         {
             int startLine = stream.Line;
             int startColumn = stream.Column;
@@ -80,7 +80,7 @@ namespace MookDialogueScript.Lexers
         /// <summary>
         /// 处理字符串结束引号
         /// </summary>
-        private Token HandleStringEnd(CharacterStream stream, LexerState state, char quoteChar)
+        private Token HandleStringEnd(CharStream stream, LexerState state, char quoteChar)
         {
             int startLine = stream.Line;
             int startColumn = stream.Column;
@@ -94,7 +94,7 @@ namespace MookDialogueScript.Lexers
         /// <summary>
         /// 处理字符串内容（保持原有的复杂转义逻辑）
         /// </summary>
-        private Token HandleStringContent(CharacterStream stream, LexerState state, CharacterClassifier classifier)
+        private Token HandleStringContent(CharStream stream, LexerState state)
         {
             int startLine = stream.Line;
             int startColumn = stream.Column;

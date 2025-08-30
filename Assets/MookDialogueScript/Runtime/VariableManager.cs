@@ -362,7 +362,7 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 获取可序列化的脚本变量（排除Function类型）
+        /// 获取可序列化的脚本变量
         /// </summary>
         /// <returns>可序列化的脚本变量字典</returns>
         public Dictionary<string, RuntimeValue> GetSerializableScriptVariables()
@@ -371,12 +371,6 @@ namespace MookDialogueScript
             
             foreach (var kvp in _scriptVariables)
             {
-                // 跳过Function类型的变量，因为它们不能被序列化
-                if (kvp.Value.Type == ValueType.Function)
-                {
-                    continue;
-                }
-                
                 // 对于包含MethodReference的Object类型，创建序列化标记
                 if (kvp.Value.Type == ValueType.Object && kvp.Value.Value is MethodReference methodRef)
                 {
@@ -647,7 +641,6 @@ namespace MookDialogueScript
                 string functionKey = $"{objectName}.{memberName}";
                 if (context.HasFunction(functionKey))
                 {
-                    MLogger.Debug($"找到注册对象 '{objectName}' 的预编译方法: {memberName}");
                     // 创建一个方法引用对象，包含必要的调用信息
                     var methodRef = new MethodReference(objectName, memberName, functionKey);
                     return new RuntimeValue(methodRef);
@@ -657,7 +650,6 @@ namespace MookDialogueScript
                 string variableKey = $"{objectName}.{memberName}";
                 if (context.HasVariable(variableKey))
                 {
-                    MLogger.Debug($"找到注册对象 '{objectName}' 的变量: {memberName}");
                     return context.GetVariable(variableKey);
                 }
 
@@ -730,26 +722,6 @@ namespace MookDialogueScript
             {
                 MLogger.Warning($"上下文成员访问时出错: {ex.Message}");
                 return null;
-            }
-        }
-
-        /// <summary>
-        /// 检测并报告命名冲突
-        /// </summary>
-        /// <param name="objectName">对象名称</param>
-        /// <param name="memberName">成员名称</param>
-        /// <param name="context">对话上下文</param>
-        private void DetectNamingConflicts(string objectName, string memberName, DialogueContext context)
-        {
-            string key = $"{objectName}.{memberName}";
-
-            bool hasFunction = context.HasFunction(key);
-            bool hasVariable = context.HasVariable(key);
-
-            if (hasFunction && hasVariable)
-            {
-                MLogger.Warning($"检测到命名冲突: '{key}' 同时存在方法和变量。" +
-                                $"访问时将优先使用方法，如需访问变量请考虑重命名。");
             }
         }
 
@@ -845,28 +817,6 @@ namespace MookDialogueScript
                 MLogger.Error($"缓存反射访问成员时出错: {ex.Message}");
                 return RuntimeValue.Null;
             }
-        }
-        #endregion
-
-        #region 便捷方法
-        /// <summary>
-        /// 注册变量（便捷方法）
-        /// </summary>
-        /// <param name="name">变量名</param>
-        /// <param name="value">变量值</param>
-        public void RegisterVariable(string name, RuntimeValue value)
-        {
-            RegisterScriptVariable(name, value);
-        }
-
-        /// <summary>
-        /// 注册对象（便捷方法）
-        /// </summary>
-        /// <param name="name">对象名称</param>
-        /// <param name="instance">对象实例</param>
-        public void RegisterObject(string name, object instance)
-        {
-            RegisterObjectPropertiesAndFields(name, instance);
         }
         #endregion
 

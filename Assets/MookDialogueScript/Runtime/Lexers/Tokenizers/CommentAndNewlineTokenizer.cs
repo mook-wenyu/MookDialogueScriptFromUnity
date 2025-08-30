@@ -14,7 +14,7 @@ namespace MookDialogueScript.Lexers
         /// 快速判断是否为注释或换行起始
         /// 增强：支持检测含空格的空行
         /// </summary>
-        public bool CanHandle(CharacterStream stream, LexerState state, CharacterClassifier classifier)
+        public bool CanHandle(CharStream stream, LexerState state)
         {
             // 注释起始 //
             if (stream.IsCommentMark())
@@ -30,13 +30,13 @@ namespace MookDialogueScript.Lexers
                 // 预读到行尾，检查是否只有空白+换行
                 int pos = stream.Position;
                 char c = stream.GetCharAt(pos);
-                while (classifier.IsSpaceOrIndent(c))
+                while (CharClassifier.IsSpaceOrIndent(c))
                 {
                     pos++;
                     c = stream.GetCharAt(pos);
                 }
                 // 如果紧接着是换行符或EOF，则这是空行
-                return classifier.IsNewlineOrEOF(c);
+                return CharClassifier.IsNewlineOrEOF(c);
             }
 
             return false;
@@ -45,16 +45,16 @@ namespace MookDialogueScript.Lexers
         /// <summary>
         /// 处理注释和换行Token
         /// </summary>
-        public Token TryTokenize(CharacterStream stream, LexerState state, CharacterClassifier classifier)
+        public Token TryTokenize(CharStream stream, LexerState state)
         {
-            return HandleNewlineAndComments(stream, state, classifier);
+            return HandleNewlineAndComments(stream, state);
         }
 
         /// <summary>
         /// 处理换行字符、跳过连续的换行和注释行
         /// 复杂的逻辑：折叠连续的空行和注释行为一个NEWLINE Token
         /// </summary>
-        private Token HandleNewlineAndComments(CharacterStream stream, LexerState state, CharacterClassifier classifier)
+        private Token HandleNewlineAndComments(CharStream stream, LexerState _)
         {
             int currentLine = stream.Line;
 
@@ -96,7 +96,7 @@ namespace MookDialogueScript.Lexers
                 }
 
                 bool isCommentLine = c == '/' && stream.GetCharAt(p + 1) == '/';
-                bool isEmptyLine = classifier.IsNewlineOrEOF(c);
+                bool isEmptyLine = CharClassifier.IsNewlineOrEOF(c);
 
                 if (!(isCommentLine || isEmptyLine))
                 {

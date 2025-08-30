@@ -8,18 +8,18 @@ public class DialogueMgr : MonoBehaviour
 
     // 创建对话管理器
     public Runner RunMgrs { get; private set; }
-    
+
     void Awake()
     {
         Instance = this;
         Initialize();
     }
-    
+
     public void Initialize()
     {
         Debug.Log("开始初始化对话系统");
         RunMgrs = new Runner();
-        
+
         // 注册玩家对象
         var player = new Player("二狗");
         // 使用Runner的RegisterObject方法注册玩家对象
@@ -37,7 +37,7 @@ public class DialogueMgr : MonoBehaviour
         {
             UnityEngine.Debug.Log("=== 对话系统性能统计 ===");
             var stats = RunMgrs.Context.GetPerformanceStatistics();
-            
+
             foreach (var kvp in stats)
             {
                 UnityEngine.Debug.Log($"{kvp.Key}: {kvp.Value}");
@@ -63,7 +63,7 @@ public class DialogueMgr : MonoBehaviour
             UnityEngine.Debug.Log("Helper缓存已清理");
         }
     }
-    
+
     /// <summary>
     /// 游戏系统类 - 只包含一些静态变量
     /// </summary>
@@ -80,6 +80,11 @@ public class DialogueMgr : MonoBehaviour
         public static bool IsDebugMode { get; set; } = false;
     }
 
+    public class Status
+    {
+        public string state = "活动";
+    }
+
     /// <summary>
     /// 玩家类 - 用于演示对象属性和方法
     /// </summary>
@@ -90,6 +95,8 @@ public class DialogueMgr : MonoBehaviour
         public int Level { get; set; }
         public int Health { get; set; }
         public bool IsAlive { get; set; }
+
+        public Status status = new();
 
         // 构造函数
         public Player(string name, int level = 1)

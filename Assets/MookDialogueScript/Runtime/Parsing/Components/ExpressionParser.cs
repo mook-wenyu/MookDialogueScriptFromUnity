@@ -12,7 +12,7 @@ namespace MookDialogueScript.Parsing
     public class ExpressionParser : IExpressionParser
     {
         #region 字段
-        private readonly INodeCache _nodeCache;
+        private readonly NodeCacheManager _nodeCache;
         private readonly ITokenBuffer _tokenBuffer;
         
         // 字符串构建器池（线程本地）
@@ -24,7 +24,7 @@ namespace MookDialogueScript.Parsing
         /// <summary>
         /// 创建表达式解析器
         /// </summary>
-        public ExpressionParser(INodeCache nodeCache, ITokenBuffer tokenBuffer)
+        public ExpressionParser(NodeCacheManager nodeCache, ITokenBuffer tokenBuffer)
         {
             _nodeCache = nodeCache ?? throw new ArgumentNullException(nameof(nodeCache));
             _tokenBuffer = tokenBuffer ?? throw new ArgumentNullException(nameof(tokenBuffer));

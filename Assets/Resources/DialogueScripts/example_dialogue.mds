@@ -79,9 +79,8 @@ description: 演示0.4.0版本优化特性的开场节点
 <<var $game_day 1>>
 
 // 场景描述（旁白）
-这是一个宁静的小镇，阳光明媚，街道上人来人往。
+这是一个宁静的小镇，阳光明媚，街道上人来人往。随机数{random()}
 :你作为一名新手冒险者，刚刚踏上这片土地。
-
 // 商人角色登场
 商人: 欢迎来到我的商店，{$player_name}！
     // 嵌套的内心独白
@@ -146,7 +145,7 @@ description: 演示0.4.0版本优化特性的开场节点
 商人: 让我看看您的详细信息。 #角色信息 #详细查看
 <<wait 0.5>>
 商人: 您的名称是{player.name}，等级是{player.level}。
-商人: 您的当前状态：{player.get_status()}
+商人: 您的当前状态：{player.get_status()} 和 {player.status.state}
     // 演示对象方法调用（新语法：object.method()）
     <<player.take_damage(5)>>
     商人: 您受到了一点伤害，现在状态：{player.get_status()}

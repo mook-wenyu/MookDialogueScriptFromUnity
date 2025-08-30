@@ -5,87 +5,44 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using MookDialogueScript.Incremental.Contracts;
 
-namespace MookDialogueScript.Incremental.VariableCache
+namespace MookDialogueScript.Incremental
 {
     /// <summary>
     /// 变量声明缓存实现
     /// 基于内存的高性能变量声明缓存，支持作用域查询、模糊搜索和使用统计
     /// </summary>
-    public sealed class VariableDeclarationCache : IVariableDeclarationCache
+    public sealed class VariableDeclarationCache
     {
-        #region 字段
-        private readonly IncrementalCacheOptions _options;
-        
         // 主缓存：文件路径 -> 变量声明列表
-        private readonly ConcurrentDictionary<string, CacheEntry> _fileDeclarations;
-        
+        private readonly ConcurrentDictionary<string, List<VariableDeclaration>> _fileDeclarations;
+
         // 索引缓存：变量名 -> 声明信息列表（支持多个作用域）
         private readonly ConcurrentDictionary<string, List<VariableDeclaration>> _variableIndex;
-        
+
         // 作用域索引：作用域 -> 变量名集合
         private readonly ConcurrentDictionary<string, HashSet<string>> _scopeIndex;
-        
+
         private readonly ReaderWriterLockSlim _rwLock;
         private volatile bool _disposed;
 
-        // 统计相关字段
-        private long _hitCount;
-        private long _missCount;
-        private long _addOperations;
-        private long _updateOperations;
-        private long _removeOperations;
-        private long _clearOperations;
-        private long _cleanupOperations;
-        #endregion
-
-        #region 属性
         /// <summary>
         /// 缓存大小（项数）
         /// </summary>
         public int Count => _variableIndex.Values.Sum(list => list.Count);
 
         /// <summary>
-        /// 缓存使用的内存大小（字节）
-        /// </summary>
-        public long MemoryUsage
-        {
-            get
-            {
-                long totalSize = 0;
-                
-                // 估算文件声明缓存大小
-                foreach (var entry in _fileDeclarations.Values)
-                {
-                    totalSize += entry.EstimateSize();
-                }
-                
-                // 估算索引大小
-                totalSize += _variableIndex.Count * 64; // 字典开销
-                totalSize += _scopeIndex.Count * 64; // 字典开销
-                
-                return totalSize;
-            }
-        }
-        #endregion
-
-        #region 构造函数
-        /// <summary>
         /// 初始化变量声明缓存
         /// </summary>
-        /// <param name="options">缓存配置选项</param>
-        public VariableDeclarationCache(IncrementalCacheOptions options)
+        public VariableDeclarationCache()
         {
-            _options = options ?? throw new ArgumentNullException(nameof(options));
-            _fileDeclarations = new ConcurrentDictionary<string, CacheEntry>(StringComparer.OrdinalIgnoreCase);
+            _fileDeclarations = new ConcurrentDictionary<string, List<VariableDeclaration>>(StringComparer.OrdinalIgnoreCase);
             _variableIndex = new ConcurrentDictionary<string, List<VariableDeclaration>>(StringComparer.OrdinalIgnoreCase);
             _scopeIndex = new ConcurrentDictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
             _rwLock = new ReaderWriterLockSlim(LockRecursionPolicy.NoRecursion);
         }
-        #endregion
 
-        #region IVariableDeclarationCache 实现
+        #region VariableDeclarationCache 实现
         /// <summary>
         /// 获取指定文件中的所有变量声明
         /// </summary>
@@ -98,7 +55,6 @@ namespace MookDialogueScript.Incremental.VariableCache
 
             if (string.IsNullOrEmpty(filePath))
             {
-                Interlocked.Increment(ref _missCount);
                 return null;
             }
 
@@ -106,22 +62,11 @@ namespace MookDialogueScript.Incremental.VariableCache
             {
                 var cacheKey = GenerateCacheKey(filePath);
 
-                if (_fileDeclarations.TryGetValue(cacheKey, out var entry))
+                if (_fileDeclarations.TryGetValue(cacheKey, out var vars))
                 {
-                    if (!entry.IsExpired(_options.CacheExpiration))
-                    {
-                        entry.UpdateAccess();
-                        Interlocked.Increment(ref _hitCount);
-                        return entry.Declarations.AsEnumerable();
-                    }
-                    else
-                    {
-                        // 缓存项已过期，移除它
-                        _ = Task.Run(() => RemoveFileDeclarationsAsync(filePath, cancellationToken), cancellationToken);
-                    }
+                    return vars.AsEnumerable();
                 }
 
-                Interlocked.Increment(ref _missCount);
                 return null;
             }, cancellationToken);
         }
@@ -139,7 +84,6 @@ namespace MookDialogueScript.Incremental.VariableCache
 
             if (string.IsNullOrEmpty(variableName))
             {
-                Interlocked.Increment(ref _missCount);
                 return null;
             }
 
@@ -160,22 +104,20 @@ namespace MookDialogueScript.Incremental.VariableCache
                         else
                         {
                             // 指定了作用域，查找匹配的声明
-                            result = declarations.FirstOrDefault(d => 
+                            result = declarations.FirstOrDefault(d =>
                                 d.Scope.Equals(scope, StringComparison.OrdinalIgnoreCase) ||
                                 d.DeclarationFilePath.Equals(scope, StringComparison.OrdinalIgnoreCase));
-                            
+
                             // 如果在指定作用域中找不到，尝试查找全局变量
                             result ??= declarations.FirstOrDefault(d => d.IsGlobal);
                         }
 
                         if (result != null)
                         {
-                            Interlocked.Increment(ref _hitCount);
                             return result;
                         }
                     }
 
-                    Interlocked.Increment(ref _missCount);
                     return null;
                 }
                 finally
@@ -203,33 +145,24 @@ namespace MookDialogueScript.Incremental.VariableCache
             {
                 var declarationList = declarations.ToList();
                 var cacheKey = GenerateCacheKey(filePath);
-                var entry = new CacheEntry(declarationList, DateTime.UtcNow);
-                
+
                 _rwLock.EnterWriteLock();
                 try
                 {
                     // 移除旧的声明（如果存在）
-                    if (_fileDeclarations.TryGetValue(cacheKey, out var oldEntry))
+                    if (_fileDeclarations.TryGetValue(cacheKey, out var oldVars))
                     {
-                        RemoveFromIndices(oldEntry.Declarations);
-                        Interlocked.Increment(ref _updateOperations);
-                    }
-                    else
-                    {
-                        Interlocked.Increment(ref _addOperations);
+                        RemoveFromIndices(oldVars);
                     }
 
                     // 添加新的声明
-                    _fileDeclarations[cacheKey] = entry;
+                    _fileDeclarations[cacheKey] = declarationList;
                     AddToIndices(declarationList);
                 }
                 finally
                 {
                     _rwLock.ExitWriteLock();
                 }
-
-                // 检查是否需要清理
-                _ = Task.Run(() => EnforceCapacityLimits(cancellationToken), cancellationToken);
 
             }, cancellationToken);
         }
@@ -256,39 +189,33 @@ namespace MookDialogueScript.Incremental.VariableCache
                 try
                 {
                     // 获取或创建文件的声明列表
-                    if (!_fileDeclarations.TryGetValue(cacheKey, out var entry))
+                    if (!_fileDeclarations.TryGetValue(cacheKey, out var vars))
                     {
-                        entry = new CacheEntry(new List<VariableDeclaration>(), DateTime.UtcNow);
-                        _fileDeclarations[cacheKey] = entry;
+                        vars = new List<VariableDeclaration>();
+                        _fileDeclarations[cacheKey] = vars;
                     }
 
                     // 查找现有声明
-                    var existingIndex = entry.Declarations.FindIndex(d => 
+                    var existingIndex = vars.FindIndex(d =>
                         d.Name.Equals(declaration.Name, StringComparison.OrdinalIgnoreCase) &&
                         d.Scope.Equals(declaration.Scope, StringComparison.OrdinalIgnoreCase));
 
                     if (existingIndex >= 0)
                     {
                         // 更新现有声明
-                        var oldDeclaration = entry.Declarations[existingIndex];
-                        entry.Declarations[existingIndex] = declaration;
-                        
+                        var oldDeclaration = vars[existingIndex];
+                        vars[existingIndex] = declaration;
+
                         // 更新索引
-                        RemoveFromIndices(new[] { oldDeclaration });
-                        AddToIndices(new[] { declaration });
-                        
-                        Interlocked.Increment(ref _updateOperations);
+                        RemoveFromIndices(new[] {oldDeclaration});
+                        AddToIndices(new[] {declaration});
                     }
                     else
                     {
                         // 添加新声明
-                        entry.Declarations.Add(declaration);
-                        AddToIndices(new[] { declaration });
-                        
-                        Interlocked.Increment(ref _addOperations);
+                        vars.Add(declaration);
+                        AddToIndices(new[] {declaration});
                     }
-
-                    entry.UpdateAccess();
                 }
                 finally
                 {
@@ -317,10 +244,9 @@ namespace MookDialogueScript.Incremental.VariableCache
                 _rwLock.EnterWriteLock();
                 try
                 {
-                    if (_fileDeclarations.TryRemove(cacheKey, out var entry))
+                    if (_fileDeclarations.TryRemove(cacheKey, out var vars))
                     {
-                        RemoveFromIndices(entry.Declarations);
-                        Interlocked.Increment(ref _removeOperations);
+                        RemoveFromIndices(vars);
                         return true;
                     }
 
@@ -354,9 +280,9 @@ namespace MookDialogueScript.Incremental.VariableCache
                 {
                     if (_variableIndex.TryGetValue(variableName, out var declarations))
                     {
-                        var toRemove = string.IsNullOrEmpty(scope) 
+                        var toRemove = string.IsNullOrEmpty(scope)
                             ? declarations.ToList()
-                            : declarations.Where(d => 
+                            : declarations.Where(d =>
                                 d.Scope.Equals(scope, StringComparison.OrdinalIgnoreCase) ||
                                 d.DeclarationFilePath.Equals(scope, StringComparison.OrdinalIgnoreCase)).ToList();
 
@@ -368,7 +294,7 @@ namespace MookDialogueScript.Incremental.VariableCache
                                 var fileCacheKey = GenerateCacheKey(declaration.DeclarationFilePath);
                                 if (_fileDeclarations.TryGetValue(fileCacheKey, out var entry))
                                 {
-                                    entry.Declarations.RemoveAll(d => 
+                                    entry.RemoveAll(d =>
                                         d.Name.Equals(declaration.Name, StringComparison.OrdinalIgnoreCase) &&
                                         d.Scope.Equals(declaration.Scope, StringComparison.OrdinalIgnoreCase));
                                 }
@@ -376,8 +302,7 @@ namespace MookDialogueScript.Incremental.VariableCache
 
                             // 从索引中移除
                             RemoveFromIndices(toRemove);
-                            
-                            Interlocked.Increment(ref _removeOperations);
+
                             return true;
                         }
                     }
@@ -430,7 +355,7 @@ namespace MookDialogueScript.Incremental.VariableCache
                                 continue;
 
                             // 作用域筛选
-                            if (!string.IsNullOrEmpty(scope) && !declaration.IsVisibleInScope(scope))
+                            if (!string.IsNullOrEmpty(scope))
                                 continue;
 
                             results.Add(declaration);
@@ -516,20 +441,11 @@ namespace MookDialogueScript.Incremental.VariableCache
             if (requestList.Count == 0)
                 return results;
 
-            var semaphore = new SemaphoreSlim(Math.Min(_options.WarmupConcurrency, requestList.Count));
             var tasks = requestList.Select(async request =>
             {
-                await semaphore.WaitAsync(cancellationToken);
-                try
-                {
-                    var result = await GetVariableDeclarationAsync(request.variableName, request.scope, cancellationToken);
-                    var key = string.IsNullOrEmpty(request.scope) ? request.variableName : $"{request.scope}.{request.variableName}";
-                    return new { Key = key, Result = result };
-                }
-                finally
-                {
-                    semaphore.Release();
-                }
+                var result = await GetVariableDeclarationAsync(request.variableName, request.scope, cancellationToken);
+                var key = string.IsNullOrEmpty(request.scope) ? request.variableName : $"{request.scope}.{request.variableName}";
+                return new {Key = key, Result = result};
             });
 
             var batchResults = await Task.WhenAll(tasks);
@@ -555,18 +471,9 @@ namespace MookDialogueScript.Incremental.VariableCache
             if (declarations == null || declarations.Count == 0)
                 return;
 
-            var semaphore = new SemaphoreSlim(Math.Min(_options.WarmupConcurrency, declarations.Count));
             var tasks = declarations.Select(async kvp =>
             {
-                await semaphore.WaitAsync(cancellationToken);
-                try
-                {
-                    await SetVariableDeclarationsAsync(kvp.Key, kvp.Value, cancellationToken);
-                }
-                finally
-                {
-                    semaphore.Release();
-                }
+                await SetVariableDeclarationsAsync(kvp.Key, kvp.Value, cancellationToken);
             });
 
             await Task.WhenAll(tasks);
@@ -610,83 +517,11 @@ namespace MookDialogueScript.Incremental.VariableCache
                     _fileDeclarations.Clear();
                     _variableIndex.Clear();
                     _scopeIndex.Clear();
-                    Interlocked.Increment(ref _clearOperations);
                 }
                 finally
                 {
                     _rwLock.ExitWriteLock();
                 }
-            }, cancellationToken);
-        }
-
-        /// <summary>
-        /// 清理过期的变量声明缓存
-        /// </summary>
-        /// <param name="maxAge">最大缓存时间</param>
-        /// <param name="cancellationToken">取消令牌</param>
-        /// <returns>清理的项数</returns>
-        public async Task<int> CleanupExpiredAsync(TimeSpan maxAge, CancellationToken cancellationToken = default)
-        {
-            ThrowIfDisposed();
-
-            return await Task.Run(() =>
-            {
-                var expiredFiles = new List<string>();
-
-                _rwLock.EnterWriteLock();
-                try
-                {
-                    foreach (var kvp in _fileDeclarations)
-                    {
-                        if (kvp.Value.IsExpired(maxAge))
-                        {
-                            expiredFiles.Add(kvp.Key);
-                        }
-                    }
-
-                    foreach (var file in expiredFiles)
-                    {
-                        if (_fileDeclarations.TryRemove(file, out var entry))
-                        {
-                            RemoveFromIndices(entry.Declarations);
-                        }
-                    }
-
-                    if (expiredFiles.Count > 0)
-                    {
-                        Interlocked.Increment(ref _cleanupOperations);
-                    }
-
-                    return expiredFiles.Count;
-                }
-                finally
-                {
-                    _rwLock.ExitWriteLock();
-                }
-            }, cancellationToken);
-        }
-
-        /// <summary>
-        /// 获取缓存统计信息
-        /// </summary>
-        /// <param name="cancellationToken">取消令牌</param>
-        /// <returns>缓存统计信息</returns>
-        public async Task<CacheStatistics> GetStatisticsAsync(CancellationToken cancellationToken = default)
-        {
-            ThrowIfDisposed();
-
-            return await Task.Run(() =>
-            {
-                return CacheStatistics.CreateEmpty()
-                    .AddHits(_hitCount)
-                    .AddMisses(_missCount)
-                    .UpdateItemCounts(0, Count, 0)
-                    .UpdateMemoryUsage(0, MemoryUsage, 0)
-                    .RecordOperation(CacheOperationType.Add, _addOperations)
-                    .RecordOperation(CacheOperationType.Update, _updateOperations)
-                    .RecordOperation(CacheOperationType.Remove, _removeOperations)
-                    .RecordOperation(CacheOperationType.Clear, _clearOperations)
-                    .RecordOperation(CacheOperationType.Cleanup, _cleanupOperations);
             }, cancellationToken);
         }
 
@@ -732,7 +567,7 @@ namespace MookDialogueScript.Incremental.VariableCache
                     // 验证文件缓存一致性
                     foreach (var entry in _fileDeclarations.Values)
                     {
-                        foreach (var declaration in entry.Declarations)
+                        foreach (var declaration in entry)
                         {
                             if (!_variableIndex.TryGetValue(declaration.Name, out var indexedDeclarations) ||
                                 !indexedDeclarations.Any(d => d.GetQualifiedName() == declaration.GetQualifiedName()))
@@ -764,14 +599,7 @@ namespace MookDialogueScript.Incremental.VariableCache
         /// <returns>缓存键</returns>
         private string GenerateCacheKey(string filePath)
         {
-            return _options.KeyStrategy switch
-            {
-                CacheKeyStrategy.FilePath => filePath,
-                CacheKeyStrategy.FilePathHash => filePath.GetHashCode().ToString(),
-                CacheKeyStrategy.ContentHash => filePath,
-                CacheKeyStrategy.CompositeHash => $"{filePath}_{filePath.GetHashCode()}",
-                _ => filePath
-            };
+            return $"{filePath}_{filePath.GetHashCode()}";
         }
 
         /// <summary>
@@ -785,7 +613,7 @@ namespace MookDialogueScript.Incremental.VariableCache
                 // 添加到变量索引
                 _variableIndex.AddOrUpdate(
                     declaration.Name,
-                    new List<VariableDeclaration> { declaration },
+                    new List<VariableDeclaration> {declaration},
                     (key, existing) =>
                     {
                         if (!existing.Any(d => d.GetQualifiedName() == declaration.GetQualifiedName()))
@@ -799,7 +627,7 @@ namespace MookDialogueScript.Incremental.VariableCache
                 var scope = string.IsNullOrEmpty(declaration.Scope) ? "global" : declaration.Scope;
                 _scopeIndex.AddOrUpdate(
                     scope,
-                    new HashSet<string> { declaration.Name },
+                    new HashSet<string> {declaration.Name},
                     (key, existing) =>
                     {
                         existing.Add(declaration.Name);
@@ -820,7 +648,7 @@ namespace MookDialogueScript.Incremental.VariableCache
                 if (_variableIndex.TryGetValue(declaration.Name, out var existingDeclarations))
                 {
                     existingDeclarations.RemoveAll(d => d.GetQualifiedName() == declaration.GetQualifiedName());
-                    
+
                     if (existingDeclarations.Count == 0)
                     {
                         _variableIndex.TryRemove(declaration.Name, out _);
@@ -833,14 +661,14 @@ namespace MookDialogueScript.Incremental.VariableCache
                 {
                     // 检查是否还有其他声明在此作用域中
                     var hasOtherDeclarations = _variableIndex.TryGetValue(declaration.Name, out var allDeclarations) &&
-                                             allDeclarations.Any(d => 
-                                                 (string.IsNullOrEmpty(d.Scope) ? "global" : d.Scope).Equals(scope, StringComparison.OrdinalIgnoreCase) &&
-                                                 d.GetQualifiedName() != declaration.GetQualifiedName());
+                                               allDeclarations.Any(d =>
+                                                   (string.IsNullOrEmpty(d.Scope) ? "global" : d.Scope).Equals(scope, StringComparison.OrdinalIgnoreCase) &&
+                                                   d.GetQualifiedName() != declaration.GetQualifiedName());
 
                     if (!hasOtherDeclarations)
                     {
                         scopeVariables.Remove(declaration.Name);
-                        
+
                         if (scopeVariables.Count == 0)
                         {
                             _scopeIndex.TryRemove(scope, out _);
@@ -870,78 +698,6 @@ namespace MookDialogueScript.Incremental.VariableCache
 
             // 部分匹配
             return name.Contains(pattern, StringComparison.OrdinalIgnoreCase);
-        }
-
-        /// <summary>
-        /// 强制执行容量限制
-        /// </summary>
-        /// <param name="cancellationToken">取消令牌</param>
-        private async Task EnforceCapacityLimits(CancellationToken cancellationToken = default)
-        {
-            await Task.Run(() =>
-            {
-                // 检查内存使用量
-                if (_options.MaxMemoryUsage > 0 && MemoryUsage > _options.MaxMemoryUsage)
-                {
-                    EvictLeastRecentlyUsedFiles(0.1); // 淘汰10%的文件
-                }
-
-                // 检查项数限制
-                if (_options.MaxCacheSize > 0 && Count > _options.MaxCacheSize)
-                {
-                    var excessCount = Count - _options.MaxCacheSize;
-                    var filesToEvict = (int)Math.Ceiling((double)excessCount / 10); // 估算需要淘汰的文件数
-                    EvictLeastRecentlyUsedFiles(filesToEvict);
-                }
-            }, cancellationToken);
-        }
-
-        /// <summary>
-        /// 淘汰最少使用的文件
-        /// </summary>
-        /// <param name="countOrRatio">要淘汰的文件数或比例</param>
-        private void EvictLeastRecentlyUsedFiles(double countOrRatio)
-        {
-            var fileCount = _fileDeclarations.Count;
-            if (fileCount == 0)
-                return;
-
-            int filesToEvict;
-            if (countOrRatio >= 1.0)
-            {
-                filesToEvict = (int)countOrRatio;
-            }
-            else
-            {
-                filesToEvict = (int)(fileCount * countOrRatio);
-            }
-
-            if (filesToEvict <= 0)
-                return;
-
-            _rwLock.EnterWriteLock();
-            try
-            {
-                // 获取最少使用的文件
-                var leastUsedFiles = _fileDeclarations
-                    .OrderBy(kvp => kvp.Value.LastAccessTime)
-                    .Take(filesToEvict)
-                    .Select(kvp => kvp.Key)
-                    .ToList();
-
-                // 移除这些文件的缓存
-                foreach (var file in leastUsedFiles)
-                {
-                    if (_fileDeclarations.TryRemove(file, out var entry))
-                    {
-                        RemoveFromIndices(entry.Declarations);
-                    }
-                }
-            }
-            finally
-            {
-                _rwLock.ExitWriteLock();
-            }
         }
 
         /// <summary>
@@ -980,51 +736,5 @@ namespace MookDialogueScript.Incremental.VariableCache
         }
         #endregion
 
-        #region 内部类型
-        /// <summary>
-        /// 文件声明缓存条目
-        /// </summary>
-        private sealed class CacheEntry
-        {
-            public List<VariableDeclaration> Declarations { get; }
-            public DateTime CreatedTime { get; }
-            public DateTime LastAccessTime { get; private set; }
-
-            public CacheEntry(List<VariableDeclaration> declarations, DateTime createdTime)
-            {
-                Declarations = declarations;
-                CreatedTime = createdTime;
-                LastAccessTime = createdTime;
-            }
-
-            public bool IsExpired(TimeSpan maxAge)
-            {
-                return DateTime.UtcNow - CreatedTime > maxAge;
-            }
-
-            public void UpdateAccess()
-            {
-                LastAccessTime = DateTime.UtcNow;
-            }
-
-            public long EstimateSize()
-            {
-                return Declarations.Sum(d => EstimateDeclarationSize(d)) + 128; // 加上Entry本身的开销
-            }
-
-            private static long EstimateDeclarationSize(VariableDeclaration declaration)
-            {
-                long size = 0;
-                size += (declaration.Name?.Length ?? 0) * 2;
-                size += (declaration.DeclarationFilePath?.Length ?? 0) * 2;
-                size += (declaration.Scope?.Length ?? 0) * 2;
-                size += (declaration.Description?.Length ?? 0) * 2;
-                size += declaration.Tags.Sum(t => t.Length * 2);
-                size += declaration.ExtendedProperties.Count * 64;
-                size += declaration.UsageStats.UsageRecords.Count * 64;
-                return size + 256; // 基础对象开销
-            }
-        }
-        #endregion
     }
 }

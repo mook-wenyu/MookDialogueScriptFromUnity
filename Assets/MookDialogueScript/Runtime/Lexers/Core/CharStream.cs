@@ -7,7 +7,7 @@ namespace MookDialogueScript.Lexers
     /// 高性能字符流实现，保持三字符缓存优化和内联方法
     /// 设计原则：单一职责 - 专注于字符流管理和性能优化
     /// </summary>
-    public class CharacterStream : IDisposable
+    public class CharStream : IDisposable
     {
         // 高性能数据结构：使用字符数组替代字符串
         private char[] _sourceChars;
@@ -32,7 +32,7 @@ namespace MookDialogueScript.Lexers
         public bool IsAtEnd => _currentChar == '\0';
         public int Length => _sourceLength;
 
-        public CharacterStream()
+        public CharStream()
         {
             Reset(string.Empty);
         }
@@ -205,7 +205,7 @@ namespace MookDialogueScript.Lexers
         /// 检查是否为注释标记
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsCommentMark(this CharacterStream stream)
+        public static bool IsCommentMark(this CharStream stream)
         {
             return stream.CurrentChar == '/' && stream.NextChar == '/';
         }
@@ -214,7 +214,7 @@ namespace MookDialogueScript.Lexers
         /// 检查是否为引号标记
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsQuoteMark(this CharacterStream stream)
+        public static bool IsQuoteMark(this CharStream stream)
         {
             return stream.CurrentChar is '\'' or '"';
         }
@@ -223,7 +223,7 @@ namespace MookDialogueScript.Lexers
         /// 检查是否为CRLF标记
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsCRLFMark(this CharacterStream stream)
+        public static bool IsCRLFMark(this CharStream stream)
         {
             return stream.CurrentChar == '\r' && stream.NextChar == '\n';
         }
@@ -232,7 +232,7 @@ namespace MookDialogueScript.Lexers
         /// 换行符检查
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsNewlineMark(this CharacterStream stream)
+        public static bool IsNewlineMark(this CharStream stream)
         {
             return stream.CurrentChar is '\n' or '\r';
         }
@@ -241,7 +241,7 @@ namespace MookDialogueScript.Lexers
         /// 换行符或文件末尾检查
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsNewlineOrEOFMark(this CharacterStream stream)
+        public static bool IsNewlineOrEOFMark(this CharStream stream)
         {
             return stream.CurrentChar is '\n' or '\r' or '\0';
         }
@@ -250,7 +250,7 @@ namespace MookDialogueScript.Lexers
         /// 检查是否为文件末尾标记
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsEOFMark(this CharacterStream stream)
+        public static bool IsEOFMark(this CharStream stream)
         {
             return stream.CurrentChar is '\0';
         }
@@ -259,7 +259,7 @@ namespace MookDialogueScript.Lexers
         /// 空格或缩进字符检查
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsSpaceOrIndentMark(this CharacterStream stream)
+        public static bool IsSpaceOrIndentMark(this CharStream stream)
         {
             return stream.CurrentChar is ' ' or '\t';
         }
@@ -268,7 +268,7 @@ namespace MookDialogueScript.Lexers
         /// 检查是否为命令开始标记
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsCommandStart(this CharacterStream stream)
+        public static bool IsCommandStart(this CharStream stream)
         {
             return stream.CurrentChar == '<' && stream.NextChar == '<';
         }
@@ -277,7 +277,7 @@ namespace MookDialogueScript.Lexers
         /// 检查是否为命令结束标记 >>
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsCommandEnd(this CharacterStream stream)
+        public static bool IsCommandEnd(this CharStream stream)
         {
             return stream.CurrentChar == '>' && stream.NextChar == '>';
         }
@@ -286,7 +286,7 @@ namespace MookDialogueScript.Lexers
         /// 检查是否为节点开始标记 ---
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsOptionMark(this CharacterStream stream)
+        public static bool IsOptionMark(this CharStream stream)
         {
             return stream.CurrentChar == '-' && stream.NextChar == '>';
         }
@@ -295,7 +295,7 @@ namespace MookDialogueScript.Lexers
         /// 检查是否为节点开始标记
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsNodeStartMark(this CharacterStream stream)
+        public static bool IsNodeStartMark(this CharStream stream)
         {
             return stream.CurrentChar == '-' &&
                    stream.NextChar == '-' &&
@@ -306,7 +306,7 @@ namespace MookDialogueScript.Lexers
         /// 检查是否为节点结束标记 ===
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsNodeEndMark(this CharacterStream stream)
+        public static bool IsNodeEndMark(this CharStream stream)
         {
             return stream.CurrentChar == '=' &&
                    stream.NextChar == '=' &&

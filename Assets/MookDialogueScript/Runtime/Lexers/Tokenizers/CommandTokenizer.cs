@@ -15,7 +15,7 @@ namespace MookDialogueScript.Lexers
         /// 快速判断是否为命令标记起始
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool CanHandle(CharacterStream stream, LexerState state, CharacterClassifier classifier)
+        public bool CanHandle(CharStream stream, LexerState state)
         {
             // 仅在节点内容中处理命令标记
             if (!state.IsInNodeContent) return false;
@@ -26,7 +26,7 @@ namespace MookDialogueScript.Lexers
         /// <summary>
         /// 处理命令Token
         /// </summary>
-        public Token TryTokenize(CharacterStream stream, LexerState state, CharacterClassifier classifier)
+        public Token TryTokenize(CharStream stream, LexerState state)
         {
             if (!state.IsInNodeContent) return null;
 

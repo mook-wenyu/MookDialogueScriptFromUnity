@@ -43,7 +43,8 @@
       "mcp__memory__read_graph",
       "mcp__memory__create_entities",
       "Read(C:\\Users\\WenYu\\.claude/**)",
-      "WebSearch"
+      "WebSearch",
+      "mcp__memory__create_relations"
     ],
     "deny": [],
     "ask": [],

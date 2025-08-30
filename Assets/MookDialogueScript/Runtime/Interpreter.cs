@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
+using UnityEngine;
 
 namespace MookDialogueScript
 {
@@ -17,7 +18,7 @@ namespace MookDialogueScript
 
         // 表达式缓存：缓存不可变表达式的求值结果
         private readonly ConcurrentDictionary<int, RuntimeValue> _expressionCache = new();
-        
+
         // 参数列表缓存：重用参数列表对象
         private readonly Queue<List<RuntimeValue>> _argsPool = new();
         private readonly object _argsPoolLock = new();
@@ -60,7 +61,6 @@ namespace MookDialogueScript
         }
 
         #region 性能优化方法
-
         /// <summary>
         /// 检查表达式是否为不可变表达式（可以缓存结果）
         /// </summary>
@@ -70,9 +70,9 @@ namespace MookDialogueScript
             {
                 NumberNode => true,
                 BooleanNode => true,
-                StringInterpolationExpressionNode stringInterp => 
+                StringInterpolationExpressionNode stringInterp =>
                     stringInterp.Segments.All(part => part is TextNode), // 仅包含字面量的字符串插值
-                BinaryOpNode binary => 
+                BinaryOpNode binary =>
                     IsImmutableExpression(binary.Left) && IsImmutableExpression(binary.Right),
                 UnaryOpNode unary => IsImmutableExpression(unary.Operand),
                 _ => false
@@ -124,8 +124,8 @@ namespace MookDialogueScript
                 ["ExpressionCacheSize"] = _expressionCache.Count,
                 ["CacheHits"] = _cacheHits,
                 ["CacheMisses"] = _cacheMisses,
-                ["HitRate"] = _cacheHits + _cacheMisses > 0 
-                    ? (double)_cacheHits / (_cacheHits + _cacheMisses) * 100.0 
+                ["HitRate"] = _cacheHits + _cacheMisses > 0
+                    ? (double)_cacheHits / (_cacheHits + _cacheMisses) * 100.0
                     : 0.0,
                 ["ArgsPoolSize"] = _argsPool.Count
             };
@@ -137,20 +137,18 @@ namespace MookDialogueScript
         public void ClearCache()
         {
             _expressionCache.Clear();
-            
+
             lock (_argsPoolLock)
             {
                 _argsPool.Clear();
             }
-            
+
             _cacheHits = 0;
             _cacheMisses = 0;
         }
-
         #endregion
 
         #region 性能监控和调试
-
         /// <summary>
         /// 获取解释器性能统计
         /// </summary>
@@ -160,19 +158,19 @@ namespace MookDialogueScript
             var interpreterStats = GetCacheStatistics();
 
             var combined = new Dictionary<string, object>();
-            
+
             // 合并 Helper 统计
             foreach (var kvp in helperStats)
             {
                 combined[$"Helper_{kvp.Key}"] = kvp.Value;
             }
-            
+
             // 合并解释器统计
             foreach (var kvp in interpreterStats)
             {
                 combined[$"Interpreter_{kvp.Key}"] = kvp.Value;
             }
-            
+
             return combined;
         }
 
@@ -193,7 +191,6 @@ namespace MookDialogueScript
                 }
             }
         }
-
         #endregion
 
         /// <summary>
@@ -212,14 +209,14 @@ namespace MookDialogueScript
                     System.Threading.Interlocked.Increment(ref _cacheHits);
                     return cachedResult;
                 }
-                
+
                 // 计算结果并缓存
                 var result = await EvaluateExpressionInternal(node);
                 _expressionCache.TryAdd(hash, result);
                 System.Threading.Interlocked.Increment(ref _cacheMisses);
                 return result;
             }
-            
+
             // 对于可变表达式，直接计算
             return await EvaluateExpressionInternal(node);
         }
@@ -235,9 +232,9 @@ namespace MookDialogueScript
                 NumberNode n => HashCode.Combine("Number", n.Value),
                 BooleanNode b => HashCode.Combine("Boolean", b.Value),
                 StringInterpolationExpressionNode s => HashCode.Combine("StringInterp", s.Segments.Count),
-                BinaryOpNode bin => HashCode.Combine("Binary", bin.Operator, 
+                BinaryOpNode bin => HashCode.Combine("Binary", bin.Operator,
                     GetExpressionHash(bin.Left), GetExpressionHash(bin.Right)),
-                UnaryOpNode un => HashCode.Combine("Unary", un.Operator, 
+                UnaryOpNode un => HashCode.Combine("Unary", un.Operator,
                     GetExpressionHash(un.Operand)),
                 _ => node.GetHashCode()
             };
@@ -390,20 +387,13 @@ namespace MookDialogueScript
                     return await EvaluateIndexAccess(index);
 
                 case IdentifierNode identifier:
-                    // 标识符节点，可能代表函数名
-                    // 先检查是否为函数名，如果是则返回函数值
-                    if (_context.HasFunction(identifier.Name))
-                    {
-                        return _context.GetFunctionValue(identifier.Name);
-                    }
-                    
                     // 检查是否为变量
                     var varValue = _context.GetVariable(identifier.Name);
                     if (varValue.Type != ValueType.Null)
                     {
                         return varValue;
                     }
-                    
+
                     MLogger.Warning($"遇到未定义的标识符: {identifier.Name}");
                     return RuntimeValue.Null;
 
@@ -590,6 +580,7 @@ namespace MookDialogueScript
             // 注册所有节点
             foreach (var node in script.Nodes)
             {
+                Debug.Log(node.ToString());
                 _context.RegisterNode(node.Name, node);
             }
         }
@@ -768,15 +759,6 @@ namespace MookDialogueScript
                         await funcTask();
                         return RuntimeValue.Null;
 
-                    // 通用委托处理（使用Helper的函数值包装器）
-                    case Delegate del:
-                        var helperFunc = Helper.CreateFunctionValue(del);
-                        if (helperFunc.Type == ValueType.Function)
-                        {
-                            return await _context.CallFunctionValue(helperFunc, args, line, column);
-                        }
-                        throw ExceptionFactory.CreateCallableNotSupportedException($"委托类型 {del.GetType().Name}", line, column);
-
                     default:
                         throw ExceptionFactory.CreateCallableNotSupportedException(callee?.GetType().Name ?? "null", line, column);
                 }
@@ -815,59 +797,52 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 处理函数调用逻辑，实现三层调用架构：
-        /// 1. 函数值优先：如果callee求值结果是Function类型，直接调用
-        /// 2. 对象可转Delegate：通过InvokeCallable处理各种委托类型
-        /// 3. 按名调用：仅对IdentifierNode进行函数名查找（兜底机制）
+        /// 处理函数调用逻辑，简化的按名调用架构：
+        /// 1. 优先检查 IdentifierNode 的按名调用
+        /// 2. 其他情况通过表达式求值后处理委托调用
         /// </summary>
         private async Task<RuntimeValue> ProcessFunctionCall(CallExpressionNode call, List<RuntimeValue> args)
         {
-            // 第1层：统一求值callee表达式
-            var calleeValue = await EvaluateExpression(call.Callee);
-            
-            // 第2层：函数值优先 - 如果求值结果是函数值，直接调用
-            if (calleeValue.Type == ValueType.Function)
-            {
-                return await _context.CallFunctionValue(calleeValue, args, call.Line, call.Column);
-            }
-            
-            // 第3层：IdentifierNode的按名调用兜底机制
+            // 第1层：IdentifierNode的按名调用（避免无意义的变量查找）
             if (call.Callee is IdentifierNode identifier)
             {
-                // 检查是否为注册的函数名（兜底机制）
+                // 检查是否为注册的函数名
                 if (_context.HasFunction(identifier.Name))
                 {
                     return await _context.CallFunction(identifier.Name, args, call.Line, call.Column);
                 }
-                
+
                 // 函数未找到，使用统一异常系统
                 var availableFunctions = _context.GetAllFunctionNames();
                 throw ExceptionFactory.CreateFunctionNotFoundException(identifier.Name, availableFunctions, call.Line, call.Column);
             }
-            
-            // 第4层：对象可转Delegate - 处理所有其他情况（成员访问、变量、表达式结果等）
+
+            // 第2层：对其他类型的callee进行求值
+            var calleeValue = await EvaluateExpression(call.Callee);
+
+            // 对象可转Delegate - 处理所有其他情况（成员访问、变量、表达式结果等）
             // 特殊处理MethodReference类型（注册对象的方法）
-            if (calleeValue.Type == ValueType.Object && calleeValue.Value is MethodReference methodRef)
+            if (calleeValue is {Type: ValueType.Object, Value: MethodReference methodRef})
             {
                 // 通过函数管理器调用已注册的方法引用
                 return await _context.CallFunction(methodRef.FunctionKey, args, call.Line, call.Column);
             }
-            
+
             // 检查调用值是否为null或无效
             if (calleeValue.Type == ValueType.Null || calleeValue.Value == null)
             {
                 // 提供更精确的错误信息
                 string calleeDescription = FormatCalleeDescription(call.Callee);
                 throw ExceptionFactory.CreateCallableNotSupportedException(
-                    $"表达式 '{calleeDescription}' 的求值结果为null", 
-                    call.Line, 
+                    $"表达式 '{calleeDescription}' 的求值结果为null",
+                    call.Line,
                     call.Column);
             }
-            
+
             // 通过InvokeCallable处理委托转换和其他可调用对象
             return await InvokeCallable(calleeValue.Value, args, call.Line, call.Column);
         }
-        
+
         /// <summary>
         /// 格式化callee表达式的描述文本（用于错误报告）
         /// </summary>
@@ -897,7 +872,27 @@ namespace MookDialogueScript
         {
             try
             {
-                var target = await EvaluateExpression(member.Target);
+                RuntimeValue target;
+
+                // 特殊处理：如果 Target 是 IdentifierNode，优先检查注册的对象
+                if (member.Target is IdentifierNode identifier)
+                {
+                    // 首先尝试从注册的对象中获取
+                    if (_context.TryGetObjectByName(identifier.Name, out var objectInstance))
+                    {
+                        target = new RuntimeValue(objectInstance);
+                    }
+                    else
+                    {
+                        // 回退到正常的表达式求值（变量查找）
+                        target = await EvaluateExpression(member.Target);
+                    }
+                }
+                else
+                {
+                    // 对于非 IdentifierNode（如嵌套的成员访问），正常求值
+                    target = await EvaluateExpression(member.Target);
+                }
 
                 // 处理对象成员访问
                 return await _context.GetObjectMember(target, member.MemberName);

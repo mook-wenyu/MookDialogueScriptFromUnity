@@ -56,11 +56,6 @@ namespace MookDialogueScript.Incremental
         public string DefaultValueText { get; private set; }
 
         /// <summary>
-        /// 是否为常量
-        /// </summary>
-        public bool IsConstant { get; private set; }
-
-        /// <summary>
         /// 是否为全局变量
         /// </summary>
         public bool IsGlobal { get; private set; }
@@ -71,39 +66,14 @@ namespace MookDialogueScript.Incremental
         public bool IsBuiltIn { get; private set; }
 
         /// <summary>
-        /// 变量的可见性
-        /// </summary>
-        public VariableVisibility Visibility { get; private set; } = VariableVisibility.Public;
-
-        /// <summary>
         /// 变量描述或注释
         /// </summary>
         public string Description { get; private set; }
 
         /// <summary>
-        /// 变量标签（用于分类）
-        /// </summary>
-        public HashSet<string> Tags { get; private set; } = new HashSet<string>();
-
-        /// <summary>
         /// 变量使用统计
         /// </summary>
         public VariableUsageStats UsageStats { get; private set; } = new VariableUsageStats();
-
-        /// <summary>
-        /// 扩展属性
-        /// </summary>
-        public Dictionary<string, object> ExtendedProperties { get; private set; } = new Dictionary<string, object>();
-
-        /// <summary>
-        /// 声明时间
-        /// </summary>
-        public DateTime DeclarationTime { get; private set; } = DateTime.UtcNow;
-
-        /// <summary>
-        /// 最后更新时间
-        /// </summary>
-        public DateTime LastUpdated { get; private set; } = DateTime.UtcNow;
 
         /// <summary>
         /// 创建变量声明
@@ -183,52 +153,8 @@ namespace MookDialogueScript.Incremental
                 Description = description,
                 DefaultValue = defaultValue,
                 DefaultValueText = defaultValue?.ToString(),
-                Visibility = VariableVisibility.Public,
                 DeclarationFilePath = "<built-in>"
             };
-        }
-
-        /// <summary>
-        /// 创建常量声明
-        /// </summary>
-        /// <param name="name">常量名</param>
-        /// <param name="type">常量类型</param>
-        /// <param name="value">常量值</param>
-        /// <param name="filePath">声明文件路径</param>
-        /// <param name="line">声明行号</param>
-        /// <param name="column">声明列号</param>
-        /// <param name="scope">作用域</param>
-        /// <returns>常量声明实例</returns>
-        public static VariableDeclaration CreateConstant(
-            string name,
-            Type type,
-            object value,
-            string filePath,
-            int line,
-            int column,
-            string scope = "")
-        {
-            var declaration = Create(name, type, filePath, line, column, scope);
-            declaration.IsConstant = true;
-            declaration.DefaultValue = value;
-            declaration.DefaultValueText = value?.ToString();
-            return declaration;
-        }
-
-        /// <summary>
-        /// 检查变量是否在指定作用域中可见
-        /// </summary>
-        /// <param name="currentScope">当前作用域</param>
-        /// <returns>是否可见</returns>
-        public bool IsVisibleInScope(string currentScope)
-        {
-            if (IsGlobal)
-                return true;
-
-            if (Visibility == VariableVisibility.Private)
-                return Scope.Equals(currentScope, StringComparison.OrdinalIgnoreCase);
-
-            return true;
         }
 
         /// <summary>
@@ -245,38 +171,6 @@ namespace MookDialogueScript.Incremental
         }
 
         /// <summary>
-        /// 添加标签
-        /// </summary>
-        /// <param name="tag">标签</param>
-        /// <returns>更新后的声明</returns>
-        public VariableDeclaration WithTag(string tag)
-        {
-            if (string.IsNullOrEmpty(tag))
-                return this;
-
-            var newDeclaration = Clone();
-            newDeclaration.Tags = new HashSet<string>(Tags);
-            newDeclaration.Tags.Add(tag);
-            return newDeclaration;
-        }
-
-        /// <summary>
-        /// 添加多个标签
-        /// </summary>
-        /// <param name="tags">标签集合</param>
-        /// <returns>更新后的声明</returns>
-        public VariableDeclaration WithTags(IEnumerable<string> tags)
-        {
-            var newDeclaration = Clone();
-            newDeclaration.Tags = new HashSet<string>(Tags);
-            foreach (var tag in tags.Where(t => !string.IsNullOrEmpty(t)))
-            {
-                newDeclaration.Tags.Add(tag);
-            }
-            return newDeclaration;
-        }
-
-        /// <summary>
         /// 更新使用统计
         /// </summary>
         /// <param name="usage">使用类型</param>
@@ -287,38 +181,7 @@ namespace MookDialogueScript.Incremental
         {
             var newDeclaration = Clone();
             newDeclaration.UsageStats = UsageStats.AddUsage(usage, filePath, line);
-            newDeclaration.LastUpdated = DateTime.UtcNow;
             return newDeclaration;
-        }
-
-        /// <summary>
-        /// 添加扩展属性
-        /// </summary>
-        /// <param name="key">属性键</param>
-        /// <param name="value">属性值</param>
-        /// <returns>更新后的声明</returns>
-        public VariableDeclaration WithExtendedProperty(string key, object value)
-        {
-            var newDeclaration = Clone();
-            newDeclaration.ExtendedProperties = new Dictionary<string, object>(ExtendedProperties);
-            newDeclaration.ExtendedProperties[key] = value;
-            return newDeclaration;
-        }
-
-        /// <summary>
-        /// 获取扩展属性值
-        /// </summary>
-        /// <typeparam name="T">属性值类型</typeparam>
-        /// <param name="key">属性键</param>
-        /// <param name="defaultValue">默认值</param>
-        /// <returns>属性值</returns>
-        public T GetExtendedProperty<T>(string key, T defaultValue = default(T))
-        {
-            if (ExtendedProperties.TryGetValue(key, out var value) && value is T typedValue)
-            {
-                return typedValue;
-            }
-            return defaultValue;
         }
 
         /// <summary>
@@ -346,9 +209,6 @@ namespace MookDialogueScript.Incremental
                 signature += $" = {DefaultValueText}";
             }
 
-            if (IsConstant)
-                signature = "const " + signature;
-
             if (!IsGlobal && !string.IsNullOrEmpty(Scope))
                 signature += $" (in {Scope})";
 
@@ -362,9 +222,9 @@ namespace MookDialogueScript.Incremental
         public override string ToString()
         {
             var scope = IsGlobal ? "全局" : Scope;
-            var type = IsConstant ? "常量" : "变量";
+            const string type = "变量";
             var location = $"{System.IO.Path.GetFileName(DeclarationFilePath)}:{DeclarationLine}";
-            
+
             return $"{type} {Name} ({TypeName}) - 作用域: {scope}, 位置: {location}";
         }
 
@@ -384,39 +244,12 @@ namespace MookDialogueScript.Incremental
                 Scope = this.Scope,
                 DefaultValue = this.DefaultValue,
                 DefaultValueText = this.DefaultValueText,
-                IsConstant = this.IsConstant,
                 IsGlobal = this.IsGlobal,
                 IsBuiltIn = this.IsBuiltIn,
-                Visibility = this.Visibility,
                 Description = this.Description,
-                Tags = new HashSet<string>(this.Tags),
                 UsageStats = this.UsageStats,
-                ExtendedProperties = new Dictionary<string, object>(this.ExtendedProperties),
-                DeclarationTime = this.DeclarationTime,
-                LastUpdated = this.LastUpdated
             };
         }
-    }
-
-    /// <summary>
-    /// 变量可见性
-    /// </summary>
-    public enum VariableVisibility
-    {
-        /// <summary>
-        /// 公共（默认）
-        /// </summary>
-        Public,
-
-        /// <summary>
-        /// 受保护
-        /// </summary>
-        Protected,
-
-        /// <summary>
-        /// 私有
-        /// </summary>
-        Private
     }
 
     /// <summary>

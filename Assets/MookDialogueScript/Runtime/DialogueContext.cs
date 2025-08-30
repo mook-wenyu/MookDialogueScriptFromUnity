@@ -13,10 +13,7 @@ namespace MookDialogueScript
         Number,
         Boolean,
         String,
-        Object,
-        Array,
-        Function,
-        Any
+        Object
     }
 
     /// <summary>
@@ -48,16 +45,8 @@ namespace MookDialogueScript
 
         public RuntimeValue(object value)
         {
-            if (value is Func<List<RuntimeValue>, Task<RuntimeValue>> func)
-            {
-                Type = ValueType.Function;
-                Value = func;
-            }
-            else
-            {
-                Type = ValueType.Object;
-                Value = value;
-            }
+            Type = ValueType.Object;
+            Value = value;
         }
 
         /// <summary>
@@ -73,10 +62,6 @@ namespace MookDialogueScript
                     return "null";
                 case ValueType.Boolean:
                     return Value.ToString().ToLower();
-                case ValueType.Function:
-                    if (Value is Func<List<RuntimeValue>, Task<RuntimeValue>> func)
-                        return $"function {func.Method.Name}";
-                    return "function";
                 default:
                     return Value?.ToString() ?? "null";
             }
@@ -106,9 +91,6 @@ namespace MookDialogueScript
                     return (bool)Value == (bool)other.Value;
                 case ValueType.String:
                     return string.Equals((string)Value, (string)other.Value, StringComparison.Ordinal);
-                case ValueType.Function:
-                    // 函数值按引用相等比较
-                    return ReferenceEquals(Value, other.Value);
                 case ValueType.Object:
                     return Equals(Value, other.Value);
                 default:
@@ -152,9 +134,6 @@ namespace MookDialogueScript
                         var s = (string)Value;
                         return hash * 31 + (s?.GetHashCode() ?? 0);
                     }
-                    case ValueType.Function:
-                        // 函数值使用引用哈希
-                        return hash * 31 + (Value?.GetHashCode() ?? 0);
                     case ValueType.Object:
                         return hash * 31 + (Value?.GetHashCode() ?? 0);
                     default:
@@ -410,17 +389,6 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 调用函数
-        /// </summary>
-        /// <param name="name">函数名</param>
-        /// <param name="args">参数</param>
-        /// <returns>返回值</returns>
-        public async Task<RuntimeValue> CallFunction(string name, List<RuntimeValue> args)
-        {
-            return await _functionManager.CallFunction(name, args);
-        }
-
-        /// <summary>
         /// 调用函数（带行列信息）
         /// </summary>
         /// <param name="name">函数名</param>
@@ -431,29 +399,6 @@ namespace MookDialogueScript
         public async Task<RuntimeValue> CallFunction(string name, List<RuntimeValue> args, int line, int column)
         {
             return await _functionManager.CallFunction(name, args, line, column);
-        }
-
-        /// <summary>
-        /// 调用函数值（支持一等函数）
-        /// </summary>
-        /// <param name="functionValue">函数值</param>
-        /// <param name="args">参数</param>
-        /// <param name="line">行号</param>
-        /// <param name="column">列号</param>
-        /// <returns>调用结果</returns>
-        public async Task<RuntimeValue> CallFunctionValue(RuntimeValue functionValue, List<RuntimeValue> args, int line = 0, int column = 0)
-        {
-            return await _functionManager.CallFunctionValue(functionValue, args, line, column);
-        }
-
-        /// <summary>
-        /// 获取函数值（用于一等函数支持）
-        /// </summary>
-        /// <param name="name">函数名</param>
-        /// <returns>函数值</returns>
-        public RuntimeValue GetFunctionValue(string name)
-        {
-            return _functionManager.GetFunctionValue(name);
         }
 
         /// <summary>
@@ -534,18 +479,15 @@ namespace MookDialogueScript
             var result = _variableManager.GetObjectMember(target, memberName, this);
 
             // 如果返回的是MethodReference，需要转换为实际的函数委托
-            if (result.Type == ValueType.Object && result.Value is MethodReference methodRef)
+            if (result is {Type: ValueType.Object, Value: MethodReference methodRef})
             {
                 if (TryGetFunction(methodRef.FunctionKey, out var func))
                 {
-                    MLogger.Debug($"将方法引用 '{methodRef}' 转换为可调用委托");
                     return new RuntimeValue(func);
                 }
-                else
-                {
-                    MLogger.Warning($"无法找到方法引用 '{methodRef}' 对应的函数委托");
-                    return RuntimeValue.Null;
-                }
+
+                MLogger.Warning($"无法找到方法引用 '{methodRef}' 对应的函数委托");
+                return RuntimeValue.Null;
             }
 
             return await Task.FromResult(result);

@@ -14,18 +14,16 @@ namespace MookDialogueScript.Lexers
         /// </summary>
         /// <param name="stream">字符流</param>
         /// <param name="state">词法分析器状态</param>
-        /// <param name="classifier">字符分类器</param>
         /// <returns>是否可以处理当前状态</returns>
-        bool CanHandle(CharacterStream stream, LexerState state, CharacterClassifier classifier);
+        bool CanHandle(CharStream stream, LexerState state);
 
         /// <summary>
         /// 尝试从当前位置生成Token
         /// </summary>
         /// <param name="stream">字符流</param>
         /// <param name="state">词法分析器状态</param>
-        /// <param name="classifier">字符分类器</param>
         /// <returns>成功生成的Token，无法处理返回null</returns>
-        Token TryTokenize(CharacterStream stream, LexerState state, CharacterClassifier classifier);
+        Token TryTokenize(CharStream stream, LexerState state);
 
         /// <summary>
         /// 获取处理器的描述信息（用于调试和日志）

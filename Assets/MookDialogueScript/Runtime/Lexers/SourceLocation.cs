@@ -44,7 +44,7 @@ namespace MookDialogueScript.Lexers
         /// </summary>
         /// <param name="stream">字符流</param>
         /// <returns>表示当前位置的SourceLocation</returns>
-        public static SourceLocation FromStream(CharacterStream stream)
+        public static SourceLocation FromStream(CharStream stream)
         {
             if (stream == null)
             {

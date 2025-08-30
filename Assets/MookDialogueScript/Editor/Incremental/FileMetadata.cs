@@ -63,7 +63,7 @@ namespace MookDialogueScript.Incremental
         /// <summary>
         /// 自定义元数据字典
         /// </summary>
-        public Dictionary<string, object> CustomMetadata { get; private set; } = new Dictionary<string, object>();
+        public Dictionary<string, object> CustomMetadata { get; private set; } = new();
 
         /// <summary>
         /// 元数据创建时间

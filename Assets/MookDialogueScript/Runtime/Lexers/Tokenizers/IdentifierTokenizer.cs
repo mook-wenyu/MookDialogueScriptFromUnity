@@ -58,7 +58,7 @@ namespace MookDialogueScript.Lexers
         /// 快速判断是否为标识符或变量起始
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool CanHandle(CharacterStream stream, LexerState state, CharacterClassifier classifier)
+        public bool CanHandle(CharStream stream, LexerState state)
         {
             // 处理变量（$ 开头）
             if (stream.CurrentChar == '$' && state.IsInNodeContent)
@@ -72,18 +72,18 @@ namespace MookDialogueScript.Lexers
         /// <summary>
         /// 处理标识符、关键字和变量Token
         /// </summary>
-        public Token TryTokenize(CharacterStream stream, LexerState state, CharacterClassifier classifier)
+        public Token TryTokenize(CharStream stream, LexerState state)
         {
             // 处理变量
             if (stream.CurrentChar == '$' && state.IsInNodeContent)
             {
-                return HandleVariable(stream, classifier);
+                return HandleVariable(stream);
             }
 
             // 处理标识符和关键字
-            if (classifier.IsIdentifierStart(stream.CurrentChar))
+            if (CharClassifier.IsIdentifierStart(stream.CurrentChar))
             {
-                return HandleIdentifierOrKeyword(stream, classifier);
+                return HandleIdentifierOrKeyword(stream);
             }
 
             return null;
@@ -92,17 +92,17 @@ namespace MookDialogueScript.Lexers
         /// <summary>
         /// 处理变量Token（保持原有逻辑）
         /// </summary>
-        private Token HandleVariable(CharacterStream stream, CharacterClassifier classifier)
+        private Token HandleVariable(CharStream stream)
         {
             var start = SourceLocation.FromStream(stream);
             stream.Advance(); // 跳过$符号
             int startPosition = stream.Position;
 
-            if (!stream.IsEOFMark() && classifier.IsIdentifierStart(stream.CurrentChar))
+            if (!stream.IsEOFMark() && CharClassifier.IsIdentifierStart(stream.CurrentChar))
             {
                 stream.Advance();
 
-                while (!stream.IsEOFMark() && classifier.IsIdentifierPart(stream.CurrentChar))
+                while (!stream.IsEOFMark() && CharClassifier.IsIdentifierPart(stream.CurrentChar))
                 {
                     stream.Advance();
                 }
@@ -115,14 +115,14 @@ namespace MookDialogueScript.Lexers
         /// <summary>
         /// 处理标识符和关键字Token（保持原有优化）
         /// </summary>
-        private Token HandleIdentifierOrKeyword(CharacterStream stream, CharacterClassifier classifier)
+        private Token HandleIdentifierOrKeyword(CharStream stream)
         {
             var start = SourceLocation.FromStream(stream);
 
             // 快速处理标识符字符
             stream.Advance(); // 跳过第一个字符（已验证）
 
-            while (!stream.IsEOFMark() && classifier.IsIdentifierPart(stream.CurrentChar))
+            while (!stream.IsEOFMark() && CharClassifier.IsIdentifierPart(stream.CurrentChar))
             {
                 stream.Advance();
             }

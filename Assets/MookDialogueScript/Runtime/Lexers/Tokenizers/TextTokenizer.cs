@@ -14,7 +14,7 @@ namespace MookDialogueScript.Lexers
         /// <summary>
         /// 作为默认处理器，总是可以处理
         /// </summary>
-        public bool CanHandle(CharacterStream stream, LexerState state, CharacterClassifier classifier)
+        public bool CanHandle(CharStream stream, LexerState state)
         {
             // 在节点内容中，且不在其他特殊模式下，可以处理文本
             if (state.IsInNodeContent
@@ -45,18 +45,18 @@ namespace MookDialogueScript.Lexers
         /// <summary>
         /// 处理文本Token
         /// </summary>
-        public Token TryTokenize(CharacterStream stream, LexerState state, CharacterClassifier classifier)
+        public Token TryTokenize(CharStream stream, LexerState state)
         {
             // 在节点内容中处理文本
             if (state.IsInNodeContent)
             {
-                return HandleText(stream, state, classifier);
+                return HandleText(stream, state);
             }
 
             // 在节点外部，处理元数据键值对
             if (!state.IsInNodeContent && stream.CurrentChar != ':')
             {
-                return HandleMetadata(stream, state, classifier);
+                return HandleMetadata(stream, state);
             }
 
             return null;
@@ -65,7 +65,7 @@ namespace MookDialogueScript.Lexers
         /// <summary>
         /// 处理文本内容（保持原有的复杂转义逻辑）
         /// </summary>
-        private Token HandleText(CharacterStream stream, LexerState _, CharacterClassifier classifier)
+        private Token HandleText(CharStream stream, LexerState _)
         {
             var start = SourceLocation.FromStream(stream);
             var resultBuilder = new StringBuilder(64);
@@ -118,7 +118,7 @@ namespace MookDialogueScript.Lexers
 
                 // 检查截断字符
                 char pre = stream.PreviousChar;
-                if (stream.CurrentChar == ':' && pre != '\0' && !classifier.IsWhitespace(pre))
+                if (stream.CurrentChar == ':' && pre != '\0' && !CharClassifier.IsWhitespace(pre))
                 {
                     break;
                 }
@@ -146,7 +146,7 @@ namespace MookDialogueScript.Lexers
         /// <summary>
         /// 处理元数据键值对
         /// </summary>
-        private Token HandleMetadata(CharacterStream stream, LexerState state, CharacterClassifier classifier)
+        private Token HandleMetadata(CharStream stream, LexerState _)
         {
             var start = SourceLocation.FromStream(stream);
 

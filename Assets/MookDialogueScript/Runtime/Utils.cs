@@ -7,8 +7,10 @@ namespace MookDialogueScript
     /// <summary>
     /// 通用工具函数类
     /// </summary>
-    internal static class Utils
+    public static class Utils
     {
+        public static readonly Random SharedRandom = new();
+
         /// <summary>
         /// 计算两个字符串之间的Levenshtein编辑距离
         /// </summary>
@@ -40,9 +42,9 @@ namespace MookDialogueScript
                     int cost = source[i - 1] == target[j - 1] ? 0 : 1;
 
                     matrix[i, j] = Math.Min(
-                        Math.Min(matrix[i - 1, j] + 1,     // 删除
-                                matrix[i, j - 1] + 1),     // 插入
-                        matrix[i - 1, j - 1] + cost);      // 替换
+                        Math.Min(matrix[i - 1, j] + 1, // 删除
+                            matrix[i, j - 1] + 1),     // 插入
+                        matrix[i - 1, j - 1] + cost);  // 替换
                 }
             }
 
@@ -75,7 +77,7 @@ namespace MookDialogueScript
         /// <param name="maxSuggestions">最大建议数量</param>
         /// <param name="maxDistance">最大编辑距离</param>
         /// <returns>相似候选项列表</returns>
-        public static List<string> GetSimilarStrings(string target, IEnumerable<string> candidates, 
+        public static List<string> GetSimilarStrings(string target, IEnumerable<string> candidates,
             int maxSuggestions = 3, int? maxDistance = null)
         {
             if (string.IsNullOrEmpty(target) || candidates == null)
@@ -85,7 +87,7 @@ namespace MookDialogueScript
             int effectiveMaxDistance = maxDistance ?? Math.Max(2, target.Length / 2);
 
             return candidates
-                .Select(c => new { Name = c, Distance = LevenshteinDistance(target.ToLowerInvariant(), c.ToLowerInvariant()) })
+                .Select(c => new {Name = c, Distance = LevenshteinDistance(target.ToLowerInvariant(), c.ToLowerInvariant())})
                 .Where(s => s.Distance <= effectiveMaxDistance)
                 .OrderBy(s => s.Distance)
                 .ThenBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
@@ -104,7 +106,7 @@ namespace MookDialogueScript
         public static string GenerateSuggestionMessage(string target, IEnumerable<string> candidates, int maxSuggestions = 3)
         {
             var suggestions = GetSimilarStrings(target, candidates, maxSuggestions);
-            
+
             if (!suggestions.Any())
                 return null;
 

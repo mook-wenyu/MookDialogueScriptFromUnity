@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using UnityEngine;
 using UnityEngine.Scripting;
 
 namespace MookDialogueScript
@@ -1098,6 +1099,30 @@ namespace MookDialogueScript
             {
                 MLogger.Error($"获取元数据时出错: {ex}");
                 return null;
+            }
+        }
+
+        private void PrintCommand(CommandNode command)
+        {
+            if (command is JumpCommandNode jumpCommand)
+            {
+                MLogger.Info($"[命令] 跳转到节点: {jumpCommand.TargetNode}");
+            }
+            else if (command is VarCommandNode varCommand)
+            {
+                MLogger.Info($"[命令] 设置变量: {varCommand.VariableName} = {varCommand.Value}");
+            }
+            else if (command is CallCommandNode callCommand)
+            {
+                MLogger.Info($"[命令] 调用函数: {callCommand.Call}");
+            }
+            else if (command is WaitCommandNode waitCommand)
+            {
+                MLogger.Info($"[命令] 等待: {waitCommand.Duration} 秒");
+            }
+            else
+            {
+                MLogger.Info("[命令] 未知命令类型");
             }
         }
     }

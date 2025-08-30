@@ -61,24 +61,20 @@ namespace MookDialogueScript
     {
         #region 性能缓存
         // 类型成员访问缓存：避免重复反射查找
-        private static readonly Dictionary<Type, Dictionary<string, MemberAccessor>> _memberCache =
-            new Dictionary<Type, Dictionary<string, MemberAccessor>>();
+        private static readonly Dictionary<Type, Dictionary<string, MemberAccessor>> _memberCache = new();
 
         // 绑定方法缓存：缓存已编译的方法委托
-        private static readonly Dictionary<(Type, string), Delegate> _boundMethodCache =
-            new Dictionary<(Type, string), Delegate>();
+        private static readonly Dictionary<(Type, string), Delegate> _boundMethodCache = new();
 
         // 函数值缓存：缓存创建的函数值
-        private static readonly Dictionary<(object, string), Func<List<RuntimeValue>, Task<RuntimeValue>>> _functionCache =
-            new Dictionary<(object, string), Func<List<RuntimeValue>, Task<RuntimeValue>>>();
+        private static readonly Dictionary<(object, string), Func<List<RuntimeValue>, Task<RuntimeValue>>> _functionCache = new();
 
         // 编译委托缓存：高性能委托编译缓存
         private static readonly ConcurrentDictionary<string, Func<List<RuntimeValue>, Task<RuntimeValue>>> 
             _compiledFunctions = new();
 
         // 类型转换缓存：缓存常用类型转换器
-        private static readonly Dictionary<(Type, Type), Func<object, object>> _conversionCache =
-            new Dictionary<(Type, Type), Func<object, object>>();
+        private static readonly Dictionary<(Type, Type), Func<object, object>> _conversionCache = new();
 
         // StringBuilder 对象池：高频字符串构建优化
         private static readonly ConcurrentQueue<StringBuilder> _stringBuilderPool = new();
@@ -198,15 +194,38 @@ namespace MookDialogueScript
             var argsParam = Expression.Parameter(typeof(List<RuntimeValue>), "args");
             var parameters = method.GetParameters();
             
-            // 创建参数转换表达式
+            // 创建参数转换表达式，处理默认参数
             var argExpressions = new Expression[parameters.Length];
             for (int i = 0; i < parameters.Length; i++)
             {
-                var paramType = parameters[i].ParameterType;
+                var param = parameters[i];
+                var paramType = param.ParameterType;
+                
+                // 检查是否有足够的参数，如果没有则使用默认值
+                var hasArgCondition = Expression.LessThan(Expression.Constant(i), 
+                    Expression.Property(argsParam, "Count"));
+                
+                // 如果有参数，则转换参数值
                 var argAccess = Expression.Call(argsParam, typeof(List<RuntimeValue>).GetMethod("get_Item"), 
                     Expression.Constant(i));
+                var convertedArg = CreateParameterConversionExpression(argAccess, paramType);
                 
-                argExpressions[i] = CreateParameterConversionExpression(argAccess, paramType);
+                // 如果没有参数，则使用默认值
+                Expression defaultValue;
+                if (param.HasDefaultValue)
+                {
+                    defaultValue = Expression.Constant(param.DefaultValue, paramType);
+                }
+                else
+                {
+                    // 如果没有默认值，使用类型的默认值
+                    defaultValue = paramType.IsValueType 
+                        ? Expression.Constant(Activator.CreateInstance(paramType), paramType)
+                        : Expression.Constant(null, paramType);
+                }
+                
+                // 条件表达式：有参数时使用转换值，无参数时使用默认值
+                argExpressions[i] = Expression.Condition(hasArgCondition, convertedArg, defaultValue);
             }
 
             // 创建方法调用表达式
@@ -303,11 +322,13 @@ namespace MookDialogueScript
             }
             else
             {
-                // 同步方法，直接转换结果
-                var runtimeValueCtor = typeof(RuntimeValue).GetConstructor(new[] { typeof(object) });
-                var resultValue = Expression.New(runtimeValueCtor, Expression.Convert(callExpression, typeof(object)));
+                // 同步方法，使用 ConvertToRuntimeValue 确保正确的类型转换
+                var convertMethod = typeof(Helper).GetMethod(nameof(ConvertToRuntimeValue), 
+                    BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(object) }, null);
+                var convertedValue = Expression.Call(convertMethod, 
+                    Expression.Convert(callExpression, typeof(object)));
                 var taskResult = Expression.Call(typeof(Task).GetMethod(nameof(Task.FromResult))
-                    .MakeGenericMethod(typeof(RuntimeValue)), resultValue);
+                    .MakeGenericMethod(typeof(RuntimeValue)), convertedValue);
                 return taskResult;
             }
         }
@@ -322,12 +343,12 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// Task<T> 包装方法
+        /// Task《T> 包装方法
         /// </summary>
         private static async Task<RuntimeValue> WrapTaskGenericResult<T>(Task<T> task)
         {
             var result = await task.ConfigureAwait(false);
-            return new RuntimeValue(result);
+            return ConvertToRuntimeValue(result);
         }
 
         /// <summary>
@@ -968,7 +989,6 @@ namespace MookDialogueScript
                 case ValueType.String: return "string";
                 case ValueType.Boolean: return "boolean";
                 case ValueType.Object: return "object";
-                case ValueType.Function: return "function";
                 case ValueType.Null: return "null";
                 default: return type.ToString();
             }
@@ -1010,9 +1030,6 @@ namespace MookDialogueScript
 
                 case ValueType.Null:
                     return null;
-
-                case ValueType.Function:
-                    return value.Value; // 函数值直接返回
 
                 case ValueType.Object:
                     return value.Value;
@@ -1081,8 +1098,6 @@ namespace MookDialogueScript
                     return (bool)value.Value ? "true" : "false";
                 case ValueType.Null:
                     return "";
-                case ValueType.Function:
-                    return "function";
                 case ValueType.Object:
                     return value.Value?.ToString() ?? "object";
                 default:
@@ -1151,34 +1166,6 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 创建静态函数值
-        /// </summary>
-        public static RuntimeValue CreateStaticFunction(Type type, string methodName)
-        {
-            if (type == null)
-                return RuntimeValue.Null;
-
-            var method = type.GetMethod(methodName, BindingFlags.Public | BindingFlags.Static | BindingFlags.IgnoreCase);
-            if (method == null)
-                return RuntimeValue.Null;
-
-            var func = CreateMethodFunction(null, method);
-            return new RuntimeValue(func);
-        }
-
-        /// <summary>
-        /// 从 Delegate 创建函数值
-        /// </summary>
-        public static RuntimeValue CreateFunctionValue(Delegate del)
-        {
-            if (del == null)
-                return RuntimeValue.Null;
-
-            var func = CreateDelegateFunction(del);
-            return new RuntimeValue(func);
-        }
-
-        /// <summary>
         /// 创建方法函数包装器
         /// </summary>
         private static Func<List<RuntimeValue>, Task<RuntimeValue>> CreateMethodFunction(object instance, MethodInfo method)
@@ -1225,112 +1212,7 @@ namespace MookDialogueScript
             };
         }
 
-        /// <summary>
-        /// 创建委托函数包装器
-        /// </summary>
-        private static Func<List<RuntimeValue>, Task<RuntimeValue>> CreateDelegateFunction(Delegate del)
-        {
-            return async (args) =>
-            {
-                try
-                {
-                    var method = del.Method;
-                    var parameters = method.GetParameters();
-                    var nativeArgs = new object[parameters.Length];
-
-                    // 转换参数
-                    for (int i = 0; i < Math.Min(args.Count, parameters.Length); i++)
-                    {
-                        var paramType = parameters[i].ParameterType;
-                        nativeArgs[i] = ConvertToNativeType(args[i], paramType);
-                    }
-
-                    // 调用委托
-                    var result = del.DynamicInvoke(nativeArgs);
-
-                    // 处理异步结果
-                    if (result is Task task)
-                    {
-                        await task.ConfigureAwait(false);
-                        
-                        if (task.GetType().IsGenericType)
-                        {
-                            var property = task.GetType().GetProperty("Result");
-                            var taskResult = property?.GetValue(task);
-                            return ConvertToRuntimeValue(taskResult);
-                        }
-                        
-                        return RuntimeValue.Null;
-                    }
-
-                    return ConvertToRuntimeValue(result);
-                }
-                catch (Exception ex)
-                {
-                    MLogger.Error($"调用委托函数时出错: {ex}");
-                    return RuntimeValue.Null;
-                }
-            };
-        }
-
-        /// <summary>
-        /// 检查值是否为函数
-        /// </summary>
-        public static bool IsFunction(RuntimeValue value)
-        {
-            return value.Type == ValueType.Function && value.Value != null;
-        }
-
-        /// <summary>
-        /// 获取函数值
-        /// </summary>
-        public static Func<List<RuntimeValue>, Task<RuntimeValue>> GetFunction(RuntimeValue value)
-        {
-            if (IsFunction(value))
-                return value.Value as Func<List<RuntimeValue>, Task<RuntimeValue>>;
-            return null;
-        }
-
         #endregion
 
-        #region 语义分析支持工具
-        
-        /// <summary>
-        /// 检查大小写不敏感的函数名匹配（用于语义分析）
-        /// </summary>
-        public static string FindCaseInsensitiveMatch(string target, IEnumerable<string> candidates)
-        {
-            return candidates.FirstOrDefault(c => 
-                string.Equals(c, target, StringComparison.OrdinalIgnoreCase) && 
-                !string.Equals(c, target, StringComparison.Ordinal));
-        }
-        
-        /// <summary>
-        /// 检查两个字符串是否只有大小写不同
-        /// </summary>
-        public static bool IsOnlyCaseDifferent(string str1, string str2)
-        {
-            return string.Equals(str1, str2, StringComparison.OrdinalIgnoreCase) && 
-                   !string.Equals(str1, str2, StringComparison.Ordinal);
-        }
-        
-        /// <summary>
-        /// 获取字符串相似度（0.0-1.0）
-        /// </summary>
-        public static double GetStringSimilarity(string source, string target)
-        {
-            if (string.IsNullOrEmpty(source) && string.IsNullOrEmpty(target))
-                return 1.0;
-                
-            if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(target))
-                return 0.0;
-                
-            var distance = Utils.LevenshteinDistance(source, target);
-            var maxLength = Math.Max(source.Length, target.Length);
-            
-            return 1.0 - (double)distance / maxLength;
-        }
-        
-        #endregion
     }
 }

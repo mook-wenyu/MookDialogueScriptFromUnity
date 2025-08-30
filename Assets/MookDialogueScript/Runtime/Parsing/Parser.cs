@@ -9,13 +9,13 @@ namespace MookDialogueScript.Parsing
     /// 遵循SOLID原则，采用组合设计模式
     /// 职责分离：依赖专业组件完成各项解析任务
     /// </summary>
-    public class Parser : IParser, IDisposable
+    public class Parser : IDisposable
     {
         #region 组合组件
         private readonly ITokenBuffer _tokenBuffer;
         private readonly IExpressionParser _expressionParser;
-        private readonly INodeCache _nodeCache;
-        private readonly ParseContextManager _contextManager;
+        private readonly NodeCacheManager _nodeCache;
+        private readonly ParseContext _context;
         #endregion
 
         #region 解析状态
@@ -31,26 +31,11 @@ namespace MookDialogueScript.Parsing
             _nodeCache = new NodeCacheManager();
             _tokenBuffer = new TokenBufferManager();
             _expressionParser = new ExpressionParser(_nodeCache, _tokenBuffer);
-            _contextManager = new ParseContextManager();
-        }
-
-        /// <summary>
-        /// 使用依赖注入创建解析器
-        /// </summary>
-        public Parser(
-            ITokenBuffer tokenBuffer,
-            IExpressionParser expressionParser,
-            INodeCache nodeCache,
-            ParseContextManager contextManager = null)
-        {
-            _tokenBuffer = tokenBuffer ?? throw new ArgumentNullException(nameof(tokenBuffer));
-            _expressionParser = expressionParser ?? throw new ArgumentNullException(nameof(expressionParser));
-            _nodeCache = nodeCache ?? throw new ArgumentNullException(nameof(nodeCache));
-            _contextManager = contextManager ?? new ParseContextManager();
+            _context = new ParseContext();
         }
         #endregion
 
-        #region IParser 实现
+        #region Parser 实现
         /// <summary>
         /// 解析Token列表生成AST
         /// </summary>
@@ -61,8 +46,8 @@ namespace MookDialogueScript.Parsing
             if (tokens == null || tokens.Count == 0)
                 throw new ArgumentException("Token列表不能为空", nameof(tokens));
 
+            _context.Clear();
             _tokenBuffer.Reset(tokens);
-            _contextManager.Reset();
 
             var nodes = new List<NodeDefinitionNode>();
 
@@ -95,15 +80,6 @@ namespace MookDialogueScript.Parsing
             ThrowIfDisposed();
             _nodeCache.Clear();
         }
-
-        /// <summary>
-        /// 重置解析器状态
-        /// </summary>
-        public void Reset()
-        {
-            ThrowIfDisposed();
-            _contextManager.Reset();
-        }
         #endregion
 
         #region 主要解析方法
@@ -128,7 +104,7 @@ namespace MookDialogueScript.Parsing
 
             // 设置解析上下文
             var nodeName = GetMetadataValue(metadata, "node", "unnamed");
-            _contextManager.EnterNode(nodeName);
+            _context.EnterNode(nodeName);
 
             var content = new List<ContentNode>();
             while (!_tokenBuffer.Check(TokenType.NODE_END) && !_tokenBuffer.IsAtEnd)
@@ -153,7 +129,7 @@ namespace MookDialogueScript.Parsing
             }
             _tokenBuffer.Consume(TokenType.NODE_END);
 
-            _contextManager.ExitNode();
+            _context.ExitNode();
 
             return new NodeDefinitionNode(nodeName, metadata, content, line, column);
         }
@@ -241,7 +217,7 @@ namespace MookDialogueScript.Parsing
 
             var text = ParseText();
             var tags = ParseTags();
-            tags.Add(_contextManager.GenerateLineTag());
+            tags.Add(_context.GenerateLineTag());
 
             var content = ParseNestedContent();
 
@@ -258,7 +234,7 @@ namespace MookDialogueScript.Parsing
 
             var text = ParseText();
             var tags = ParseTags();
-            tags.Add(_contextManager.GenerateLineTag());
+            tags.Add(_context.GenerateLineTag());
 
             var content = ParseNestedContent();
 
@@ -295,7 +271,7 @@ namespace MookDialogueScript.Parsing
             // 解析标签
             var parsedTags = ParseTags();
             tags.AddRange(parsedTags);
-            tags.Add(_contextManager.GenerateLineTag());
+            tags.Add(_context.GenerateLineTag());
 
             var content = ParseNestedContent();
 
@@ -542,7 +518,7 @@ namespace MookDialogueScript.Parsing
                 _tokenBuffer.Advance(); // consume NEWLINE
                 _tokenBuffer.Advance(); // consume INDENT
 
-                _contextManager.EnterNesting();
+                _context.EnterNesting();
 
                 while (!_tokenBuffer.Check(TokenType.DEDENT) &&
                        !_tokenBuffer.IsAtEnd &&
@@ -566,7 +542,7 @@ namespace MookDialogueScript.Parsing
                     _tokenBuffer.Advance();
                 }
 
-                _contextManager.ExitNesting();
+                _context.ExitNesting();
             }
 
             return content;
@@ -747,7 +723,7 @@ namespace MookDialogueScript.Parsing
                     if (_nodeCache is IDisposable disposableCache)
                         disposableCache.Dispose();
 
-                    _contextManager?.Dispose();
+                    _context?.Dispose();
                 }
                 _disposed = true;
             }

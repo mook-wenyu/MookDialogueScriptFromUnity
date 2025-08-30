@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using UnityEngine;
 using UnityEngine.Scripting;
 
 namespace MookDialogueScript
@@ -37,9 +38,6 @@ namespace MookDialogueScript
         #region 字段和构造函数
         // 编译后的函数字典：函数名 -> 函数实现
         private readonly Dictionary<string, Func<List<RuntimeValue>, Task<RuntimeValue>>> _compiledFunctions = new(StringComparer.OrdinalIgnoreCase);
-
-        // 函数签名字典：函数名 -> 函数签名
-        private readonly Dictionary<string, FunctionSignature> _functionSignatures = new(StringComparer.OrdinalIgnoreCase);
 
         // 读写锁，用于线程安全
         private readonly ReaderWriterLockSlim _functionsLock = new(LockRecursionPolicy.NoRecursion);
@@ -294,44 +292,11 @@ namespace MookDialogueScript
                 }
 
                 _compiledFunctions[name] = CompileMethod(function.Method, function.Target);
-
-                // 构建并注册函数签名
-                var signature = CreateFunctionSignature(name, function.Method, function.Target);
-                _functionSignatures[name] = signature;
             }
             finally
             {
                 _functionsLock.ExitWriteLock();
             }
-        }
-
-        /// <summary>
-        /// 从 MethodInfo 创建函数签名
-        /// </summary>
-        /// <param name="name">函数名</param>
-        /// <param name="method">方法信息</param>
-        /// <param name="instance">实例对象（静态方法为null）</param>
-        /// <returns>函数签名</returns>
-        private FunctionSignature CreateFunctionSignature(string name, MethodInfo method, object instance)
-        {
-            // 构建参数签名
-            var parameters = method.GetParameters().Select(p => new FunctionParameter(
-                p.Name ?? $"param{p.Position}",
-                MapClrTypeToScriptType(p.ParameterType),
-                p.HasDefaultValue,
-                p.DefaultValue
-            )).ToList();
-
-            var signature = new FunctionSignature(
-                name,
-                MapClrTypeToScriptType(method.ReturnType),
-                parameters,
-                instance == null ? "静态函数" : "对象方法",
-                method.DeclaringType?.Name,
-                method.Name
-            );
-
-            return signature;
         }
 
         /// <summary>
@@ -512,102 +477,6 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 获取函数值（用于一等函数支持）
-        /// </summary>
-        /// <param name="name">函数名</param>
-        /// <param name="line">行号（用于错误报告）</param>
-        /// <param name="column">列号（用于错误报告）</param>
-        /// <returns>函数值</returns>
-        /// <exception cref="InterpreterException">当函数未找到时抛出异常</exception>
-        public RuntimeValue GetFunctionValue(string name, int line = 0, int column = 0)
-        {
-            _functionsLock.EnterReadLock();
-            try
-            {
-                if (_compiledFunctions.TryGetValue(name, out var func))
-                {
-                    return new RuntimeValue(func);
-                }
-
-                // 使用异常工厂创建带建议的异常
-                throw ExceptionFactory.CreateFunctionNotFoundException(name, GetAllFunctionNames(), line, column);
-            }
-            finally
-            {
-                _functionsLock.ExitReadLock();
-            }
-        }
-
-        /// <summary>
-        /// 尝试获取函数值
-        /// </summary>
-        /// <param name="name">函数名</param>
-        /// <param name="functionValue">输出的函数值</param>
-        /// <returns>是否找到函数</returns>
-        public bool TryGetFunctionValue(string name, out RuntimeValue functionValue)
-        {
-            _functionsLock.EnterReadLock();
-            try
-            {
-                if (_compiledFunctions.TryGetValue(name, out var func))
-                {
-                    functionValue = new RuntimeValue(func);
-                    return true;
-                }
-
-                functionValue = RuntimeValue.Null;
-                return false;
-            }
-            finally
-            {
-                _functionsLock.ExitReadLock();
-            }
-        }
-
-        /// <summary>
-        /// 注册函数值作为变量（支持一等函数）
-        /// </summary>
-        /// <param name="name">变量名</param>
-        /// <param name="functionValue">函数值</param>
-        public void RegisterFunctionVariable(string name, Func<List<RuntimeValue>, Task<RuntimeValue>> functionValue)
-        {
-            // 这个方法主要用于在变量管理器中注册函数值
-            // 实际存储由 VariableManager 处理
-        }
-
-        /// <summary>
-        /// 调用函数值（用于一等函数调用）
-        /// </summary>
-        /// <param name="functionValue">函数值</param>
-        /// <param name="args">参数列表</param>
-        /// <param name="line">行号</param>
-        /// <param name="column">列号</param>
-        /// <returns>调用结果</returns>
-        /// <exception cref="InterpreterException">当函数值无效或调用失败时抛出异常</exception>
-        public async Task<RuntimeValue> CallFunctionValue(RuntimeValue functionValue, List<RuntimeValue> args, int line = 0, int column = 0)
-        {
-            // 检查函数类型
-            if (functionValue.Type != ValueType.Function)
-            {
-                throw ExceptionFactory.CreateFunctionExpectedException(functionValue.Type.ToString(), line, column);
-            }
-
-            if (functionValue.Value is not Func<List<RuntimeValue>, Task<RuntimeValue>> func)
-            {
-                throw ExceptionFactory.CreateFunctionExpectedException("无效的函数值类型", line, column);
-            }
-
-            try
-            {
-                return await func(args);
-            }
-            catch (Exception ex)
-            {
-                throw ExceptionFactory.CreateFunctionInvokeFailException("函数值", ex, line, column);
-            }
-        }
-
-        /// <summary>
         /// 调用已注册的函数
         /// </summary>
         /// <param name="name">函数名</param>
@@ -641,14 +510,6 @@ namespace MookDialogueScript
             {
                 throw ExceptionFactory.CreateFunctionInvokeFailException(name, ex, line, column);
             }
-        }
-
-        /// <summary>
-        /// 调用已注册的函数（向后兼容的重载）
-        /// </summary>
-        public async Task<RuntimeValue> CallFunction(string name, List<RuntimeValue> args)
-        {
-            return await CallFunction(name, args, 0, 0);
         }
         #endregion
 
@@ -711,10 +572,6 @@ namespace MookDialogueScript
         }
 
         #region 内置函数
-        // 单例随机数生成器，避免重复种子问题
-        private static readonly Random _sharedRandom = new Random();
-        private static readonly object _randomLock = new object();
-
         /// <summary>
         /// 输出日志
         /// </summary>
@@ -776,10 +633,7 @@ namespace MookDialogueScript
         [ScriptFunc("random")]
         public static double Random(int digits = 2)
         {
-            lock (_randomLock)
-            {
-                return Math.Round(_sharedRandom.NextDouble(), digits);
-            }
+            return Math.Round(Utils.SharedRandom.NextDouble(), digits);
         }
 
         /// <summary>
@@ -789,10 +643,7 @@ namespace MookDialogueScript
         [ScriptFunc("random_range")]
         public static double Random_Range(float min, float max, int digits = 2)
         {
-            lock (_randomLock)
-            {
-                return Math.Round(_sharedRandom.NextDouble() * (max - min) + min, digits);
-            }
+            return Math.Round(Utils.SharedRandom.NextDouble() * (max - min) + min, digits);
         }
 
         /// <summary>
@@ -802,15 +653,12 @@ namespace MookDialogueScript
         [ScriptFunc("dice")]
         public static int Dice(int sides, int count = 1)
         {
-            lock (_randomLock)
+            var total = 0;
+            for (var i = 0; i < count; i++)
             {
-                var total = 0;
-                for (var i = 0; i < count; i++)
-                {
-                    total += _sharedRandom.Next(1, sides + 1);
-                }
-                return total;
+                total += Utils.SharedRandom.Next(1, sides + 1);
             }
+            return total;
         }
         /// <summary>
         /// 获取所有已注册的函数名
@@ -827,87 +675,6 @@ namespace MookDialogueScript
             {
                 _functionsLock.ExitReadLock();
             }
-        }
-
-        /// <summary>
-        /// 获取函数签名
-        /// </summary>
-        /// <param name="name">函数名</param>
-        /// <param name="line">错误行号（用于异常报告）</param>
-        /// <param name="column">错误列号（用于异常报告）</param>
-        /// <returns>函数签名，如果不存在或有重载冲突则返回null</returns>
-        public FunctionSignature GetFunctionSignature(string name, int line = 0, int column = 0)
-        {
-            _functionsLock.EnterReadLock();
-            try
-            {
-                if (_functionSignatures.TryGetValue(name, out var signature))
-                    return signature;
-
-                // 检查是否有同名多个签名（重载冲突）
-                var overloadCount = GetOverloadCount(name);
-                if (overloadCount > 1)
-                {
-                    MLogger.Error($"SEM016: 不支持重载：'{name}'，找到 {overloadCount} 个签名 行：{line} 列：{column}");
-                }
-
-                return null;
-            }
-            finally
-            {
-                _functionsLock.ExitReadLock();
-            }
-        }
-
-        /// <summary>
-        /// 尝试获取函数签名
-        /// </summary>
-        /// <param name="name">函数名</param>
-        /// <param name="signature">输出的函数签名</param>
-        /// <returns>是否成功获取</returns>
-        public bool TryGetFunctionSignature(string name, out FunctionSignature signature)
-        {
-            signature = GetFunctionSignature(name);
-            return signature != null;
-        }
-
-        /// <summary>
-        /// 获取所有函数签名
-        /// </summary>
-        /// <returns>函数名和签名的键值对集合</returns>
-        public IEnumerable<KeyValuePair<string, FunctionSignature>> GetAllFunctionSignatures()
-        {
-            _functionsLock.EnterReadLock();
-            try
-            {
-                return _functionSignatures.ToList();
-            }
-            finally
-            {
-                _functionsLock.ExitReadLock();
-            }
-        }
-
-        /// <summary>
-        /// 获取重载数量（在我们的系统中始终为0或1，不支持重载）
-        /// </summary>
-        /// <param name="name">函数名</param>
-        /// <returns>重载数量</returns>
-        private int GetOverloadCount(string name)
-        {
-            // 在当前实现中，我们不支持重载，每个函数名只能有一个签名
-            return _functionSignatures.ContainsKey(name) ? 1 : 0;
-        }
-
-        /// <summary>
-        /// 检测重载函数（返回是否存在同名函数）
-        /// </summary>
-        /// <param name="name">函数名</param>
-        /// <returns>是否存在同名函数（重载）</returns>
-        public bool HasOverloads(string name)
-        {
-            // 在我们的系统中，不支持重载，所以总是返回 false
-            return false;
         }
         #endregion
 

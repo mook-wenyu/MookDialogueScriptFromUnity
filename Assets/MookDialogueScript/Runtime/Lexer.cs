@@ -93,7 +93,7 @@ namespace MookDialogueScript
 
         public Lexer()
         {
-            // 初始化位置信息（源代码将通过 Reset 方法设置）
+            // 初始化位置信息（源代码将通过 Parse 方法设置）
             _position = 0;
             _line = 1;
             _column = 1;
@@ -122,7 +122,7 @@ namespace MookDialogueScript
         /// 重置当前 Lexer 实例以复用对象处理新的源代码字符串。
         /// - 复用内部集合（List/Stack），避免不必要的 GC 分配
         /// - 重置所有状态（位置、行列、缩进栈、模式标志、字符缓存等）
-        /// - 线程安全：使用最小锁保护 Reset/Tokenize 互斥执行
+        /// - 线程安全：使用最小锁保护 Parse/Tokenize 互斥执行
         /// </summary>
         /// <param name="source">新的源代码字符串</param>
         public void Reset(string source)

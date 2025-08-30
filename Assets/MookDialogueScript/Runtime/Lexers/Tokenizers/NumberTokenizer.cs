@@ -15,23 +15,23 @@ namespace MookDialogueScript.Lexers
         /// 快速判断是否为数字起始
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool CanHandle(CharacterStream stream, LexerState state, CharacterClassifier classifier)
+        public bool CanHandle(CharStream stream, LexerState state)
         {
-            return !stream.IsEOFMark() && classifier.IsDigit(stream.CurrentChar);
+            return !stream.IsEOFMark() && CharClassifier.IsDigit(stream.CurrentChar);
         }
 
         /// <summary>
         /// 处理数字Token，保持原有的优化逻辑
         /// </summary>
-        public Token TryTokenize(CharacterStream stream, LexerState state, CharacterClassifier classifier)
+        public Token TryTokenize(CharStream stream, LexerState state)
         {
-            if (!CanHandle(stream, state, classifier)) return null;
+            if (!CanHandle(stream, state)) return null;
 
             var start = SourceLocation.FromStream(stream);
             bool hasDecimalPoint = false;
 
             // 使用缓存字符进行快速处理
-            while (!stream.IsEOFMark() && (classifier.IsDigit(stream.CurrentChar) || stream.CurrentChar == '.'))
+            while (!stream.IsEOFMark() && (CharClassifier.IsDigit(stream.CurrentChar) || stream.CurrentChar == '.'))
             {
                 if (stream.CurrentChar == '.')
                 {

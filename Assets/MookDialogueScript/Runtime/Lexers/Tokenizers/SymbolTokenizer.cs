@@ -26,17 +26,17 @@ namespace MookDialogueScript.Lexers
         /// 快速判断是否为符号或操作符起始
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool CanHandle(CharacterStream stream, LexerState state, CharacterClassifier classifier)
+        public bool CanHandle(CharStream stream, LexerState state)
         {
             char c = stream.CurrentChar;
-            return c is '(' or ')' or '{' or '}' or '[' or ']' or '#' or '.' or ',' or ':' 
-                     or '+' or '-' or '*' or '/' or '%' or '=' or '!' or '>' or '<' or '&' or '|';
+            return c is '(' or ')' or '{' or '}' or '[' or ']' or '#' or '.' or ',' or ':'
+                or '+' or '-' or '*' or '/' or '%' or '=' or '!' or '>' or '<' or '&' or '|';
         }
 
         /// <summary>
         /// 处理符号和操作符Token
         /// </summary>
-        public Token TryTokenize(CharacterStream stream, LexerState state, CharacterClassifier classifier)
+        public Token TryTokenize(CharStream stream, LexerState state)
         {
             char currentChar = stream.CurrentChar;
             int startLine = stream.Line;
@@ -176,12 +176,12 @@ namespace MookDialogueScript.Lexers
 
             return null;
         }
-        
+
         public void Clear()
         {
-            
+
         }
-        
+
         public void Dispose()
         {
             Clear();

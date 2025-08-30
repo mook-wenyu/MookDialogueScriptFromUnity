@@ -20,11 +20,6 @@ namespace MookDialogueScript
         /// </summary>
         public int Column { get; }
 
-        /// <summary>
-        /// 子节点列表（用于AST遍历）
-        /// </summary>
-        public virtual IEnumerable<ASTNode> Children => GetChildren();
-
         protected ASTNode(int line, int column)
         {
             Line = line;
@@ -67,7 +62,7 @@ namespace MookDialogueScript
         /// </summary>
         protected override IEnumerable<ASTNode> GetChildren()
         {
-            return Nodes.Cast<ASTNode>();
+            return Nodes;
         }
     }
 
@@ -104,23 +99,23 @@ namespace MookDialogueScript
         /// </summary>
         protected override IEnumerable<ASTNode> GetChildren()
         {
-            return Content.Cast<ASTNode>();
+            return Content;
         }
 
         public override string ToString()
         {
             StringBuilder sb = new StringBuilder();
-            sb.AppendLine($"--- {Name}");
+            sb.AppendLine($"node: {Name}");
 
             // 添加元数据到输出
             if (Metadata is {Count: > 0})
             {
                 foreach (var meta in Metadata)
                 {
-                    sb.AppendLine($"[{meta.Key}:{meta.Value}]");
+                    sb.AppendLine($"{meta.Key}: {meta.Value}");
                 }
             }
-
+            sb.AppendLine("---");
             foreach (var content in Content)
             {
                 sb.AppendLine($"{content}");
@@ -177,11 +172,7 @@ namespace MookDialogueScript
         /// </summary>
         protected override IEnumerable<ASTNode> GetChildren()
         {
-            // 返回文本段和内容节点
-            var children = new List<ASTNode>();
-            if (Text != null) children.AddRange(Text.Cast<ASTNode>());
-            if (Content != null) children.AddRange(Content.Cast<ASTNode>());
-            return children;
+            return Content;
         }
 
         public override string ToString()
@@ -363,17 +354,15 @@ namespace MookDialogueScript
         protected override IEnumerable<ASTNode> GetChildren()
         {
             var children = new List<ASTNode>();
-            if (Condition != null) children.Add(Condition);
-            if (ThenContent != null) children.AddRange(ThenContent.Cast<ASTNode>());
+            if (ThenContent != null) children.AddRange(ThenContent);
             if (ElifContents != null)
             {
-                foreach (var (elifCondition, elifContent) in ElifContents)
+                foreach (var (_, elifContent) in ElifContents)
                 {
-                    if (elifCondition != null) children.Add(elifCondition);
-                    if (elifContent != null) children.AddRange(elifContent.Cast<ASTNode>());
+                    if (elifContent != null) children.AddRange(elifContent);
                 }
             }
-            if (ElseContent != null) children.AddRange(ElseContent.Cast<ASTNode>());
+            if (ElseContent != null) children.AddRange(ElseContent);
             return children;
         }
 
@@ -429,11 +418,6 @@ namespace MookDialogueScript
         /// 值
         /// </summary>
         public ExpressionNode Value { get; }
-
-        /// <summary>
-        /// 初始值（别名，为了向后兼容）
-        /// </summary>
-        public ExpressionNode InitialValue => Value;
 
         /// <summary>
         /// 操作
@@ -678,11 +662,6 @@ namespace MookDialogueScript
         /// </summary>
         public string Name { get; }
 
-        /// <summary>
-        /// 变量名（别名，为了向后兼容）
-        /// </summary>
-        public string VariableName => Name;
-
         public VariableNode(string name, int line, int column)
             : base(line, column)
         {
@@ -717,8 +696,6 @@ namespace MookDialogueScript
         }
     }
 
-    // FunctionCallNode 已被删除 - 使用 CallExpressionNode 替代
-
     /// <summary>
     /// 调用表达式节点，支持任意表达式的调用
     /// </summary>
@@ -734,11 +711,6 @@ namespace MookDialogueScript
         /// </summary>
         public List<ExpressionNode> Arguments { get; }
 
-        /// <summary>
-        /// 函数名称（向后兼容属性）
-        /// </summary>
-        public string FunctionName => (Callee as IdentifierNode)?.Name ?? Callee?.ToString();
-
         public CallExpressionNode(ExpressionNode callee, List<ExpressionNode> arguments, int line, int column)
             : base(line, column)
         {
@@ -753,7 +725,7 @@ namespace MookDialogueScript
         {
             var children = new List<ASTNode>();
             if (Callee != null) children.Add(Callee);
-            if (Arguments != null) children.AddRange(Arguments.Cast<ASTNode>());
+            if (Arguments != null) children.AddRange(Arguments);
             return children;
         }
 
@@ -823,79 +795,6 @@ namespace MookDialogueScript
         public override string ToString()
         {
             return $"{Target}[{Index}]";
-        }
-    }
-
-    // 向后兼容的类型别名
-    // 用于支持重构前的代码
-    /// <summary>
-    /// 变量引用节点（兼容别名）
-    /// </summary>
-    public class VariableReferenceNode : VariableNode
-    {
-        public VariableReferenceNode(string name, int line, int column) : base(name, line, column) { }
-    }
-
-    /// <summary>
-    /// 函数调用节点（兼容别名）
-    /// </summary>
-    public class FunctionCallNode : CallExpressionNode
-    {
-        public new string FunctionName => (Callee as IdentifierNode)?.Name ?? Callee?.ToString();
-
-        public FunctionCallNode(string functionName, List<ExpressionNode> arguments, int line, int column) 
-            : base(new IdentifierNode(functionName, line, column), arguments, line, column) { }
-
-        public FunctionCallNode(ExpressionNode callee, List<ExpressionNode> arguments, int line, int column)
-            : base(callee, arguments, line, column) { }
-    }
-
-    /// <summary>
-    /// 跳转节点（兼容别名）
-    /// </summary>
-    public class JumpNode : JumpCommandNode
-    {
-        public JumpNode(string targetNode, int line, int column) : base(targetNode, line, column) { }
-    }
-
-    /// <summary>
-    /// 条件节点（兼容别名）
-    /// </summary>
-    public class ConditionalNode : ConditionNode
-    {
-        public ConditionalNode(
-            ExpressionNode condition,
-            List<ContentNode> thenContent,
-            List<(ExpressionNode Condition, List<ContentNode> Content)> elifContents,
-            List<ContentNode> elseContent,
-            int line, int column)
-            : base(condition, thenContent, elifContents, elseContent, line, column) { }
-    }
-
-    /// <summary>
-    /// 二元表达式节点（兼容别名）
-    /// </summary>
-    public class BinaryExpressionNode : BinaryOpNode
-    {
-        public BinaryExpressionNode(ExpressionNode left, string op, ExpressionNode right, int line, int column)
-            : base(left, op, right, line, column) { }
-    }
-
-    /// <summary>
-    /// 字面量节点（兼容别名）
-    /// </summary>
-    public class LiteralNode : ExpressionNode
-    {
-        public object Value { get; }
-
-        public LiteralNode(object value, int line, int column) : base(line, column)
-        {
-            Value = value;
-        }
-
-        public override string ToString()
-        {
-            return Value?.ToString() ?? "null";
         }
     }
 

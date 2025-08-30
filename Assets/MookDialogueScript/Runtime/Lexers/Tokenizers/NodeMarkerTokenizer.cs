@@ -15,7 +15,7 @@ namespace MookDialogueScript.Lexers
         /// 快速判断是否为节点标记起始
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool CanHandle(CharacterStream stream, LexerState state, CharacterClassifier classifier)
+        public bool CanHandle(CharStream stream, LexerState state)
         {
             // 节点开始标记 --- （仅在节点外部）
             if (!state.IsInNodeContent && stream.IsNodeStartMark())
@@ -31,7 +31,7 @@ namespace MookDialogueScript.Lexers
         /// <summary>
         /// 处理节点标记Token
         /// </summary>
-        public Token TryTokenize(CharacterStream stream, LexerState state, CharacterClassifier classifier)
+        public Token TryTokenize(CharStream stream, LexerState state)
         {
             // 处理节点开始标记 ---
             if (!state.IsInNodeContent && stream.IsNodeStartMark())
@@ -82,7 +82,7 @@ namespace MookDialogueScript.Lexers
         /// 检查当前位置是否被转义（前面有奇数个反斜杠）
         /// 保持原有的转义检查逻辑
         /// </summary>
-        private bool IsEscaped(CharacterStream stream)
+        private bool IsEscaped(CharStream stream)
         {
             if (stream.Position == 0) return false;
 

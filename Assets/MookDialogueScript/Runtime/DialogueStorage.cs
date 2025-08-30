@@ -124,21 +124,13 @@ namespace MookDialogueScript
         }
 
         /// <summary>
-        /// 保存变量值（排除Function类型以保证可序列化）
+        /// 保存变量值
         /// </summary>
         /// <param name="name">变量名</param>
         /// <param name="value">变量值</param>
         public void SaveVariable(string name, RuntimeValue value)
         {
-            // 跳过Function类型的变量，因为它们不能被序列化
-            if (value.Type != ValueType.Function)
-            {
-                variables[name] = value;
-            }
-            else
-            {
-                MLogger.Warning($"函数变量 '{name}' 无法序列化，已跳过保存。函数变量需要在初始化时重新绑定。");
-            }
+            variables[name] = value;
         }
 
         /// <summary>
@@ -151,7 +143,7 @@ namespace MookDialogueScript
 
             // 加载存储的变量到上下文
             context.LoadScriptVariables(variables);
-            
+
             // 提示：函数变量需要重新绑定
             MLogger.Info("存档已加载。注意：函数变量已被跳过，如果脚本中使用了函数变量，请确保在加载后重新注册相关函数。");
         }

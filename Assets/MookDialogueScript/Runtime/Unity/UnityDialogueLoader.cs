@@ -55,9 +55,7 @@ namespace MookDialogueScript
                 // 创建语法分析器
                 var parser = new Parsing.Parser();
 
-                lexer.Reset(asset.text);
-                parser.Reset();
-                var tokens = lexer.Tokenize();
+                var tokens = lexer.Tokenize(asset.text);
                 var nodes = parser.Parse(tokens);
 
                 // 注册脚本节点

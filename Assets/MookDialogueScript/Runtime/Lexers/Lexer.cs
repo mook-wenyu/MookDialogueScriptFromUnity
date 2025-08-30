@@ -11,8 +11,7 @@ namespace MookDialogueScript.Lexers
     public class Lexer : IDisposable
     {
         // 组合的核心组件
-        private readonly CharacterStream _stream;
-        private readonly CharacterClassifier _classifier;
+        private readonly CharStream _stream;
         private readonly LexerState _state;
         private readonly IndentationHandler _indentHandler;
         private readonly List<ITokenizer> _tokenizers;
@@ -24,72 +23,39 @@ namespace MookDialogueScript.Lexers
         // IDisposable 支持
         private volatile bool _disposed;
 
-        #region 构造函数
         /// <summary>
         /// 默认构造函数 - 使用工厂创建所有组件
         /// 保持与原有代码的完全兼容性
         /// </summary>
         public Lexer()
         {
-            _stream = LexerFactory.CreateCharacterStream();
-            _classifier = LexerFactory.CreateCharacterClassifier();
-            _state = LexerFactory.CreateLexerState();
-            _indentHandler = LexerFactory.CreateIndentationHandler();
-            _tokenizers = LexerFactory.CreateTokenizers();
+            _stream = new CharStream();
+            _state = new LexerState();
+            _indentHandler = new IndentationHandler();
+            _tokenizers = CreateTokenizers();
             _tokens = new List<Token>();
         }
 
+        #region 公共API
         /// <summary>
-        /// 依赖注入构造函数 - 支持自定义组件
-        /// 用于测试和高级定制场景
-        /// </summary>
-        internal Lexer(
-            CharacterStream stream,
-            CharacterClassifier classifier,
-            LexerState state,
-            IndentationHandler indentHandler,
-            List<ITokenizer> tokenizers)
-        {
-            _stream = stream;
-            _classifier = classifier;
-            _state = state;
-            _indentHandler = indentHandler;
-            _tokenizers = tokenizers;
-            _tokens = new List<Token>();
-        }
-        #endregion
-
-        #region 公共API - 保持向后兼容
-        /// <summary>
-        /// 重置当前Lexer实例以复用对象处理新的源代码字符串
-        /// 完全保持原有的API和行为
+        /// 解析新的源代码字符串
+        /// 重置所有组件状态，准备重新词法分析
+        /// 获取所有Token
         /// </summary>
         /// <param name="source">新的源代码字符串</param>
-        public void Reset(string source)
+        /// <returns>Token列表的独立副本，避免外部引用受Reset影响</returns>
+        public List<Token> Tokenize(string source)
         {
             ThrowIfDisposed();
 
             lock (_syncLock)
             {
                 // 重置所有组件
-                _stream.Reset(source);
                 _state.Reset();
                 _indentHandler.Reset();
                 _tokens.Clear();
-            }
-        }
+                _stream.Reset(source);
 
-        /// <summary>
-        /// 获取所有Token
-        /// 完全保持原有的API和行为
-        /// </summary>
-        /// <returns>Token列表的独立副本，避免外部引用受Reset影响</returns>
-        public List<Token> Tokenize()
-        {
-            ThrowIfDisposed();
-
-            lock (_syncLock)
-            {
                 Token token;
                 do
                 {
@@ -104,6 +70,42 @@ namespace MookDialogueScript.Lexers
         #endregion
 
         #region 核心Token生成逻辑
+        /// <summary>
+        /// 创建所有Token处理器，优先级从高到低
+        /// </summary>
+        private static List<ITokenizer> CreateTokenizers()
+        {
+            var tokenizers = new List<ITokenizer>
+            {
+                // 注释和换行处理
+                new CommentAndNewlineTokenizer(),
+
+                // 节点标记处理
+                new NodeMarkerTokenizer(),
+
+                // 字符串和文本处理
+                new StringTokenizer(),
+
+                // 文本处理
+                new TextTokenizer(),
+
+                // 命令处理
+                new CommandTokenizer(),
+
+                // 数字和标识符
+                new NumberTokenizer(),
+                new IdentifierTokenizer(),
+
+                // 符号处理
+                new SymbolTokenizer(),
+
+                // 最后兜底：文本处理器
+                new TextTokenizer()
+            };
+
+            return tokenizers;
+        }
+
         /// <summary>
         /// 获取下一个Token的核心逻辑
         /// 重构为组件协调模式，但保持完全相同的行为
@@ -142,7 +144,7 @@ namespace MookDialogueScript.Lexers
                     else
                     {
                         // 内容行才进行缩进处理
-                        var indentToken = _indentHandler.HandleIndentation(_stream, _state, _classifier);
+                        var indentToken = _indentHandler.HandleIndentation(_stream, _state);
                         if (indentToken != null) return indentToken;
 
                         // 消费前导空白，使后续Token处理从非空白字符开始
@@ -159,9 +161,9 @@ namespace MookDialogueScript.Lexers
                 // 按优先级尝试各个tokenizer
                 foreach (var tokenizer in _tokenizers)
                 {
-                    if (!tokenizer.CanHandle(_stream, _state, _classifier)) continue;
+                    if (!tokenizer.CanHandle(_stream, _state)) continue;
 
-                    var token = tokenizer.TryTokenize(_stream, _state, _classifier);
+                    var token = tokenizer.TryTokenize(_stream, _state);
                     if (token != null) return token;
                 }
 
@@ -193,7 +195,7 @@ namespace MookDialogueScript.Lexers
         /// </summary>
         private void SkipWhitespace()
         {
-            while (!_stream.IsAtEnd && _classifier.IsWhitespace(_stream.CurrentChar) &&
+            while (!_stream.IsAtEnd && CharClassifier.IsWhitespace(_stream.CurrentChar) &&
                    !_stream.IsNewlineMark())
             {
                 _stream.Advance();
@@ -220,7 +222,7 @@ namespace MookDialogueScript.Lexers
 
             // 跳过前导空白
             char c = _stream.GetCharAt(p);
-            while (c is ' ' or '\t')
+            while (CharClassifier.IsSpaceOrIndent(c))
             {
                 p++;
                 c = _stream.GetCharAt(p);
@@ -228,7 +230,7 @@ namespace MookDialogueScript.Lexers
 
             // 空行或注释行
             bool isCommentLine = c == '/' && _stream.GetCharAt(p + 1) == '/';
-            bool isEmptyLine = _classifier.IsNewlineOrEOF(c);
+            bool isEmptyLine = CharClassifier.IsNewlineOrEOF(c);
 
             return isCommentLine || isEmptyLine;
         }

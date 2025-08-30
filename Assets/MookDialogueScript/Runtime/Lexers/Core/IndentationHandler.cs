@@ -39,7 +39,7 @@ namespace MookDialogueScript.Lexers
         /// 处理行首缩进并生成相应的INDENT/DEDENT Token
         /// 保持原有的复杂缩进处理逻辑
         /// </summary>
-        public Token HandleIndentation(CharacterStream stream, LexerState state, CharacterClassifier classifier)
+        public Token HandleIndentation(CharStream stream, LexerState state)
         {
             // 仅在节点内容内处理缩进
             if (stream.Column != 1 || !state.IsInNodeContent) return null;
@@ -118,7 +118,7 @@ namespace MookDialogueScript.Lexers
         /// <summary>
         /// 统计当前行的缩进数量（保持原有逻辑）
         /// </summary>
-        private int CountIndentation(CharacterStream stream)
+        private int CountIndentation(CharStream stream)
         {
             var indent = 0;
             bool seenSpace = false;
@@ -144,7 +144,7 @@ namespace MookDialogueScript.Lexers
         /// <summary>
         /// 判断是否需要跳过缩进处理
         /// </summary>
-        private bool ShouldSkipIndentation(CharacterStream stream)
+        private bool ShouldSkipIndentation(CharStream stream)
         {
             // 在行首仅对 EOF/换行跳过缩进处理；注释判定由调用方负责
             return stream.IsNewlineOrEOFMark();
