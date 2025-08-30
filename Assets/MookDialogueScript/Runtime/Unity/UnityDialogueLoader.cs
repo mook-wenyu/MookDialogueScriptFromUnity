@@ -46,30 +46,25 @@ namespace MookDialogueScript
         public void LoadScriptContent(TextAsset[] assets,
             Runner runner)
         {
-            // 创建多个任务并发使用Lexer池
-            var tasks = new Task[assets.Length];
-            for (int i = 0; i < tasks.Length; i++)
+            for (int i = 0; i < assets.Length; i++)
             {
-                int taskId = i;
-                tasks[i] = Task.Run(() =>
-                {
-                    var asset = assets[taskId];
+                var asset = assets[i];
 
-                    // 创建词法分析器
-                    var lexer = new Lexer();
-                    lexer.Reset(asset.text);
-                    // 创建语法分析器
-                    var parser = new Parser(lexer.Tokenize());
-                    // 注册脚本节点
-                    runner.RegisterScript(parser.Parse());
+                // 创建词法分析器
+                var lexer = new Lexers.Lexer();
+                // 创建语法分析器
+                var parser = new Parsing.Parser();
 
-                    Debug.Log($"任务 {taskId} 完成！");
-                });
+                lexer.Reset(asset.text);
+                parser.Reset();
+                var tokens = lexer.Tokenize();
+                var nodes = parser.Parse(tokens);
+
+                // 注册脚本节点
+                runner.RegisterScript(nodes);
+
+                Debug.Log($"任务 {i} 完成！");
             }
-
-            // 等待所有任务完成
-            Task.WaitAll(tasks);
-            Debug.Log("所有多线程任务完成");
         }
 
 

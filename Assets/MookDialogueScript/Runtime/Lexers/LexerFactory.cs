@@ -47,14 +47,29 @@ namespace MookDialogueScript.Lexers
         {
             var tokenizers = new List<ITokenizer>
             {
+                // 注释和换行处理
                 new CommentAndNewlineTokenizer(),
+                
+                // 节点标记处理
                 new NodeMarkerTokenizer(),
+                
+                // 字符串和文本处理
                 new StringTokenizer(),
+                
+                // 文本处理
                 new TextTokenizer(),
+                
+                // 命令处理
                 new CommandTokenizer(),
+                
+                // 数字和标识符
                 new NumberTokenizer(),
                 new IdentifierTokenizer(),
+                
+                // 符号处理
                 new SymbolTokenizer(),
+                
+                // 最后兜底：文本处理器
                 new TextTokenizer()
             };
 

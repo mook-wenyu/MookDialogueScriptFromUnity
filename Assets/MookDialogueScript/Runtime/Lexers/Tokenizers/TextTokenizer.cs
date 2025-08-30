@@ -53,8 +53,8 @@ namespace MookDialogueScript.Lexers
                 return HandleText(stream, state, classifier);
             }
 
-            // 在节点外部处理元数据
-            if (!state.IsInNodeContent)
+            // 在节点外部，处理元数据键值对
+            if (!state.IsInNodeContent && stream.CurrentChar != ':')
             {
                 return HandleMetadata(stream, state, classifier);
             }
@@ -65,7 +65,7 @@ namespace MookDialogueScript.Lexers
         /// <summary>
         /// 处理文本内容（保持原有的复杂转义逻辑）
         /// </summary>
-        private Token HandleText(CharacterStream stream, LexerState state, CharacterClassifier classifier)
+        private Token HandleText(CharacterStream stream, LexerState _, CharacterClassifier classifier)
         {
             var start = SourceLocation.FromStream(stream);
             var resultBuilder = new StringBuilder(64);

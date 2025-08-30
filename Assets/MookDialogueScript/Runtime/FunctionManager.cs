@@ -298,8 +298,6 @@ namespace MookDialogueScript
                 // 构建并注册函数签名
                 var signature = CreateFunctionSignature(name, function.Method, function.Target);
                 _functionSignatures[name] = signature;
-
-                MLogger.Info($"成功注册函数：{signature.FormatSignature()}（来源：{signature.SourceType}）");
             }
             finally
             {

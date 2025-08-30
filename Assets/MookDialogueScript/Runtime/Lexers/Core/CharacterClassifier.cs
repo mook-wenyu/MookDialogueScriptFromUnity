@@ -98,5 +98,14 @@ namespace MookDialogueScript.Lexers
         {
             return c is '\n' or '\r' or '\0';
         }
+
+        /// <summary>
+        /// 空格或缩进字符检查
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool IsSpaceOrIndent(char c)
+        {
+            return c is ' ' or '\t';
+        }
     }
 }

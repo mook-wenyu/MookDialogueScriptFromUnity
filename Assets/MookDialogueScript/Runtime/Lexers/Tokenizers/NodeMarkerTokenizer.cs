@@ -8,7 +8,6 @@ namespace MookDialogueScript.Lexers
     /// </summary>
     public class NodeMarkerTokenizer : ITokenizer
     {
-        public int Priority => 900;
         public string Description => "节点标记Token处理器";
         public TokenType[] SupportedTokenTypes => new[] {TokenType.NODE_START, TokenType.NODE_END};
 

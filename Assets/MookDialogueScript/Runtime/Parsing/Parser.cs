@@ -286,8 +286,7 @@ namespace MookDialogueScript.Parsing
                 if (_tokenBuffer.Check(TokenType.IF))
                 {
                     _tokenBuffer.Advance();
-                    var (expr, _) = _expressionParser.ParseExpression(
-                        new List<Token>(), _tokenBuffer.Position);
+                    var (expr, _) = _expressionParser.ParseExpression();
                     condition = expr;
                 }
                 _tokenBuffer.Consume(TokenType.COMMAND_END);
@@ -314,8 +313,7 @@ namespace MookDialogueScript.Parsing
             _tokenBuffer.Consume(TokenType.COMMAND_START);
             _tokenBuffer.Consume(TokenType.IF);
 
-            var (condition, _) = _expressionParser.ParseExpression(
-                new List<Token>(), _tokenBuffer.Position);
+            var (condition, _) = _expressionParser.ParseExpression();
 
             _tokenBuffer.Consume(TokenType.COMMAND_END);
 
@@ -329,8 +327,7 @@ namespace MookDialogueScript.Parsing
                 _tokenBuffer.Consume(TokenType.COMMAND_START);
                 _tokenBuffer.Consume(TokenType.ELIF);
 
-                var (elifCondition, _) = _expressionParser.ParseExpression(
-                    new List<Token>(), _tokenBuffer.Position);
+                var (elifCondition, _) = _expressionParser.ParseExpression();
 
                 _tokenBuffer.Consume(TokenType.COMMAND_END);
 
@@ -496,8 +493,7 @@ namespace MookDialogueScript.Parsing
             int column = _tokenBuffer.Current.Column;
 
             _tokenBuffer.Consume(TokenType.LEFT_BRACE);
-            var (expr, tokensConsumed) = _expressionParser.ParseExpression(
-                new List<Token>(), _tokenBuffer.Position);
+            var (expr, tokensConsumed) = _expressionParser.ParseExpression();
             _tokenBuffer.Consume(TokenType.RIGHT_BRACE);
 
             return (new InterpolationNode(expr, line, column), tokensConsumed + 2);
@@ -588,16 +584,14 @@ namespace MookDialogueScript.Parsing
                 _tokenBuffer.Advance();
             }
 
-            var (value, _) = _expressionParser.ParseExpression(
-                new List<Token>(), _tokenBuffer.Position);
+            var (value, _) = _expressionParser.ParseExpression();
 
             return new VarCommandNode(variable, value, operation, line, column);
         }
 
         private WaitCommandNode ParseWaitCommand(int line, int column)
         {
-            var (duration, _) = _expressionParser.ParseExpression(
-                new List<Token>(), _tokenBuffer.Position);
+            var (duration, _) = _expressionParser.ParseExpression();
             return new WaitCommandNode(duration, line, column);
         }
 
@@ -611,8 +605,7 @@ namespace MookDialogueScript.Parsing
                 _tokenBuffer.Advance();
             }
 
-            var (initialValue, _) = _expressionParser.ParseExpression(
-                new List<Token>(), _tokenBuffer.Position);
+            var (initialValue, _) = _expressionParser.ParseExpression();
 
             return new VarCommandNode(varName, initialValue, "var", line, column);
         }
@@ -627,8 +620,7 @@ namespace MookDialogueScript.Parsing
         private CallCommandNode ParseCallCommand(int line, int column)
         {
             _tokenBuffer.GoBack(); // 回退到IDENTIFIER
-            var (expression, _) = _expressionParser.ParseExpression(
-                new List<Token>(), _tokenBuffer.Position);
+            var (expression, _) = _expressionParser.ParseExpression();
 
             if (expression is CallExpressionNode callExpr)
             {

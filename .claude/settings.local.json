@@ -38,7 +38,12 @@
       "mcp__code-search__qdrant-store",
       "Bash(claude -c)",
       "Bash(claude --continue)",
-      "Bash(claude)"
+      "Bash(claude)",
+      "Bash(claude mcp:*)",
+      "mcp__memory__read_graph",
+      "mcp__memory__create_entities",
+      "Read(C:\\Users\\WenYu\\.claude/**)",
+      "WebSearch"
     ],
     "deny": [],
     "ask": [],

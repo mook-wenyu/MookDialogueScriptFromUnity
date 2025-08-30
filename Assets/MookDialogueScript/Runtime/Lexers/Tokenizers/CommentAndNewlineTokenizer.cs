@@ -7,13 +7,12 @@ namespace MookDialogueScript.Lexers
     /// </summary>
     public class CommentAndNewlineTokenizer : ITokenizer
     {
-        public int Priority => 1000;
-
         public string Description => "注释和换行Token处理器";
         public TokenType[] SupportedTokenTypes => new[] {TokenType.NEWLINE, TokenType.EOF};
 
         /// <summary>
         /// 快速判断是否为注释或换行起始
+        /// 增强：支持检测含空格的空行
         /// </summary>
         public bool CanHandle(CharacterStream stream, LexerState state, CharacterClassifier classifier)
         {
@@ -25,11 +24,26 @@ namespace MookDialogueScript.Lexers
             if (stream.IsNewlineMark())
                 return true;
 
+            // 新增：检测空白开头的行（可能是空行）
+            if (stream.IsSpaceOrIndentMark())
+            {
+                // 预读到行尾，检查是否只有空白+换行
+                int pos = stream.Position;
+                char c = stream.GetCharAt(pos);
+                while (classifier.IsSpaceOrIndent(c))
+                {
+                    pos++;
+                    c = stream.GetCharAt(pos);
+                }
+                // 如果紧接着是换行符或EOF，则这是空行
+                return classifier.IsNewlineOrEOF(c);
+            }
+
             return false;
         }
 
         /// <summary>
-        /// 处理注释和换行Token（保持原有复杂逻辑）
+        /// 处理注释和换行Token
         /// </summary>
         public Token TryTokenize(CharacterStream stream, LexerState state, CharacterClassifier classifier)
         {
@@ -37,7 +51,7 @@ namespace MookDialogueScript.Lexers
         }
 
         /// <summary>
-        /// 处理换行字符、跳过连续的换行和注释行（保持原有逻辑）
+        /// 处理换行字符、跳过连续的换行和注释行
         /// 复杂的逻辑：折叠连续的空行和注释行为一个NEWLINE Token
         /// </summary>
         private Token HandleNewlineAndComments(CharacterStream stream, LexerState state, CharacterClassifier classifier)

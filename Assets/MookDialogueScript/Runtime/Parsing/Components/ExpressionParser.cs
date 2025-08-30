@@ -35,82 +35,52 @@ namespace MookDialogueScript.Parsing
         /// <summary>
         /// 解析表达式
         /// </summary>
-        public (ExpressionNode expression, int tokensConsumed) ParseExpression(
-            List<Token> tokens, int startIndex, int endIndex = -1)
+        public (ExpressionNode expression, int tokensConsumed) ParseExpression()
         {
-            return ParseExpressionWithPrecedence(tokens, startIndex, 0, endIndex);
+            return ParseExpressionWithPrecedence(0);
         }
 
         /// <summary>
         /// 解析带优先级的表达式
         /// </summary>
-        public (ExpressionNode expression, int tokensConsumed) ParseExpressionWithPrecedence(
-            List<Token> tokens, int startIndex, int minPrecedence, int endIndex = -1)
+        public (ExpressionNode expression, int tokensConsumed) ParseExpressionWithPrecedence(int minPrecedence)
         {
-            if (tokens == null || startIndex >= tokens.Count)
-                throw new ArgumentException("Invalid tokens or start index");
+            if (_tokenBuffer.IsAtEnd)
+                throw new InvalidOperationException("意外的文件结束，期望表达式");
 
-            var originalPosition = _tokenBuffer.Position;
-            _tokenBuffer.Seek(startIndex);
-            
-            try
-            {
-                var result = ParseExpressionWithPrecedenceInternal(minPrecedence);
-                var tokensConsumed = _tokenBuffer.Position - startIndex;
-                return (result, tokensConsumed);
-            }
-            finally
-            {
-                _tokenBuffer.Seek(originalPosition);
-            }
+            var startPosition = _tokenBuffer.Position;
+            var result = ParseExpressionWithPrecedenceInternal(minPrecedence);
+            var tokensConsumed = _tokenBuffer.Position - startPosition;
+            return (result, tokensConsumed);
         }
 
         /// <summary>
         /// 解析主表达式
         /// </summary>
-        public (ExpressionNode expression, int tokensConsumed) ParsePrimary(List<Token> tokens, int startIndex)
+        public (ExpressionNode expression, int tokensConsumed) ParsePrimary()
         {
-            if (tokens == null || startIndex >= tokens.Count)
-                throw new ArgumentException("Invalid tokens or start index");
+            if (_tokenBuffer.IsAtEnd)
+                throw new InvalidOperationException("意外的文件结束，期望主表达式");
 
-            var originalPosition = _tokenBuffer.Position;
-            _tokenBuffer.Seek(startIndex);
-            
-            try
-            {
-                var result = ParsePrimaryInternal();
-                var tokensConsumed = _tokenBuffer.Position - startIndex;
-                return (result, tokensConsumed);
-            }
-            finally
-            {
-                _tokenBuffer.Seek(originalPosition);
-            }
+            var startPosition = _tokenBuffer.Position;
+            var result = ParsePrimaryInternal();
+            var tokensConsumed = _tokenBuffer.Position - startPosition;
+            return (result, tokensConsumed);
         }
 
         /// <summary>
         /// 解析后缀链
         /// </summary>
-        public (ExpressionNode expression, int tokensConsumed) ParsePostfixChain(
-            ExpressionNode baseExpr, List<Token> tokens, int startIndex, int endIndex = -1)
+        public (ExpressionNode expression, int tokensConsumed) ParsePostfixChain(ExpressionNode baseExpr)
         {
             if (baseExpr == null) throw new ArgumentNullException(nameof(baseExpr));
-            if (tokens == null || startIndex >= tokens.Count)
-                throw new ArgumentException("Invalid tokens or start index");
+            if (_tokenBuffer.IsAtEnd)
+                return (baseExpr, 0); // 没有后缀操作，直接返回
 
-            var originalPosition = _tokenBuffer.Position;
-            _tokenBuffer.Seek(startIndex);
-            
-            try
-            {
-                var result = ParsePostfixChainInternal(baseExpr);
-                var tokensConsumed = _tokenBuffer.Position - startIndex;
-                return (result, tokensConsumed);
-            }
-            finally
-            {
-                _tokenBuffer.Seek(originalPosition);
-            }
+            var startPosition = _tokenBuffer.Position;
+            var result = ParsePostfixChainInternal(baseExpr);
+            var tokensConsumed = _tokenBuffer.Position - startPosition;
+            return (result, tokensConsumed);
         }
         #endregion
 
