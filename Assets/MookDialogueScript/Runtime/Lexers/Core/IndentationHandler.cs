@@ -21,13 +21,13 @@ namespace MookDialogueScript.Lexers
         public IndentationHandler()
         {
             _indentStack = new Stack<int>();
-            Reset();
+            Init();
         }
 
         /// <summary>
         /// 重置缩进处理器到初始状态
         /// </summary>
-        public void Reset()
+        public void Init()
         {
             _indentStack.Clear();
             _indentStack.Push(0); // 基础缩进层级

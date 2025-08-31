@@ -17,17 +17,10 @@ namespace MookDialogueScript.Editor
     {
         #region 静态字段和配置
         private static IncrementalCacheManager _cacheManager;
-        private static bool _isInitialized = false;
+        private static bool _isInitialized;
 
         // 验证配置
         private const string DIALOGUE_SCRIPT_EXTENSION = ".mds";
-        private const string VALIDATION_LOG_PREFIX = "[对话脚本验证]";
-        private const int MAX_CACHED_RESULTS = 1000;
-
-        // 统计信息
-        private static int _totalValidations = 0;
-        private static int _totalErrors = 0;
-        private static int _totalWarnings = 0;
         #endregion
 
         #region Unity编辑器初始化
@@ -40,12 +33,11 @@ namespace MookDialogueScript.Editor
             if (_isInitialized) return;
 
             _cacheManager = new IncrementalCacheManager();
-            _cacheManager.Initialize();
 
             EditorApplication.delayCall += () =>
             {
+                _cacheManager.Initialize();
                 _isInitialized = true;
-                Debug.Log($"{VALIDATION_LOG_PREFIX} 对话脚本验证器已初始化");
 
                 // 进行初始化验证
                 _ = ValidateAllScriptsAsync();
@@ -119,12 +111,11 @@ namespace MookDialogueScript.Editor
 
             if (scriptPaths.Length > 0)
             {
-                Debug.Log($"{VALIDATION_LOG_PREFIX} 开始验证 {scriptPaths.Length} 个对话脚本文件...");
                 await _cacheManager.ValidateScriptsAsync(scriptPaths);
             }
             else
             {
-                Debug.Log($"{VALIDATION_LOG_PREFIX} 未找到对话脚本文件");
+                Debug.Log("[对话脚本验证] 未找到对话脚本文件");
             }
         }
 

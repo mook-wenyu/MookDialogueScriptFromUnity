@@ -4,18 +4,17 @@ using System.Collections.Generic;
 namespace MookDialogueScript.Lexers
 {
     /// <summary>
-    /// 重构后的词法分析器主类
+    /// 词法分析器主类
     /// 设计原则：组合优于继承 - 通过组合各个专业化组件实现功能
-    /// 保持完全向后兼容的公共API
     /// </summary>
     public class Lexer : IDisposable
     {
         // 组合的核心组件
-        private readonly CharStream _stream;
-        private readonly LexerState _state;
-        private readonly IndentationHandler _indentHandler;
-        private readonly List<ITokenizer> _tokenizers;
-        private readonly List<Token> _tokens;
+        private readonly CharStream _stream = new();
+        private readonly LexerState _state = new();
+        private readonly IndentationHandler _indentHandler = new();
+        private readonly List<ITokenizer> _tokenizers = CreateTokenizers();
+        private readonly List<Token> _tokens = new();
 
         // 同步锁：保持原有的线程安全保障
         private readonly object _syncLock = new();
@@ -24,25 +23,11 @@ namespace MookDialogueScript.Lexers
         private volatile bool _disposed;
 
         /// <summary>
-        /// 默认构造函数 - 使用工厂创建所有组件
-        /// 保持与原有代码的完全兼容性
-        /// </summary>
-        public Lexer()
-        {
-            _stream = new CharStream();
-            _state = new LexerState();
-            _indentHandler = new IndentationHandler();
-            _tokenizers = CreateTokenizers();
-            _tokens = new List<Token>();
-        }
-
-        #region 公共API
-        /// <summary>
-        /// 解析新的源代码字符串
-        /// 重置所有组件状态，准备重新词法分析
+        /// 解析源代码字符串
+        /// 重置所有组件状态，准备词法分析
         /// 获取所有Token
         /// </summary>
-        /// <param name="source">新的源代码字符串</param>
+        /// <param name="source">源代码字符串</param>
         /// <returns>Token列表的独立副本，避免外部引用受Reset影响</returns>
         public List<Token> Tokenize(string source)
         {
@@ -51,10 +36,10 @@ namespace MookDialogueScript.Lexers
             lock (_syncLock)
             {
                 // 重置所有组件
-                _state.Reset();
-                _indentHandler.Reset();
+                _state.Clear();
+                _indentHandler.Init();
                 _tokens.Clear();
-                _stream.Reset(source);
+                _stream.Init(source);
 
                 Token token;
                 do
@@ -67,9 +52,7 @@ namespace MookDialogueScript.Lexers
                 return new List<Token>(_tokens);
             }
         }
-        #endregion
 
-        #region 核心Token生成逻辑
         /// <summary>
         /// 创建所有Token处理器，优先级从高到低
         /// </summary>
@@ -179,9 +162,7 @@ namespace MookDialogueScript.Lexers
             // 文件结束
             return TokenFactory.EOFToken(_stream.Line, _stream.Column);
         }
-        #endregion
 
-        #region 辅助方法
         /// <summary>
         /// 判断是否应该跳过空白字符
         /// </summary>
@@ -234,35 +215,7 @@ namespace MookDialogueScript.Lexers
 
             return isCommentLine || isEmptyLine;
         }
-        #endregion
 
-        #region 调试和诊断支持
-        /// <summary>
-        /// 获取当前词法分析器状态信息（用于调试）
-        /// </summary>
-        public string GetStateInfo()
-        {
-            return $"Position: {_stream.Position}, Line: {_stream.Line}, Column: {_stream.Column}, " +
-                   $"InNodeContent: {_state.IsInNodeContent}, InCommandMode: {_state.IsInCommandMode}, " +
-                   $"InStringMode: {_state.IsInStringMode}, InInterpolation: {_state.IsInInterpolation}, " +
-                   $"IndentLevel: {_indentHandler.CurrentIndentLevel}";
-        }
-
-        /// <summary>
-        /// 获取已注册的Token处理器信息
-        /// </summary>
-        public List<string> GetTokenizerInfo()
-        {
-            var info = new List<string>();
-            foreach (var tokenizer in _tokenizers)
-            {
-                info.Add($"{tokenizer.GetType().Name} {tokenizer.Description}");
-            }
-            return info;
-        }
-        #endregion
-
-        #region IDisposable 实现
         /// <summary>
         /// 释放Lexer实例占用的资源
         /// </summary>
@@ -328,6 +281,5 @@ namespace MookDialogueScript.Lexers
         {
             Dispose(false);
         }
-        #endregion
     }
 }

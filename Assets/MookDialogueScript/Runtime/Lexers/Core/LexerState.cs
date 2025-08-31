@@ -44,24 +44,6 @@ namespace MookDialogueScript.Lexers
             set => _stringQuoteType = value;
         }
 
-        public LexerState()
-        {
-            Reset();
-        }
-
-        /// <summary>
-        /// 重置所有状态到初始值
-        /// </summary>
-        public void Reset()
-        {
-            // 初始化状态标志
-            _isInNodeContent = false;
-            _isInCommandMode = false;
-            _isInStringMode = false;
-            _isInInterpolation = false;
-            _stringQuoteType = '\0';
-        }
-
         /// <summary>
         /// 创建当前状态的副本
         /// </summary>

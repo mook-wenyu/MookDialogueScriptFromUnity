@@ -31,24 +31,9 @@ namespace MookDialogueScript.Incremental
         public bool IsSuccess { get; private set; }
 
         /// <summary>
-        /// 解析器版本信息
+        /// 脚本内容哈希值
         /// </summary>
-        public string ParserVersion { get; private set; } = string.Empty;
-
-        /// <summary>
-        /// 缓存创建时间
-        /// </summary>
-        public DateTime CacheCreatedTime { get; private set; } = DateTime.UtcNow;
-
-        /// <summary>
-        /// 缓存访问次数
-        /// </summary>
-        public int AccessCount { get; private set; }
-
-        /// <summary>
-        /// 最后访问时间
-        /// </summary>
-        public DateTime LastAccessTime { get; private set; } = DateTime.UtcNow;
+        public string ContentHash { get; private set; }
 
         /// <summary>
         /// 创建成功的解析结果
@@ -56,13 +41,13 @@ namespace MookDialogueScript.Incremental
         /// <param name="filePath">文件路径</param>
         /// <param name="tokens">Token列表</param>
         /// <param name="scriptNode">脚本节点</param>
-        /// <param name="parserVersion">解析器版本</param>
+        /// <param name="contentHash"></param>
         /// <returns>成功的解析结果</returns>
         public static ParseResult CreateSuccess(
             string filePath,
             List<Token> tokens,
             ScriptNode scriptNode,
-            string parserVersion)
+            string contentHash)
         {
             return new ParseResult
             {
@@ -70,7 +55,7 @@ namespace MookDialogueScript.Incremental
                 Tokens = tokens ?? new List<Token>(),
                 ScriptNode = scriptNode,
                 IsSuccess = true,
-                ParserVersion = parserVersion,
+                ContentHash = contentHash
             };
         }
 
@@ -78,7 +63,7 @@ namespace MookDialogueScript.Incremental
         /// 克隆当前解析结果
         /// </summary>
         /// <returns>克隆的解析结果实例</returns>
-        private ParseResult Clone()
+        public ParseResult Clone()
         {
             return new ParseResult
             {
@@ -86,10 +71,7 @@ namespace MookDialogueScript.Incremental
                 Tokens = new List<Token>(this.Tokens),
                 ScriptNode = this.ScriptNode,
                 IsSuccess = this.IsSuccess,
-                ParserVersion = this.ParserVersion,
-                CacheCreatedTime = this.CacheCreatedTime,
-                AccessCount = this.AccessCount,
-                LastAccessTime = this.LastAccessTime
+                ContentHash = this.ContentHash,
             };
         }
     }

@@ -11,31 +11,24 @@ namespace MookDialogueScript.Parsing
     /// </summary>
     public class ExpressionParser : IExpressionParser
     {
-        #region 字段
-        private readonly NodeCacheManager _nodeCache;
         private readonly ITokenBuffer _tokenBuffer;
-        
+
         // 字符串构建器池（线程本地）
         [ThreadStatic]
         private static System.Text.StringBuilder _cachedStringBuilder;
-        #endregion
 
-        #region 构造函数
         /// <summary>
         /// 创建表达式解析器
         /// </summary>
-        public ExpressionParser(NodeCacheManager nodeCache, ITokenBuffer tokenBuffer)
+        public ExpressionParser(ITokenBuffer tokenBuffer)
         {
-            _nodeCache = nodeCache ?? throw new ArgumentNullException(nameof(nodeCache));
             _tokenBuffer = tokenBuffer ?? throw new ArgumentNullException(nameof(tokenBuffer));
         }
-        #endregion
 
-        #region IExpressionParser 实现
         /// <summary>
         /// 解析表达式
         /// </summary>
-        public (ExpressionNode expression, int tokensConsumed) ParseExpression()
+        public ExpressionNode ParseExpression()
         {
             return ParseExpressionWithPrecedence(0);
         }
@@ -43,48 +36,46 @@ namespace MookDialogueScript.Parsing
         /// <summary>
         /// 解析带优先级的表达式
         /// </summary>
-        public (ExpressionNode expression, int tokensConsumed) ParseExpressionWithPrecedence(int minPrecedence)
+        public ExpressionNode ParseExpressionWithPrecedence(int minPrecedence)
         {
             if (_tokenBuffer.IsAtEnd)
-                throw new InvalidOperationException("意外的文件结束，期望表达式");
+            {
+                MLogger.Error("意外的文件结束，期望表达式");
+                return null;
+            }
 
-            var startPosition = _tokenBuffer.Position;
             var result = ParseExpressionWithPrecedenceInternal(minPrecedence);
-            var tokensConsumed = _tokenBuffer.Position - startPosition;
-            return (result, tokensConsumed);
+            return result;
         }
 
         /// <summary>
         /// 解析主表达式
         /// </summary>
-        public (ExpressionNode expression, int tokensConsumed) ParsePrimary()
+        public ExpressionNode ParsePrimary()
         {
             if (_tokenBuffer.IsAtEnd)
-                throw new InvalidOperationException("意外的文件结束，期望主表达式");
+            {
+                MLogger.Error("意外的文件结束，期望主表达式");
+                return null;
+            }
 
-            var startPosition = _tokenBuffer.Position;
             var result = ParsePrimaryInternal();
-            var tokensConsumed = _tokenBuffer.Position - startPosition;
-            return (result, tokensConsumed);
+            return result;
         }
 
         /// <summary>
         /// 解析后缀链
         /// </summary>
-        public (ExpressionNode expression, int tokensConsumed) ParsePostfixChain(ExpressionNode baseExpr)
+        public ExpressionNode ParsePostfixChain(ExpressionNode baseExpr)
         {
             if (baseExpr == null) throw new ArgumentNullException(nameof(baseExpr));
             if (_tokenBuffer.IsAtEnd)
-                return (baseExpr, 0); // 没有后缀操作，直接返回
+                return baseExpr; // 没有后缀操作，直接返回
 
-            var startPosition = _tokenBuffer.Position;
             var result = ParsePostfixChainInternal(baseExpr);
-            var tokensConsumed = _tokenBuffer.Position - startPosition;
-            return (result, tokensConsumed);
+            return result;
         }
-        #endregion
 
-        #region 私有解析方法
         /// <summary>
         /// 解析带优先级的表达式（内部实现）
         /// </summary>
@@ -96,7 +87,7 @@ namespace MookDialogueScript.Parsing
             // 处理二元运算符
             while (true)
             {
-                if (!TryGetBinaryPrecedence(_tokenBuffer.Current.Type, out int precedence) 
+                if (!TryGetBinaryPrecedence(_tokenBuffer.Current.Type, out int precedence)
                     || precedence < minPrecedence)
                 {
                     break;
@@ -145,32 +136,31 @@ namespace MookDialogueScript.Parsing
         private ExpressionNode ParsePrimaryInternal()
         {
             var token = _tokenBuffer.Current;
-            
+
             switch (token.Type)
             {
                 case TokenType.NUMBER:
                     _tokenBuffer.Advance();
-                    return _nodeCache.GetOrCreateNumberNode(
-                        double.Parse(token.Value), token.Line, token.Column);
+                    return new NumberNode(double.Parse(token.Value), token.Line, token.Column);
 
                 case TokenType.QUOTE:
                     return ParseStringInternal(token);
 
                 case TokenType.TRUE:
                     _tokenBuffer.Advance();
-                    return _nodeCache.GetOrCreateBooleanNode(true, token.Line, token.Column);
+                    return new BooleanNode(true, token.Line, token.Column);
 
                 case TokenType.FALSE:
                     _tokenBuffer.Advance();
-                    return _nodeCache.GetOrCreateBooleanNode(false, token.Line, token.Column);
+                    return new BooleanNode(false, token.Line, token.Column);
 
                 case TokenType.VARIABLE:
                     _tokenBuffer.Advance();
-                    return _nodeCache.GetOrCreateVariableNode(token.Value, token.Line, token.Column);
+                    return new VariableNode(token.Value, token.Line, token.Column);
 
                 case TokenType.IDENTIFIER:
                     _tokenBuffer.Advance();
-                    return _nodeCache.GetOrCreateIdentifierNode(token.Value, token.Line, token.Column);
+                    return new IdentifierNode(token.Value, token.Line, token.Column);
 
                 case TokenType.LEFT_PAREN:
                     _tokenBuffer.Advance();
@@ -179,8 +169,8 @@ namespace MookDialogueScript.Parsing
                     return expr;
 
                 default:
-                    throw new InvalidOperationException(
-                        $"语法错误: 第{token.Line}行，第{token.Column}列，意外的符号 {token.Type}");
+                    MLogger.Error($"语法错误: 第{token.Line}行，第{token.Column}列，意外的符号 {token.Type}");
+                    return null;
             }
         }
 
@@ -235,7 +225,7 @@ namespace MookDialogueScript.Parsing
                 {
                     if (sb.Length > 0)
                     {
-                        TrimEndStringBuilder(sb);
+                        TrimStringBuilder(sb);
                         if (sb.Length > 0)
                             segments.Add(new TextNode(sb.ToString(), _tokenBuffer.Current.Line, _tokenBuffer.Current.Column));
                         sb.Clear();
@@ -251,7 +241,7 @@ namespace MookDialogueScript.Parsing
 
             if (sb.Length > 0)
             {
-                TrimEndStringBuilder(sb);
+                TrimStringBuilder(sb);
                 if (sb.Length > 0)
                     segments.Add(new TextNode(sb.ToString(), _tokenBuffer.Current.Line, _tokenBuffer.Current.Column));
             }
@@ -269,11 +259,11 @@ namespace MookDialogueScript.Parsing
         {
             int line = _tokenBuffer.Current.Line;
             int column = _tokenBuffer.Current.Column;
-            
+
             _tokenBuffer.Consume(TokenType.LEFT_BRACE);
             var expr = ParseExpressionWithPrecedenceInternal(0);
             _tokenBuffer.Consume(TokenType.RIGHT_BRACE);
-            
+
             return new InterpolationNode(expr, line, column);
         }
 
@@ -284,9 +274,9 @@ namespace MookDialogueScript.Parsing
         {
             var line = _tokenBuffer.Current.Line;
             var column = _tokenBuffer.Current.Column;
-            
+
             _tokenBuffer.Consume(TokenType.LEFT_PAREN);
-            
+
             var parameters = new List<ExpressionNode>();
             if (!_tokenBuffer.Check(TokenType.RIGHT_PAREN))
             {
@@ -296,9 +286,9 @@ namespace MookDialogueScript.Parsing
                     parameters.Add(ParseExpressionWithPrecedenceInternal(0));
                 }
             }
-            
+
             _tokenBuffer.Consume(TokenType.RIGHT_PAREN);
-            
+
             return new CallExpressionNode(function, parameters, line, column);
         }
 
@@ -309,18 +299,18 @@ namespace MookDialogueScript.Parsing
         {
             var line = _tokenBuffer.Current.Line;
             var column = _tokenBuffer.Current.Column;
-            
+
             _tokenBuffer.Consume(TokenType.DOT);
-            
+
             if (_tokenBuffer.Current.Type != TokenType.IDENTIFIER)
             {
-                throw new InvalidOperationException(
-                    $"语法错误: 第{_tokenBuffer.Current.Line}行，第{_tokenBuffer.Current.Column}列，期望标识符");
+                MLogger.Error($"语法错误: 第{_tokenBuffer.Current.Line}行，第{_tokenBuffer.Current.Column}列，期望标识符");
+                return null;
             }
-            
+
             var memberName = _tokenBuffer.Current.Value;
             _tokenBuffer.Advance();
-            
+
             return new MemberAccessNode(obj, memberName, line, column);
         }
 
@@ -331,16 +321,14 @@ namespace MookDialogueScript.Parsing
         {
             var line = _tokenBuffer.Current.Line;
             var column = _tokenBuffer.Current.Column;
-            
+
             _tokenBuffer.Consume(TokenType.LEFT_BRACKET);
             var indexExpr = ParseExpressionWithPrecedenceInternal(0);
             _tokenBuffer.Consume(TokenType.RIGHT_BRACKET);
-            
+
             return new IndexAccessNode(obj, indexExpr, line, column);
         }
-        #endregion
 
-        #region 辅助方法
         /// <summary>
         /// 获取二元运算符优先级
         /// </summary>
@@ -385,7 +373,7 @@ namespace MookDialogueScript.Parsing
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool IsUnaryOperator(TokenType type)
         {
-            return type == TokenType.NOT || type == TokenType.MINUS;
+            return type is TokenType.NOT or TokenType.MINUS;
         }
 
         /// <summary>
@@ -410,28 +398,59 @@ namespace MookDialogueScript.Parsing
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static void ReturnStringBuilder(System.Text.StringBuilder sb)
         {
-            if (sb != null && sb.Capacity <= 1024 * 8)
+            if (sb is {Capacity: <= 1024 * 8})
             {
                 _cachedStringBuilder = sb;
             }
         }
 
         /// <summary>
-        /// 去除StringBuilder末尾空白
+        /// 去除StringBuilder首尾空白
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static void TrimEndStringBuilder(System.Text.StringBuilder sb)
+        private static void TrimStringBuilder(System.Text.StringBuilder sb)
         {
             if (sb.Length == 0) return;
 
+            int start = 0;
             int end = sb.Length - 1;
-            while (end >= 0 && (sb[end] == ' ' || sb[end] == '\t'))
+
+            // 去除前导空白（空格和制表符）
+            while (start <= end && (sb[start] == ' ' || sb[start] == '\t'))
+            {
+                start++;
+            }
+
+            // 去除末尾空白（空格和制表符）
+            while (end >= start && (sb[end] == ' ' || sb[end] == '\t'))
             {
                 end--;
             }
 
-            sb.Length = end + 1;
+            if (start == 0 && end == sb.Length - 1)
+            {
+                // 无需修改
+                return;
+            }
+
+            if (start > end)
+            {
+                // 全部被去掉
+                sb.Clear();
+                return;
+            }
+
+            int newLen = end - start + 1;
+
+            if (start > 0)
+            {
+                // 将中间内容前移
+                for (int i = 0; i < newLen; i++)
+                    sb[i] = sb[start + i];
+            }
+
+            sb.Length = newLen;
         }
-        #endregion
+
     }
 }

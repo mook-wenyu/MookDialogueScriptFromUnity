@@ -5,20 +5,16 @@ using System.Runtime.CompilerServices;
 namespace MookDialogueScript.Parsing
 {
     /// <summary>
-    /// Token缓冲区管理器
+    /// Token缓冲区
     /// 专门负责Token的访问、导航和缓冲管理
     /// 提供快照功能用于错误恢复和回溯
     /// </summary>
-    public class TokenBufferManager : ITokenBuffer
+    public class TokenBuffer : ITokenBuffer
     {
-        #region 字段
         private List<Token> _tokens;
         private int _position;
         private Token _current;
-        private readonly Stack<int> _snapshots;
-        #endregion
 
-        #region 属性
         /// <summary>
         /// 当前Token
         /// </summary>
@@ -38,36 +34,15 @@ namespace MookDialogueScript.Parsing
         /// 是否到达结束
         /// </summary>
         public bool IsAtEnd => _position >= (_tokens?.Count ?? 0) || _current.Type == TokenType.EOF;
-        #endregion
 
-        #region 构造函数
-        /// <summary>
-        /// 创建Token缓冲区管理器
-        /// </summary>
-        public TokenBufferManager()
-        {
-            _snapshots = new Stack<int>();
-        }
-
-        /// <summary>
-        /// 使用指定Token列表创建缓冲区管理器
-        /// </summary>
-        public TokenBufferManager(List<Token> tokens) : this()
-        {
-            Reset(tokens);
-        }
-        #endregion
-
-        #region ITokenBuffer 实现
         /// <summary>
         /// 重置Token缓冲区
         /// </summary>
-        public void Reset(List<Token> tokens)
+        public void Init(List<Token> tokens)
         {
             _tokens = tokens ?? throw new ArgumentNullException(nameof(tokens));
             _position = 0;
-            _snapshots.Clear();
-            
+
             UpdateCurrentToken();
         }
 
@@ -104,7 +79,7 @@ namespace MookDialogueScript.Parsing
         {
             if (position < 0 || position >= _tokens.Count)
                 throw new ArgumentOutOfRangeException(nameof(position));
-                
+
             _position = position;
             UpdateCurrentToken();
         }
@@ -120,7 +95,7 @@ namespace MookDialogueScript.Parsing
             {
                 return _tokens[targetPos];
             }
-            
+
             // 超出范围返回EOF Token
             var lastToken = _tokens.Count > 0 ? _tokens[^1] : Token.Empty;
             return new Token(TokenType.EOF, string.Empty, lastToken.Line, lastToken.Column);
@@ -161,12 +136,10 @@ namespace MookDialogueScript.Parsing
             else if (_current.Type == TokenType.EOF && type == TokenType.NEWLINE)
             {
                 // 文件结束时期望换行符是合法的
-                return;
             }
             else
             {
-                throw new InvalidOperationException(
-                    $"语法错误: 第{_current.Line}行，第{_current.Column}列，期望 {type}，但得到 {_current.Type}");
+                MLogger.Error($"语法错误: 第{_current.Line}行，第{_current.Column}列，期望 {type}，但得到 {_current.Type}");
             }
         }
 
@@ -184,7 +157,7 @@ namespace MookDialogueScript.Parsing
                 {
                     return; // 找到目标Token
                 }
-                
+
                 Advance();
                 advance++;
             }
@@ -195,30 +168,6 @@ namespace MookDialogueScript.Parsing
             }
         }
 
-        /// <summary>
-        /// 创建当前位置的快照
-        /// </summary>
-        public int CreateSnapshot()
-        {
-            _snapshots.Push(_position);
-            return _snapshots.Count - 1; // 返回快照ID
-        }
-
-        /// <summary>
-        /// 恢复到快照位置
-        /// </summary>
-        public void RestoreSnapshot(int snapshotId)
-        {
-            if (_snapshots.Count == 0)
-                throw new InvalidOperationException("没有可用的快照");
-                
-            // 简化实现：恢复到最近的快照
-            var savedPosition = _snapshots.Pop();
-            Seek(savedPosition);
-        }
-        #endregion
-
-        #region 私有方法
         /// <summary>
         /// 更新当前Token
         /// </summary>
@@ -249,34 +198,12 @@ namespace MookDialogueScript.Parsing
             }
             return false;
         }
-        #endregion
 
-        #region 调试支持
-        /// <summary>
-        /// 获取当前缓冲区状态信息
-        /// </summary>
-        public string GetStateInfo()
+        public void Dispose()
         {
-            return $"Position: {_position}/{Count}, Current: {_current.Type}({_current.Value}), " +
-                   $"Line: {_current.Line}, Column: {_current.Column}, Snapshots: {_snapshots.Count}";
+            _tokens = null;
+            _position = 0;
+            _current = null;
         }
-
-        /// <summary>
-        /// 获取周围Token的上下文
-        /// </summary>
-        public List<Token> GetContext(int radius = 5)
-        {
-            var context = new List<Token>();
-            var start = Math.Max(0, _position - radius);
-            var end = Math.Min(_tokens.Count - 1, _position + radius);
-
-            for (int i = start; i <= end; i++)
-            {
-                context.Add(_tokens[i]);
-            }
-
-            return context;
-        }
-        #endregion
     }
 }

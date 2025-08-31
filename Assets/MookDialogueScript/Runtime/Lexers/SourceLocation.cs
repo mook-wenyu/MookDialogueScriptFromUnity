@@ -13,11 +13,6 @@ namespace MookDialogueScript.Lexers
         public static readonly SourceLocation None = new(-1, -1, -1);
 
         /// <summary>
-        /// 获取表示起始位置的默认值
-        /// </summary>
-        public static SourceLocation Start => new(0, 1, 1);
-
-        /// <summary>
         /// 字符位置（从0开始）
         /// </summary>
         public int Position { get; }

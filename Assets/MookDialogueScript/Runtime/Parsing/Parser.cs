@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using System.Text;
 
 namespace MookDialogueScript.Parsing
 {
@@ -11,31 +12,22 @@ namespace MookDialogueScript.Parsing
     /// </summary>
     public class Parser : IDisposable
     {
-        #region 组合组件
         private readonly ITokenBuffer _tokenBuffer;
         private readonly IExpressionParser _expressionParser;
-        private readonly NodeCacheManager _nodeCache;
         private readonly ParseContext _context;
-        #endregion
 
-        #region 解析状态
         private bool _disposed;
-        #endregion
 
-        #region 构造函数
         /// <summary>
         /// 使用默认组件创建解析器
         /// </summary>
         public Parser()
         {
-            _nodeCache = new NodeCacheManager();
-            _tokenBuffer = new TokenBufferManager();
-            _expressionParser = new ExpressionParser(_nodeCache, _tokenBuffer);
+            _tokenBuffer = new TokenBuffer();
             _context = new ParseContext();
+            _expressionParser = new ExpressionParser(_tokenBuffer);
         }
-        #endregion
 
-        #region Parser 实现
         /// <summary>
         /// 解析Token列表生成AST
         /// </summary>
@@ -44,10 +36,13 @@ namespace MookDialogueScript.Parsing
             ThrowIfDisposed();
 
             if (tokens == null || tokens.Count == 0)
-                throw new ArgumentException("Token列表不能为空", nameof(tokens));
+            {
+                MLogger.Error("Token列表不能为空");
+                return null;
+            }
 
             _context.Clear();
-            _tokenBuffer.Reset(tokens);
+            _tokenBuffer.Init(tokens);
 
             var nodes = new List<NodeDefinitionNode>();
 
@@ -64,26 +59,6 @@ namespace MookDialogueScript.Parsing
         }
 
         /// <summary>
-        /// 获取缓存统计信息
-        /// </summary>
-        public Dictionary<string, object> GetCacheStatistics()
-        {
-            ThrowIfDisposed();
-            return _nodeCache.GetStatistics();
-        }
-
-        /// <summary>
-        /// 清理缓存
-        /// </summary>
-        public void ClearCache()
-        {
-            ThrowIfDisposed();
-            _nodeCache.Clear();
-        }
-        #endregion
-
-        #region 主要解析方法
-        /// <summary>
         /// 解析节点定义
         /// </summary>
         private NodeDefinitionNode ParseNodeDefinition()
@@ -94,8 +69,8 @@ namespace MookDialogueScript.Parsing
             // 需要有节点开始标记
             if (!_tokenBuffer.Check(TokenType.NODE_START))
             {
-                throw new InvalidOperationException(
-                    $"语法错误: 第{_tokenBuffer.Current.Line}行，第{_tokenBuffer.Current.Column}列，缺少节点开始标记 ---");
+                MLogger.Error($"语法错误: 第{_tokenBuffer.Current.Line}行，第{_tokenBuffer.Current.Column}列，预期节点开始标记 ---");
+                return null;
             }
 
             int line = _tokenBuffer.Current.Line;
@@ -124,8 +99,8 @@ namespace MookDialogueScript.Parsing
 
             if (!_tokenBuffer.Check(TokenType.NODE_END))
             {
-                throw new InvalidOperationException(
-                    $"语法错误: 第{_tokenBuffer.Current.Line}行，第{_tokenBuffer.Current.Column}列，缺少节点结束标记 ===");
+                MLogger.Error($"语法错误: 第{_tokenBuffer.Current.Line}行，第{_tokenBuffer.Current.Column}列，缺少节点结束标记 ===");
+                return null;
             }
             _tokenBuffer.Consume(TokenType.NODE_END);
 
@@ -156,7 +131,7 @@ namespace MookDialogueScript.Parsing
                     _tokenBuffer.Advance();
                     _tokenBuffer.Consume(TokenType.METADATA_SEPARATOR);
 
-                    var valueBuilder = new System.Text.StringBuilder();
+                    var valueBuilder = new StringBuilder();
                     while (!_tokenBuffer.Check(TokenType.NEWLINE) && !_tokenBuffer.IsAtEnd)
                     {
                         valueBuilder.Append(_tokenBuffer.Current.Value);
@@ -262,7 +237,7 @@ namespace MookDialogueScript.Parsing
                 if (_tokenBuffer.Check(TokenType.IF))
                 {
                     _tokenBuffer.Advance();
-                    var (expr, _) = _expressionParser.ParseExpression();
+                    var expr = _expressionParser.ParseExpression();
                     condition = expr;
                 }
                 _tokenBuffer.Consume(TokenType.COMMAND_END);
@@ -289,7 +264,7 @@ namespace MookDialogueScript.Parsing
             _tokenBuffer.Consume(TokenType.COMMAND_START);
             _tokenBuffer.Consume(TokenType.IF);
 
-            var (condition, _) = _expressionParser.ParseExpression();
+            var condition = _expressionParser.ParseExpression();
 
             _tokenBuffer.Consume(TokenType.COMMAND_END);
 
@@ -303,7 +278,7 @@ namespace MookDialogueScript.Parsing
                 _tokenBuffer.Consume(TokenType.COMMAND_START);
                 _tokenBuffer.Consume(TokenType.ELIF);
 
-                var (elifCondition, _) = _expressionParser.ParseExpression();
+                var elifCondition = _expressionParser.ParseExpression();
 
                 _tokenBuffer.Consume(TokenType.COMMAND_END);
 
@@ -325,8 +300,8 @@ namespace MookDialogueScript.Parsing
             // 消耗endif
             if (!_tokenBuffer.Check(TokenType.COMMAND_START) || !IsNextCommand(TokenType.ENDIF))
             {
-                throw new InvalidOperationException(
-                    $"语法错误: 第{_tokenBuffer.Current.Line}行，第{_tokenBuffer.Current.Column}列，缺少条件结束标记 <<endif>>");
+                MLogger.Error($"语法错误: 第{_tokenBuffer.Current.Line}行，第{_tokenBuffer.Current.Column}列，缺少条件结束标记 <<endif>>");
+                return null;
             }
 
             _tokenBuffer.Consume(TokenType.COMMAND_START);
@@ -361,8 +336,7 @@ namespace MookDialogueScript.Parsing
                 // 边界保护
                 if (_tokenBuffer.Check(TokenType.NODE_END) || _tokenBuffer.Check(TokenType.NODE_START))
                 {
-                    MLogger.Error(
-                        $"语法错误: 第{_tokenBuffer.Current.Line}行，第{_tokenBuffer.Current.Column}列，在条件块内遇到节点边界但未找到结束标记");
+                    MLogger.Error($"语法错误: 第{_tokenBuffer.Current.Line}行，第{_tokenBuffer.Current.Column}列，在条件块内遇到节点边界但未找到结束标记");
                     break;
                 }
 
@@ -377,8 +351,8 @@ namespace MookDialogueScript.Parsing
                 // 无前进保护
                 if (_tokenBuffer.Position <= beforePosition)
                 {
-                    throw new InvalidOperationException(
-                        $"语法错误: 第{_tokenBuffer.Current.Line}行，第{_tokenBuffer.Current.Column}列，无法在条件分支内前进");
+                    MLogger.Error($"语法错误: 第{_tokenBuffer.Current.Line}行，第{_tokenBuffer.Current.Column}列，无法在条件分支内前进");
+                    break;
                 }
             }
 
@@ -398,20 +372,33 @@ namespace MookDialogueScript.Parsing
             var commandType = _tokenBuffer.Current.Type;
             _tokenBuffer.Advance();
 
-            CommandNode result = commandType switch
+            CommandNode result = null;
+            switch (commandType)
             {
-                TokenType.SET or TokenType.ADD or TokenType.SUB
-                    or TokenType.MUL or TokenType.DIV or TokenType.MOD =>
-                    ParseVarOperation(commandType.ToString().ToLower(), line, column),
-
-                TokenType.WAIT => ParseWaitCommand(line, column),
-                TokenType.VAR => ParseVarDeclaration(line, column),
-                TokenType.JUMP => ParseJumpCommand(line, column),
-                TokenType.IDENTIFIER => ParseCallCommand(line, column),
-
-                _ => throw new InvalidOperationException(
-                    $"语法错误: 第{line}行，第{column}列，未知命令 {commandType}")
-            };
+                case TokenType.SET:
+                case TokenType.ADD:
+                case TokenType.SUB:
+                case TokenType.MUL:
+                case TokenType.DIV:
+                case TokenType.MOD:
+                    result = ParseVarOperation(commandType.ToString().ToLower(), line, column);
+                    break;
+                case TokenType.VAR:
+                    result = ParseVarDeclaration(line, column);
+                    break;
+                case TokenType.JUMP:
+                    result = ParseJumpCommand(line, column);
+                    break;
+                case TokenType.WAIT:
+                    result = ParseWaitCommand(line, column);
+                    break;
+                case TokenType.IDENTIFIER:
+                    result = ParseCallCommand(line, column);
+                    break;
+                default:
+                    MLogger.Error($"语法错误: 第{line}行，第{column}列，未知命令 {commandType}");
+                    break;
+            }
 
             _tokenBuffer.Consume(TokenType.COMMAND_END);
             return result;
@@ -423,7 +410,7 @@ namespace MookDialogueScript.Parsing
         private List<TextSegmentNode> ParseText()
         {
             var segments = new List<TextSegmentNode>();
-            var textBuilder = new System.Text.StringBuilder();
+            var textBuilder = new StringBuilder();
 
             int line = _tokenBuffer.Current.Line;
             int column = _tokenBuffer.Current.Column;
@@ -440,7 +427,7 @@ namespace MookDialogueScript.Parsing
                         textBuilder.Clear();
                     }
 
-                    var (interpolation, _) = ParseInterpolation();
+                    var interpolation = ParseInterpolation();
                     segments.Add(interpolation);
                 }
                 else
@@ -463,16 +450,16 @@ namespace MookDialogueScript.Parsing
         /// <summary>
         /// 解析插值
         /// </summary>
-        private (InterpolationNode node, int tokensConsumed) ParseInterpolation()
+        private InterpolationNode ParseInterpolation()
         {
             int line = _tokenBuffer.Current.Line;
             int column = _tokenBuffer.Current.Column;
 
             _tokenBuffer.Consume(TokenType.LEFT_BRACE);
-            var (expr, tokensConsumed) = _expressionParser.ParseExpression();
+            var expr = _expressionParser.ParseExpression();
             _tokenBuffer.Consume(TokenType.RIGHT_BRACE);
 
-            return (new InterpolationNode(expr, line, column), tokensConsumed + 2);
+            return new InterpolationNode(expr, line, column);
         }
 
         /// <summary>
@@ -485,7 +472,7 @@ namespace MookDialogueScript.Parsing
             while (_tokenBuffer.Check(TokenType.HASH))
             {
                 _tokenBuffer.Advance();
-                var tagBuilder = new System.Text.StringBuilder();
+                var tagBuilder = new StringBuilder();
 
                 while (!_tokenBuffer.Check(TokenType.NEWLINE) &&
                        !_tokenBuffer.Check(TokenType.HASH) &&
@@ -547,9 +534,7 @@ namespace MookDialogueScript.Parsing
 
             return content;
         }
-        #endregion
 
-        #region 命令解析辅助方法
         private VarCommandNode ParseVarOperation(string operation, int line, int column)
         {
             string variable = _tokenBuffer.Current.Value;
@@ -560,14 +545,14 @@ namespace MookDialogueScript.Parsing
                 _tokenBuffer.Advance();
             }
 
-            var (value, _) = _expressionParser.ParseExpression();
+            var value = _expressionParser.ParseExpression();
 
             return new VarCommandNode(variable, value, operation, line, column);
         }
 
         private WaitCommandNode ParseWaitCommand(int line, int column)
         {
-            var (duration, _) = _expressionParser.ParseExpression();
+            var duration = _expressionParser.ParseExpression();
             return new WaitCommandNode(duration, line, column);
         }
 
@@ -581,7 +566,7 @@ namespace MookDialogueScript.Parsing
                 _tokenBuffer.Advance();
             }
 
-            var (initialValue, _) = _expressionParser.ParseExpression();
+            var initialValue = _expressionParser.ParseExpression();
 
             return new VarCommandNode(varName, initialValue, "var", line, column);
         }
@@ -596,19 +581,17 @@ namespace MookDialogueScript.Parsing
         private CallCommandNode ParseCallCommand(int line, int column)
         {
             _tokenBuffer.GoBack(); // 回退到IDENTIFIER
-            var (expression, _) = _expressionParser.ParseExpression();
+            var expression = _expressionParser.ParseExpression();
 
             if (expression is CallExpressionNode callExpr)
             {
                 return new CallCommandNode(callExpr, line, column);
             }
 
-            throw new InvalidOperationException(
-                $"语法错误: 第{line}行，第{column}列，命令中的表达式必须是函数调用");
+            MLogger.Error($"语法错误: 第{line}行，第{column}列，命令中的表达式必须是函数调用");
+            return null;
         }
-        #endregion
 
-        #region 辅助方法
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool IsNextCommand(TokenType commandType)
         {
@@ -618,10 +601,9 @@ namespace MookDialogueScript.Parsing
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool IsTextTerminator(TokenType type)
         {
-            return type == TokenType.NEWLINE || type == TokenType.COMMAND_START ||
-                   type == TokenType.HASH || type == TokenType.QUOTE ||
-                   type == TokenType.NODE_START || type == TokenType.NODE_END ||
-                   type == TokenType.EOF;
+            return type is TokenType.NEWLINE or TokenType.COMMAND_START
+                or TokenType.HASH or TokenType.QUOTE or TokenType.NODE_START
+                or TokenType.NODE_END or TokenType.EOF;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -705,9 +687,7 @@ namespace MookDialogueScript.Parsing
             if (_disposed)
                 throw new ObjectDisposedException(nameof(Parser));
         }
-        #endregion
 
-        #region IDisposable 实现
         public void Dispose()
         {
             Dispose(true);
@@ -720,14 +700,10 @@ namespace MookDialogueScript.Parsing
             {
                 if (disposing)
                 {
-                    if (_nodeCache is IDisposable disposableCache)
-                        disposableCache.Dispose();
-
                     _context?.Dispose();
                 }
                 _disposed = true;
             }
         }
-        #endregion
     }
 }

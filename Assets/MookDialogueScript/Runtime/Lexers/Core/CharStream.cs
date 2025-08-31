@@ -32,16 +32,11 @@ namespace MookDialogueScript.Lexers
         public bool IsAtEnd => _currentChar == '\0';
         public int Length => _sourceLength;
 
-        public CharStream()
-        {
-            Reset(string.Empty);
-        }
-
         /// <summary>
         /// 重置字符流以处理新的源代码，复用内部数组避免GC压力
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Reset(string source)
+        public void Init(string source)
         {
             // 防御式编程：允许传入null
             source ??= string.Empty;

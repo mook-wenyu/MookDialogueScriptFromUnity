@@ -580,7 +580,6 @@ namespace MookDialogueScript
             // 注册所有节点
             foreach (var node in script.Nodes)
             {
-                Debug.Log(node.ToString());
                 _context.RegisterNode(node.Name, node);
             }
         }

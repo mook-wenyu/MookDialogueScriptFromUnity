@@ -10,7 +10,7 @@ namespace MookDialogueScript
     /// 语法分析器
     /// 标记为旧代码，不可编辑。
     /// </summary>
-    public class Parser
+    /*public class Parser
     {
         private readonly List<Token> _tokens;
         private int _tokenIndex;
@@ -80,7 +80,7 @@ namespace MookDialogueScript
                 if (sb == null) return;
                 if (sb.Capacity > 1024 * 8)
                 {
-                    /* 避免过大对象回池 */
+                    // 避免过大对象回池
                     return;
                 }
                 _cached = sb;
@@ -1509,5 +1509,5 @@ namespace MookDialogueScript
                    && _currentToken.Type != TokenType.RIGHT_BRACKET
                    && _currentToken.Type != TokenType.RIGHT_PAREN;
         }
-    }
+    }*/
 }

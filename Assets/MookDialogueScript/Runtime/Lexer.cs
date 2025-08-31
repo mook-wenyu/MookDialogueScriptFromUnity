@@ -9,7 +9,7 @@ namespace MookDialogueScript
     /// 词法分析器
     /// 标记为旧代码，不可编辑。
     /// </summary>
-    public class Lexer
+    /*public class Lexer
     {
         // 高性能数据结构：使用字符数组替代字符串
         private char[] _sourceChars;
@@ -125,7 +125,7 @@ namespace MookDialogueScript
         /// - 线程安全：使用最小锁保护 Parse/Tokenize 互斥执行
         /// </summary>
         /// <param name="source">新的源代码字符串</param>
-        public void Reset(string source)
+        public void Init(string source)
         {
             lock (_syncLock)
             {
@@ -1395,5 +1395,5 @@ namespace MookDialogueScript
             // 文件结束
             return TokenFactory.EOFToken(_line, _column);
         }
-    }
+    }*/
 }

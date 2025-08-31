@@ -13,7 +13,7 @@ namespace MookDialogueScript.Incremental
     /// </summary>
     public sealed class ParseResultCache
     {
-        private readonly ConcurrentDictionary<string, ParseResult> _cache;
+        private ConcurrentDictionary<string, ParseResult> _cache;
         private readonly ReaderWriterLockSlim _rwLock;
         private volatile bool _disposed;
 
@@ -23,15 +23,23 @@ namespace MookDialogueScript.Incremental
         public int Count => _cache.Count;
 
         /// <summary>
+        /// 获取缓存字典（只读）
+        /// </summary>
+        public IReadOnlyDictionary<string, ParseResult> Cache => _cache;
+
+        /// <summary>
         /// 初始化解析结果缓存
         /// </summary>
-        /// <param name="options">缓存配置选项</param>
         public ParseResultCache()
         {
             _cache = new ConcurrentDictionary<string, ParseResult>(StringComparer.OrdinalIgnoreCase);
             _rwLock = new ReaderWriterLockSlim(LockRecursionPolicy.NoRecursion);
         }
 
+        public void LoadCache(ConcurrentDictionary<string, ParseResult> cache)
+        {
+            _cache = cache;
+        }
 
         /// <summary>
         /// 尝试从缓存获取解析结果
@@ -79,17 +87,15 @@ namespace MookDialogueScript.Incremental
         /// </summary>
         /// <param name="filePath">文件路径</param>
         /// <returns>是否成功移除</returns>
-        public bool Remove(string filePath)
+        public void RemoveParseResult(string filePath)
         {
             ThrowIfDisposed();
 
             if (string.IsNullOrEmpty(filePath))
-                return false;
+                return;
 
             var cacheKey = GenerateCacheKey(filePath);
-            var removed = _cache.TryRemove(cacheKey, out _);
-
-            return removed;
+            _cache.TryRemove(cacheKey, out _);
         }
 
         /// <summary>
@@ -100,7 +106,7 @@ namespace MookDialogueScript.Incremental
         {
             ThrowIfDisposed();
 
-            return _cache.Keys.Select(RestoreFilePathFromKey).ToList();
+            return _cache.Keys;
         }
 
         /// <summary>
@@ -121,18 +127,7 @@ namespace MookDialogueScript.Incremental
         /// <returns>缓存键</returns>
         private string GenerateCacheKey(string filePath)
         {
-            return $"{filePath}_{filePath.GetHashCode()}";
-        }
-
-        /// <summary>
-        /// 从缓存键恢复文件路径
-        /// </summary>
-        /// <param name="cacheKey">缓存键</param>
-        /// <returns>文件路径</returns>
-        private string RestoreFilePathFromKey(string cacheKey)
-        {
-            // 这是一个简化的实现，实际中可能需要维护键到路径的映射
-            return cacheKey.Substring(0, cacheKey.LastIndexOf('_'));
+            return filePath.Replace("\\", "/").Replace("/", "_").Replace(".", "_").ToLowerInvariant();
         }
 
         /// <summary>

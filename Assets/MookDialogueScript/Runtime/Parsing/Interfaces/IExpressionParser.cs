@@ -10,27 +10,27 @@ namespace MookDialogueScript.Parsing
         /// <summary>
         /// 解析表达式
         /// </summary>
-        /// <returns>表达式节点和消费的Token数量</returns>
-        (ExpressionNode expression, int tokensConsumed) ParseExpression();
-            
+        /// <returns>表达式节点</returns>
+        ExpressionNode ParseExpression();
+
         /// <summary>
         /// 解析带优先级的表达式
         /// </summary>
         /// <param name="minPrecedence">最小优先级</param>
-        /// <returns>表达式节点和消费的Token数量</returns>
-        (ExpressionNode expression, int tokensConsumed) ParseExpressionWithPrecedence(int minPrecedence);
-            
+        /// <returns>表达式节点</returns>
+        ExpressionNode ParseExpressionWithPrecedence(int minPrecedence);
+
         /// <summary>
         /// 解析主表达式（字面量、标识符等）
         /// </summary>
-        /// <returns>表达式节点和消费的Token数量</returns>
-        (ExpressionNode expression, int tokensConsumed) ParsePrimary();
-            
+        /// <returns>表达式节点</returns>
+        ExpressionNode ParsePrimary();
+
         /// <summary>
         /// 解析后缀链（函数调用、成员访问等）
         /// </summary>
         /// <param name="baseExpr">基础表达式</param>
-        /// <returns>表达式节点和消费的Token数量</returns>
-        (ExpressionNode expression, int tokensConsumed) ParsePostfixChain(ExpressionNode baseExpr);
+        /// <returns>表达式节点</returns>
+        ExpressionNode ParsePostfixChain(ExpressionNode baseExpr);
     }
 }
