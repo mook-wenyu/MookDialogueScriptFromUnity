@@ -200,7 +200,7 @@ var stats = runner.Context.GetPerformanceStatistics();
 runner.Context.ClearAllCaches();
 ```
 
-说明：README 不再描述未在代码中实现的“缓存预设/一键配置”等接口；若需增量缓存的编辑器侧细节，可参考 `Assets/MookDialogueScript/Documentation/CacheIntegrationGuide.md` 与 `CacheIntegrationReport.md`（其中部分内容为规划/报告，可能先于实现）。
+说明：README 不再描述未在代码中实现的“缓存预设/一键配置”等接口。
 
 ## 测试与打包（命令行）
 
@@ -236,4 +236,3 @@ Apache-2.0，详见 `LICENSE.txt`。
 - 代码规范：C# 9，四空格缩进，UTF-8，命名与 `.asmdef` 分离规范。
 - 不提交生成目录：`Library/`、`Temp/`、`Logs/`、`obj/`。
 - 变更应附带清晰说明与最小可审计差异。
-
