@@ -1,1053 +1,239 @@
 # MookDialogueScript
 
-MookDialogueScript 是一个轻量级的对话脚本系统，专为 Unity 游戏开发设计。它提供了一个简单而强大的脚本语言，用于创建复杂的对话系统和分支剧情。
+轻量级的 Unity 对话脚本系统。提供简洁但强大的脚本语言与完整运行时，以便在 Unity 中快速实现分支对话、条件逻辑、变量/函数交互与节点跳转等。
 
-**当前版本：0.8.2** - 函数调用架构重构完成，重要运行时问题修复
+当前版本：0.9.0（以 `Assets/MookDialogueScript/package.json` 为准）
 
-## 功能特性
+## 主要特性
 
-- 简单易用的脚本语法
-- 🔧 函数调用架构重构：完全重构的函数调用系统，更稳定可靠（v0.8.2新增）
-- 🐛 关键异常修复：解决表达式解析器核心异常问题（v0.8.1新增）
-- 🏗️ 架构重构升级：5层模块化设计，完整SOLID原则（v0.8.0新增）
-- ⚡ 高性能对象池系统：通用池架构和全局管理（v0.8.0新增）
-- 🎯 完整语义分析系统：分层架构设计和插件化规则（v0.8.0新增）
-- 🚀 增量缓存系统：智能缓存管理和依赖追踪，支持多种预设配置（v0.8.0新增）
-- 高性能词法分析器架构（v0.7.0新增）
-- 支持并发处理和对象池优化（v0.7.0新增）
-- 支持变量系统和条件判断
-- 支持函数调用和标签系统
-- 支持严格类型检查和函数签名验证（v0.6.0新增）
-- 支持节点跳转和分支剧情
-- 支持与 C# 代码的深度集成
-- 支持中文和英文混合使用
+- 简洁可读的脚本语法（节点/元数据/对话/旁白/选项/命令）。
+- 变量与对象访问：支持 `$var` 与 `object.property`/`object.method()`。
+- 条件与分支：`if/elif/else/endif` 与 `->` 选项分支，支持条件选项。
+- 运行时 API：注册变量/对象/函数，获取与设置存储，事件回调齐全。
+- 内置函数：`log`、`concat`、`random`、`random_range`、`dice`、`visited`、`visit_count`。
+- 高性能词法/语法解析与缓存优化；对象池化与性能统计接口。
+- Unity 编辑器集成：`.mds` 导入器与脚本验证器（菜单：Tools/MookDialogue/Validate All Scripts）。
 
-## VSCode 语法高亮支持
+## 目录结构
 
-为了提供更好的编辑体验，我们提供了 VSCode 语法高亮插件：[MookDialogueScript Language](https://github.com/mook-wenyu/mookdialoguescript-lang)
+- `Assets/MookDialogueScript/Runtime/`：运行时代码（Lexers/Parsing/Interpreter/Pooling/Unity）。
+- `Assets/MookDialogueScript/Editor/`：编辑器导入器与验证器。
+- `Assets/MookDialogueScript/Tests/`：EditMode 测试（Unity Test Framework）。
+- `Assets/Resources/DialogueScripts/`：示例脚本放置目录（运行时默认示例路径）。
 
-插件特性：
-- 完整的语法高亮支持（节点、元数据、条件语句、系统命令等）
-- 智能代码片段（快速插入常用语法结构）
-- 便捷的编辑功能（自动缩进、代码折叠、括号匹配）
-- 支持中英文符号混用
+## 安装
 
-使用方法：
-1. 在 VSCode 扩展市场中搜索 "MookDialogueScript Lang"
-2. 安装插件
-3. 创建 `.mds` 文件即可享受语法高亮支持
+- Package Manager（推荐）
+  1) Unity 打开 Window > Package Manager。
+  2) “+” > Add package from git URL...
+  3) 填写：`https://github.com/mook-wenyu/MookDialogueScriptFromUnity.git?path=Assets/MookDialogueScript`
+
+- 手动安装
+  1) 克隆或下载本仓库。
+  2) 将 `Assets/MookDialogueScript` 拷贝到你的项目 `Assets/` 下。
+  3) 若使用示例，确保 `.mds` 脚本在 `Assets/Resources/DialogueScripts/`。
+
+环境建议：Unity 2021.4+（推荐 2022.3 LTS）。
 
 ## 快速开始
 
-### 安装
+1) 创建脚本：在 `Assets/Resources/DialogueScripts/` 下新建 `example.mds`
+```
+node: start
+---
+商人: 欢迎光临！
+    -> 购买
+        商人: 谢谢惠顾
+    -> 离开
+        商人: 欢迎下次再来
+===
+```
 
-#### 方法一：通过 Unity 包管理器从 Git URL 安装
-
-1. 打开 Unity 编辑器
-2. 选择菜单：Window > Package Manager
-3. 点击左上角的"+"按钮
-4. 选择"Add package from git URL..."
-5. 输入以下 URL：
-   ```
-   https://github.com/mook-wenyu/MookDialogueScriptFromUnity.git?path=Assets/MookDialogueScript
-   ```
-6. 点击"Add"按钮
-
-#### 方法二：手动安装
-
-1. 克隆或下载本项目
-2. 将 `Assets/Scripts/MookDialogueScript` 文件夹复制到你的 Unity 项目中
-3. 在 Unity 中导入必要的依赖项
-
-### 基本用法
-
-1. 创建对话脚本文件（.mds 后缀）
-2. 在 Unity 中加载并运行对话脚本
-3. 使用 C# 代码与对话系统交互
-
-### 示例代码
-
+2) 初始化 Runner 并启动对话（MonoBehaviour 示例）
 ```csharp
-// 创建对话管理器单例
-public class DialogueMgr : MonoBehaviour
+using MookDialogueScript;
+using UnityEngine;
+using UnityEngine.UI;
+
+public class DialogueBoot : MonoBehaviour
 {
-    public static DialogueMgr Instance { get; private set; }
-    public Runner RunMgrs { get; private set; }
+    public Text speaker;
+    public Text content;
+
+    private Runner runner;
 
     void Awake()
     {
-        Instance = this;
-        Initialize();
-    }
+        // 从 Resources 根目录加载所有 TextAsset（推荐使用子目录：DialogueScripts）
+        runner = new Runner("DialogueScripts");
 
-    public void Initialize()
-    {
-        Debug.Log("开始初始化对话系统");
-        RunMgrs = new Runner();
-
-        // 注册玩家对象（同时注册其属性、字段和方法，使它们在脚本中可访问）
-        var player = new Player("二狗");
-        RunMgrs.RegisterObject("player", player);  // 会自动注册所有公共属性、字段和方法
-
-        // 注册游戏变量
-        RunMgrs.RegisterVariable("gold", new RuntimeValue(100));
-        RunMgrs.RegisterVariable("has_key", new RuntimeValue(false));
-
-        // 注册C#(内置)变量
-        RunMgrs.RegisterVariable("game_difficulty",
-            () => GameSystem.Difficulty,
-            (value) => GameSystem.Difficulty = (int)value
-        );
-
-        // 注册委托函数
-        RunMgrs.RegisterFunction("show_message", (string message) => {
-            Debug.Log($"[消息] {message}");
-        });
-        RunMgrs.RegisterFunction("calculate_damage", (int base_damage, float multiplier) => {
-            return (int)(base_damage * multiplier);
-        });
-    }
-}
-
-// 玩家类示例
-public class Player
-{
-    public string Name { get; set; }
-    public int Level { get; set; }
-    public int Health { get; set; }
-    public bool IsAlive { get; set; }
-
-    public Player(string name, int level = 1)
-    {
-        Name = name;
-        Level = level;
-        Health = level * 10;
-        IsAlive = true;
-    }
-
-    public string GetStatus()
-    {
-        return $"{Name} (Lv.{Level}) - HP: {Health}";
-    }
-
-    public void TakeDamage(int amount)
-    {
-        Health -= amount;
-        if (Health <= 0)
+        // 订阅事件：UI 展示
+        runner.OnDialogueDisplayed += async dialogue =>
         {
-            Health = 0;
-            IsAlive = false;
-        }
-    }
+            speaker.text = string.IsNullOrEmpty(dialogue.Speaker) ? "" : dialogue.Speaker;
+            content.text = await runner.BuildDialogueText(dialogue);
+        };
 
-    public void Heal(int amount)
-    {
-        if (IsAlive)
+        runner.OnChoicesDisplayed += async choices =>
         {
-            Health += amount;
-            Health = Math.Min(Health, Level * 10);
-        }
-    }
-}
-
-// 游戏系统类示例（静态类）
-public static class GameSystem
-{
-    [ScriptVar("game_version")]
-    public static string GameVersion { get; } = "1.0.0";
-
-    [ScriptVar("game_difficulty")]
-    public static int Difficulty { get; set; } = 1;
-
-    [ScriptVar("is_debug_mode")]
-    public static bool IsDebugMode { get; set; } = false;
-
-    [ScriptFunc]
-    public static void ShowNotification(string title, string content)
-    {
-        Debug.Log($"[{title}] {content}");
-    }
-
-    [ScriptFunc]
-    public static int GetMaxHealth(int level)
-    {
-        return level * 10;
-    }
-}
-```
-
-## 脚本语法
-
-### 基本语法
-
-```mds
-// 节点元数据（位于节点定义前）
-node: start
-priority: 1
-enabled: true
----
-
-// 定义变量
-<<var $player_name "冒险者">>
-<<set $player_level 1>>
-<<set $gold 100>>
-
-// 对话
-商人: 欢迎来到我的商店，{$player_name}。 #welcome
-    这是补充说明。
-    <<set $visited true>>
-
-// 旁白文本（冒号开头）
-:这是一个宁静的小镇，阳光明媚。
-
-// 条件判断
-<<if $player_level < 5>>
-    商人: 看起来你是个新手冒险者。
-<<else>>
-    商人: 欢迎回来，经验丰富的冒险者！
-<<endif>>
-
-// 选项分支
--> 购买武器
-    商人: 这是我们的武器清单。
-
--> 离开 <<if $gold > 0>>
-    商人: 再见，欢迎下次光临。
-
-// 节点结束
-===
-```
-
-### 完整语法规则
-
-以下是 MookDialogueScript 的完整语法规则和使用方法：
-
-#### 注释
-
-```mds
-// 这是一行注释
-```
-
-- 所有注释必须单独一行
-- 注释以 `//` 开头
-- 注释可以放在任何位置
-- 注释不会影响脚本执行
-
-#### 节点系统
-
-```mds
-// 新语法：节点元数据在 --- 之前定义
-node: start
-priority: 1
-enabled: true
----
-// 节点内容
-===
-
-// 无需元数据的节点
----
-// 节点内容
-===
-```
-
-节点系统说明：
-
-- **元数据必须在 `---` 之前定义**，使用 `key: value` 格式
-- 必须至少有 `node: 节点名` 元数据来定义节点名称
-- 节点结束标记 `===` 是必需的
-- 节点内容只能包含四种类型：对话/旁白、选项(`->`)、命令(`<<>>`)、注释(`//`)
-
-#### 变量系统
-
-```mds
-// 定义和操作变量（必须在命令块内）
-<<var $name "玩家名称">>
-<<set $level 1>>
-<<add $gold 50>>
-<<sub $gold 30>>
-<<mul $experience 1.5>>
-<<div $gold 2>>
-
-// 对象成员访问（属性和字段）
-player.name
-player.health
-player.level
-
-// 变量插值
-这是{player.name}的属性，等级为{player.level}
-```
-
-变量访问说明：
-- 变量以 `$` 开头
-- 所有变量操作必须在 `<<>>` 命令块内
-- 对象成员使用 `objectName.propertyName` 格式访问
-- 在文本中可以使用 `{$variable}` 进行插值
-
-#### 函数系统
-
-```mds
-// 函数调用（必须在命令块内）
-<<call log("这是一条日志")>>
-<<call player.take_damage(10)>>
-
-// 在表达式中调用函数（不需要call关键字）
-<<if random() > 0.5>>
-    // 做某事
-<<endif>>
-
-// 在插值中调用函数
-商人: 你的状态是：{player.get_status()}
-```
-
-函数调用说明：
-- 直接调用函数时必须在 `<<call>>` 命令块内
-- 对象函数使用 `objectName.methodName()` 格式调用
-- 在表达式或插值中使用函数时，不需要 `call` 关键字
-
-#### 等待控制
-
-```mds
-// 等待控制（必须在命令块内）
-<<wait 1>>
-<<wait 0.01>>
-```
-
-#### 对话系统
-
-```mds
-// 基本对话
-商人: 欢迎光临！ #标签1 #标签2
-    这是嵌套内容。
-    <<set $visited true>>
-
-// 旁白文本（冒号开头，冒号会作为文本显示）
-:这是一个宁静的小镇，阳光明媚。
-```
-
-对话格式说明：
-- 基本对话：`角色名: 对话内容`
-- 旁白文本：`:旁白内容` （冒号会作为文本的一部分显示）
-- 支持嵌套内容（缩进表示）
-- 每行对话会自动生成行号标签（如 `#line:start1`）
-- 标签使用 `#` 开头
-
-#### 选择分支
-
-```mds
--> 购买武器 <<if $gold >= 100>>
-    商人: 这是我们的武器清单。
-    <<set $gold $gold - 100>>
-
--> 离开
-    商人: 再见，欢迎下次光临。
-    <<jump town>>
-```
-
-选择分支说明：
-- 选项使用 `->` 标记
-- 选项可以添加条件，使用 `<<if>>` 格式
-- 选项内容必须缩进，表示属于该选项
-- 支持嵌套选项
-
-#### 条件语句
-
-```mds
-<<if $level >= 10>>
-    商人: 你已经是高级冒险者了！
-<<elif $level >= 5>>
-    商人: 你已经有一定经验了。
-<<else>>
-    商人: 你看起来是个新手。
-<<endif>>
-```
-
-条件语句说明：
-- 使用 `<<if>>` `<<elif>>` `<<else>>` `<<endif>>` 结构
-- 条件表达式支持比较运算符和逻辑运算符
-- 条件语句内容必须缩进
-- 支持嵌套条件语句
-
-#### 节点跳转
-
-```mds
-// 跳转命令（必须在命令块内）
-<<jump shop>>
-```
-
-### 关键字
-
-1. 条件控制：`<<if>>`, `<<elif>>`, `<<else>>`, `<<endif>>`
-2. 布尔值：`true`, `false`
-3. 变量操作：`<<var>>`, `<<set>>`, `<<add>>`, `<<sub>>`, `<<mul>>`, `<<div>>`, `<<mod>>`
-4. 跳转控制：`<<jump>>`
-5. 函数调用：`<<call>>`
-6. 等待控制：`<<wait>>`（单位：秒，可精确到毫秒，如 `<<wait 0.01>>`）
-7. 比较运算：
-   - 等于：`==` 或 `eq` 或 `is`
-   - 不等于：`!=` 或 `neq`
-   - 大于：`>` 或 `gt`
-   - 小于：`<` 或 `lt`
-   - 大于等于：`>=` 或 `gte`
-   - 小于等于：`<=` 或 `lte`
-8. 逻辑运算：
-   - 与：`&&` 或 `and`
-   - 或：`||` 或 `or`
-   - 非：`!` 或 `not`
-   - 异或：`^` 或 `xor`
-
-## 与 C# 集成
-
-### 创建 Runner
-
-Runner 是对话系统的核心组件，负责加载和执行对话脚本。创建 Runner 是使用 MookDialogueScript 的第一步。
-
-```csharp
-// 方法一：使用默认加载器（从 Resources 文件夹加载脚本）
-Runner runner = new Runner();
-
-// 方法二：指定脚本根目录
-Runner runner = new Runner("DialogueScripts");
-
-// 方法三：使用自定义加载器
-Runner runner = new Runner(new CustomDialogueLoader());
-```
-
-在 MonoBehaviour 中创建和初始化 Runner：
-```csharp
-public class DialogueMgr : MonoBehaviour
-{
-    public static DialogueMgr Instance { get; private set; }
-    public Runner RunMgrs { get; private set; }
-
-    void Awake()
-    {
-        Instance = this;
-        Initialize();
-    }
-
-    public void Initialize()
-    {
-        Debug.Log("开始初始化对话系统");
-        RunMgrs = new Runner();
-
-        // 注册对象、变量和函数
-        // ...
-    }
-}
-```
-
-### 对话状态存储 (DialogueStorage)
-
-DialogueStorage 类用于记录对话状态和变量，支持保存和加载游戏进度，是实现游戏存档功能的关键组件。
-
-在 Runner 中使用：
-```csharp
-// 获取当前存储
-DialogueStorage storage = runner.Storage;
-
-// 设置自定义存储
-runner.SetStorage(customStorage);
-
-// 获取并更新当前存储（用于保存游戏）
-DialogueStorage updatedStorage = runner.GetCurrentStorage();
-```
-
-### 注册变量
-
-变量注册提供了多种方式，可以注册静态变量、脚本变量和C#变量，使它们在脚本中可用。所有注册的变量都支持在脚本中读取和修改。
-
-```csharp
-// 1. 使用 ScriptVar 特性标记静态变量
-// 这种方式适用于全局静态变量，会自动注册到对话系统中
-[ScriptVar("game_version")]
-public static string GameVersion { get; } = "1.0.0";
-
-// 2. 注册脚本变量
-// 这种方式用于注册简单的值类型变量
-RunMgrs.RegisterVariable("gold", new RuntimeValue(100));
-
-// 3. 注册C#变量
-// 这种方式可以将C#变量与脚本变量双向绑定，支持getter和setter
-RunMgrs.RegisterVariable("game_difficulty",
-    () => GameSystem.Difficulty,    // getter：从C#读取值
-    (value) => GameSystem.Difficulty = (int)value    // setter：将值写回C#
-);
-```
-
-在脚本中使用变量：
-```mds
-// 访问变量
-商人: 你有{$gold}金币。
-商人: 游戏版本：{$game_version}
-商人: 当前难度：{$game_difficulty}
-
-// 修改变量（包括C#变量）
-set $gold 200
-set $game_difficulty 2  // 这会通过setter修改C#中的 GameSystem.Difficulty
-add $gold 50
-sub $gold 30
-```
-
-### 注册函数
-
-函数注册支持多种方式，可以注册静态函数、委托函数，使它们在脚本中可调用。
-
-```csharp
-// 1. 使用 ScriptFunc 特性标记静态函数
-// 这种方式适用于全局静态函数，会自动注册到对话系统中
-[ScriptFunc]
-public static void ShowNotification(string title, string content)
-{
-    Debug.Log($"[{title}] {content}");
-}
-
-// 2. 注册委托函数
-// 这种方式可以直接注册lambda表达式或委托
-RunMgrs.RegisterFunction("calculate_damage", (int base_damage, float multiplier) => {
-    return (int)(base_damage * multiplier);
-});
-```
-
-在脚本中调用函数：
-```mds
-// 直接调用函数
-call ShowNotification("提示", "这是一条通知")
-
-// 在表达式中使用函数
-var $damage calculate_damage(10, 1.5)
-
-// 在插值中使用函数
-商人: 计算伤害：{calculate_damage(10, 1.5)}
-```
-
-### 注册对象
-
-对象注册会同时注册对象的属性、字段和方法，使它们在脚本中可用。属性和字段会以 `objectName.propertyName` 或 `objectName.fieldName` 的形式注册。注册的对象属性和字段都支持双向绑定，可以在脚本中修改C#对象的值。
-
-```csharp
-// 创建对象实例
-var player = new Player("二狗");
-
-// 注册对象（同时注册其属性、字段和方法）
-RunMgrs.RegisterObject("player", player);
-
-// 在脚本中访问对象成员
-// 属性访问：player.name, player.level
-// 字段访问：player.health, player.isAlive
-// 方法调用：player.get_status(), player.take_damage(10)
-```
-
-示例：
-```mds
-// 访问对象属性和字段
-商人: 欢迎你，{player.name}！你的生命值是{player.health}。
-
-// 修改对象属性或字段（会直接修改C#对象的值）
-<<set player.name "张三">>
-<<set player.health 100>>
-
-// 调用对象方法
-商人: 让我看看你的状态... {player.get_status()}
-
-// 在命令中调用方法
-<<call player.take_damage(10)>>
-```
-
-### 创建自定义加载器
-
-MookDialogueScript 提供了 `IDialogueLoader` 接口，允许你创建自定义的脚本加载器。默认的Unity加载器会从 Resources 文件夹加载脚本，但你可以根据需要实现自己的加载逻辑。
-
-```csharp
-// 1. 实现 IDialogueLoader 接口
-public class CustomDialogueLoader : IDialogueLoader
-{
-    private readonly string _rootDir;
-    private readonly string[] _extensions = new[] {".txt", ".mds"};
-
-    public CustomDialogueLoader(string rootDir = "DialogueScripts")
-    {
-        _rootDir = rootDir;
-    }
-
-    public void LoadScripts(Runner runner)
-    {
-        // 自定义加载逻辑
-        // 例如：从网络加载、从本地文件加载、从数据库加载等
-
-        // 示例：从 StreamingAssets 加载
-        string scriptPath = Path.Combine(Application.streamingAssetsPath, _rootDir);
-        if (Directory.Exists(scriptPath))
-        {
-            foreach (string file in Directory.GetFiles(scriptPath, "*.*", SearchOption.AllDirectories))
+            for (int i = 0; i < choices.Count; i++)
             {
-                string extension = Path.GetExtension(file).ToLower();
-                if (_extensions.Contains(extension))
-                {
-                    try
-                    {
-                        string scriptContent = File.ReadAllText(file);
-                        string scriptName = Path.GetFileNameWithoutExtension(file);
-                        LoadScriptContent(scriptContent, runner, scriptName);
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogError($"加载脚本文件 {file} 时出错: {ex}");
-                    }
-                }
+                var text = await runner.BuildChoiceText(choices[i]);
+                Debug.Log($"选项 {i + 1}: {text}");
             }
-        }
-        else
+        };
+
+        runner.OnOptionSelected += async (choice, index) =>
         {
-            Debug.LogWarning($"StreamingAssets 目录 {scriptPath} 不存在，将创建该目录");
-            Directory.CreateDirectory(scriptPath);
-        }
+            Debug.Log($"选择了: {index + 1}");
+        };
+
+        runner.OnDialogueCompleted += () => Debug.Log("对话结束");
     }
 
-    private void LoadScriptContent(string scriptContent, Runner runner, string filePath)
+    async void Start()
     {
-        try
-        {
-            // 创建词法分析器
-            var lexer = new Lexer(scriptContent);
-
-            // 创建语法分析器
-            var parser = new Parser(lexer.Tokenize());
-            var scriptNode = parser.Parse();
-
-            // 注册脚本节点
-            runner.RegisterScript(scriptNode);
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError($"解析脚本内容时出错 (文件: {filePath}): {ex}");
-        }
+        await runner.StartDialogue("start");
     }
 }
-
-// 2. 使用自定义加载器创建 Runner
-public class DialogueMgr : MonoBehaviour
-{
-    public static DialogueMgr Instance { get; private set; }
-    public Runner RunMgrs { get; private set; }
-
-    void Awake()
-    {
-        Instance = this;
-        Initialize();
-    }
-
-    public void Initialize()
-    {
-        Debug.Log("开始初始化对话系统");
-
-        // 使用自定义加载器，从 StreamingAssets 加载脚本
-        RunMgrs = new Runner(new CustomDialogueLoader());
-    }
-}
-
 ```
 
-### 内置函数
+## 脚本语法速览
 
-MookDialogueScript 提供了一系列内置函数，可以直接在脚本中使用，无需额外注册。
-
-#### visited(string node_name)
-
-检查指定节点是否已被访问过。
-- 参数: 
-  - `node_name`: 节点名称
-- 返回值: 布尔值，表示指定节点是否已访问
-
-```mds
-// 检查节点 "shop" 是否已被访问
-if visited("shop")
-    商人: 欢迎再次光临！
-else
-    商人: 这是你第一次来我的商店吧？
-endif
+- 节点与元数据
+```
+node: start
+title: 开始
+---
+...内容...
+===
 ```
 
-#### visit_count(string node_name)
-
-返回指定节点被访问的次数。
-- 参数:
-  - `node_name`: 节点名称
-- 返回值: 整数，表示节点被访问的次数
-
-```mds
-// 获取节点 "shop" 的访问次数
-var $shop_visits visit_count("shop")
-商人: 这是你第{$shop_visits}次来我的商店。
-
-// 在条件判断中使用
-if visit_count("shop") > 3
-    商人: 看来你很喜欢我的商店！
-endif
+- 对话与旁白
+```
+商人: 欢迎光临 #欢迎
+:这是旁白文本
 ```
 
-#### concat(string str1, string str2, ...)
-
-连接多个字符串。
-- 参数:
-  - `str1, str2, ...`: 要连接的字符串参数，可以是变量或字面量
-- 返回值: 字符串，表示连接后的结果
-
-```mds
-// 连接字符串和变量
-var $full_name concat($first_name, " ", $last_name)
-
-// 在插值中使用
-商人: 你好，{concat($title, " ", player.name)}！
+- 变量与命令（命令必须写在 `<< >>` 内）
+```
+<<var $gold 100>>
+<<set $gold $gold + 50>>
+<<wait 0.2>>
+<<jump next_node>>
 ```
 
-#### random(int digits = 2)
-
-返回 0 到 1 之间的随机浮点数，可以指定小数位数。
-- 参数:
-  - `digits`: 小数点后的位数，默认为2位
-- 返回值: 浮点数，范围在 [0.0, 1.0) 之间
-
-```mds
-// 获取随机数（默认2位小数）
-var $chance random()
-
-// 获取随机数（4位小数）
-var $precise_chance random(4)
-
-// 在条件判断中使用
-if random() > 0.7
-    商人: 今天运气不错，给你打个折！
-endif
+- 条件与选项
+```
+<<if $gold >= 50>>
+    -> 购买
+        商人: 谢谢惠顾
+<<else>>
+    商人: 金币不足
+<<endif>>
 ```
 
-#### random_range(float min, float max, int digits = 2)
-
-返回指定范围内的随机浮点数，可以指定小数位数。
-- 参数:
-  - `min`: 最小值（包含）
-  - `max`: 最大值（包含）
-  - `digits`: 小数点后的位数，默认为2位
-- 返回值: 浮点数，范围在 [min, max] 之间
-
-```mds
-// 获取 1 到 10 之间的随机整数
-var $random_number random_range(1, 10)
-
-// 获取 0.5 到 1.5 之间的随机浮点数（3位小数）
-var $random_float random_range(0.5, 1.5, 3)
-
-// 在对话中使用
-商人: 今天的汇率是...{random_range(6.8, 7.2, 4)}！
+- 对象与方法（注册对象后使用）
+```
+商人: {player.name}
+<<player.take_damage(10)>>
+商人: {player.get_status()}
 ```
 
-#### dice(int sides, int count = 1)
+## 运行时集成
 
-模拟掷骰子，返回指定数量和面数骰子的总和。
-- 参数:
-  - `sides`: 骰子面数
-  - `count`: 骰子数量，默认为1
-- 返回值: 整数，表示所有骰子点数的总和
-
-```mds
-// 掷一个六面骰子 (1d6)
-var $roll dice(6)
-
-// 掷三个八面骰子 (3d8)
-var $damage dice(8, 3)
-
-// 在对话中使用
-战士: 我攻击敌人，造成了{dice(6, 2)}点伤害！
-```
-
-### 增量缓存系统
-
-MookDialogueScript v0.8.0 引入了完整的增量缓存系统，支持智能缓存管理和依赖追踪：
-
+- 注册变量
 ```csharp
-// 使用预设缓存配置快速启用
-var runner = new Runner("DialogueScripts", CacheConfigType.Development);
-// 或者
-var runner = new Runner("DialogueScripts", CacheConfigType.Production);
-
-// 自定义缓存配置
-var runner = Runner.CreateWithCustomCache("DialogueScripts", options =>
-{
-    options.MaxCacheSize = 1000;
-    options.MaxMemoryUsage = 100 * 1024 * 1024; // 100MB
-    options.EnableFileWatcher = true;
-});
-
-// 获取缓存统计
-var stats = runner.GetCacheStatistics();
-Debug.Log($"缓存命中率: {stats.HitRatio:P2}");
+runner.RegisterVariable("gold", new RuntimeValue(100));
+runner.RegisterVariable("game_difficulty", () => Game.Difficulty, v => Game.Difficulty = (int)v);
 ```
 
-支持的预设配置：
-- `CacheConfigType.Development`：开发环境（详细日志，大内存）
-- `CacheConfigType.Production`：生产环境（持久化缓存，优化性能）
-- `CacheConfigType.Performance`：性能优先（大缓存，最大并发）
-- `CacheConfigType.MemoryFriendly`：内存友好（小缓存，压缩存储）
-
-详细的缓存集成使用指南请参考 [CacheIntegrationGuide.md](Assets/MookDialogueScript/Documentation/CacheIntegrationGuide.md)。
-
-## 更新说明
-
-### 版本 0.8.2 - 函数调用架构重构完成，重要运行时问题修复
-
-#### 🔧 函数调用架构重构
-- **完全重构函数调用系统**：彻底解决函数参数传递和返回值处理的架构问题
-- **简化接口设计**：函数调用接口更加直观和易用，减少了不必要的复杂性
-- **统一错误处理**：改进函数调用错误处理机制，提供更清晰的错误信息
-- **性能优化**：优化函数调用路径，减少运行时开销
-
-#### 🐛 重要运行时问题修复
-- **修复表达式解析异常**：解决 `ArgumentException: Invalid tokens or start index` 崩溃问题
-- **增强解析器稳定性**：改进表达式解析器的边界条件处理
-- **修复内存泄漏**：解决某些场景下的内存泄漏问题
-- **改进异常恢复**：增强解析器的错误恢复能力
-
-#### 🚀 架构改进
-- **TokenBuffer 重构**：完全重新设计 `TokenBuffer` 类，提供更稳定的缓冲管理
-- **依赖注入优化**：改进组件间的依赖关系，提升系统可测试性
-- **接口简化**：简化核心接口，减少使用复杂度
-- **代码清理**：移除过时代码，提升代码质量
-
-### 版本 0.8.1 - 表达式解析器架构修复，解决关键异常问题
-
-#### 🔧 表达式解析器架构修复
-- **修复核心异常**：彻底解决 `ArgumentException: Invalid tokens or start index` 崩溃问题
-- **重构接口设计**：`IExpressionParser` 简化为单一职责模式，移除复杂的tokens参数依赖
-- **统一数据源架构**：完全依赖注入的 `TokenBuffer`，消除双重依赖混乱
-- **覆盖全面**：修复变量声明、条件语句、函数调用、文本插值等所有解析场景
-- **保持性能**：内部缓存和优化逻辑完全保留，架构重构不影响解析速度
-
-#### 🎯 修复详情
+- 注册对象与函数
 ```csharp
-// 修复前的问题调用
-var (expr, _) = _expressionParser.ParseExpression(
-    new List<Token>(), _tokenBuffer.Position);  // ❌ 空列表导致异常
-
-// 修复后的简洁接口  
-var (expr, _) = _expressionParser.ParseExpression();  // ✅ 依赖TokenBuffer
+runner.RegisterObject("player", playerInstance);
+runner.RegisterFunction("calculate_damage", (int baseVal, float mul) => (int)(baseVal * mul));
 ```
 
-#### 🛠️ 技术改进
-- **接口职责清晰**：每个解析器组件都有明确的单一职责
-- **依赖关系简化**：移除循环依赖和冗余参数传递
-- **错误处理增强**：改进异常处理和错误恢复机制
-- **代码可维护性**：提升代码结构的清晰度和可维护性
-
-### 版本 0.8.0 - 架构重构升级，实现高性能模块化设计
-
-#### 🏗️ 架构重构升级
-- **语义分析器架构重构**：采用5层架构设计（Contracts → TypeSystem → Symbols → Diagnostics → Core）
-- **对象池系统重构**：统一池管理架构，消除重复代码，提升复用性
-- **解析器组件化**：模块化解析器设计，支持缓存管理和上下文处理
-- **完整SOLID原则**：遵循单一职责、依赖倒置、接口隔离等设计原则
-- **组合优于继承**：全面采用组合模式，提升代码可维护性
-
-#### 🎯 语义分析系统
-- **分层架构设计**：清晰的职责分离，支持插件化规则扩展
-- **符号表管理**：完整的作用域管理和符号解析系统
-- **类型系统优化**：强类型检查和兼容性验证
-- **诊断收集器**：统一的错误收集和报告生成机制
-- **缓存优化**：分析结果缓存，避免重复计算
-
-#### 🚀 对象池优化
-- **通用池架构**：`UniversalObjectPool<T>` 支持任意类型对象池化
-- **全局池管理器**：`GlobalPoolManager` 统一管理所有对象池
-- **作用域管理**：`ScopedPoolable<T>` 泛型类消除重复代码
-- **专用池优化**：词法分析器和解析器的专用高性能池
-- **统计监控**：完整的池使用统计和性能监控
-
-#### 🎯 增量缓存系统
-- **增量缓存管理器**：`IncrementalCacheManager` 实现智能缓存管理
-- **缓存配置系统**：`IncrementalCacheOptions` 支持灵活的配置选项
-- **依赖关系追踪**：支持缓存依赖管理和级联失效
-- **内存压力感知**：根据内存状态自动调整缓存策略
-- **统计和监控**：详细的缓存使用统计和性能指标
-
-#### ⚡ 性能优化亮点
-- **无锁并发设计**：使用 `ConcurrentBag` 和原子操作，避免锁竞争
-- **线程本地存储**：每个线程维护独立的小池，减少跨线程开销
-- **智能对象复用**：基于使用模式的自适应池大小调整
-- **零分配优化**：关键路径使用 `AggressiveInlining`，减少调用开销
-- **共享组件复用**：线程安全组件在线程间共享，减少内存占用
-
-#### 🔧 代码质量改进
-- **错误恢复机制**：自动修复常见的语法错误（如缺失的分隔符）
-- **完整单元测试**：覆盖所有新增功能的测试用例
-- **中文注释完善**：所有新代码都包含详细的中文文档
-- **现代C#语法**：使用最新的语言特性和模式匹配
-
-### 版本 0.7.0 - 高性能词法分析器架构重构
-
-#### 🚀 架构优化
-- **组合设计模式**：重构词法分析器为组件化架构，遵循"组合优于继承"原则
-  - `CharacterStream`：高效字符流管理
-  - `CharacterClassifier`：智能字符分类
-  - `LexerState`：统一状态管理
-  - `IndentationHandler`：专业缩进处理
-  - 专用Token处理器：每种Token类型都有专门的处理器
-
-#### ⚡ 性能突破
-- **高性能并发池**：新增 `ConcurrentLexerPool` 类
-  - 无锁并发设计：使用 `ConcurrentBag` 和原子操作，避免锁竞争
-  - 线程本地缓存：每个线程维护独立的小池，减少跨线程开销
-  - 自适应调整：基于使用模式自动调整池大小
-  - Unity Profiler集成：内置性能监控标记
-
-#### 🔧 资源管理
-- **完整的IDisposable支持**：自动管理内存和线程资源
-- **智能对象复用**：减少GC压力，优化内存分配
-- **共享组件复用**：线程安全组件在线程间共享，减少内存占用
-- **批量操作优化**：支持批量租借和归还，提升批处理性能
-
-#### 💡 开发体验
-- **作用域管理**：`PooledConcurrentLexer` 自动归还机制
-- **统计和监控**：详细的池使用统计信息
-- **调试支持**：完整的状态信息和组件信息查询
-- **线程安全保障**：所有公共API都是线程安全的
-
-#### 🎯 使用示例
+- 对话存储（存档/读档）
 ```csharp
-// 使用并发池优化性能
-var pool = new ConcurrentLexerPool();
-
-// 作用域管理，自动归还
-using (var scopedLexer = pool.RentScoped(scriptContent))
-{
-    var tokens = scopedLexer.Lexer.Tokenize();
-    // 处理tokens...
-} // 自动归还到池中
-
-// 批量处理
-var lexers = pool.RentBatch(10);
-// 并行处理...
-pool.ReturnBatch(lexers);
-
-// 获取性能统计
-var stats = pool.GetStatistics();
-Debug.Log($"池命中率: {stats.HitRate:P2}");
+// 获取可序列化的存储
+var storage = runner.GetCurrentStorage();
+// 恢复
+runner.SetStorage(storage);
 ```
 
-### 版本 0.6.0 - 函数签名系统和严格类型检查
+- 文本构建（用于 UI）
+```csharp
+string d = await runner.BuildDialogueText(dialogueNode);
+string c = await runner.BuildChoiceText(choiceNode);
+```
 
-#### 异常处理系统
-- **完整的异常类层次结构**：新增 `ScriptException` 基类和专门的异常类型
-  - `LexerException`：词法分析异常，处理无效字符、未闭合字符串等错误
-  - `ParseException`：语法分析异常，处理语法结构错误、意外标记等问题
-  - `SemanticException`：语义分析异常，处理类型不匹配、未定义变量等错误
-  - `InterpreterException`：解释器运行时异常，处理运行时错误和函数调用失败
-- **精确的错误定位**：所有异常都包含详细的行号和列号信息，便于快速定位问题
-- **友好的错误消息**：提供清晰的中文错误描述，帮助开发者理解和修复错误
+- 事件回调
+```csharp
+runner.OnDialogueStarted += () => { /* 开始时机（可存档）*/ return System.Threading.Tasks.Task.CompletedTask; };
+runner.OnDialogueDisplayed += d => { /* 刷新对话 UI */ };
+runner.OnChoicesDisplayed += cs => { /* 刷新选项 UI */ };
+runner.OnOptionSelected += (c, i) => { /* 处理选择 */ };
+runner.OnDialogueCompleted += () => { /* 结束时机（可存档）*/ };
+```
 
-#### 语义分析器
-- **新增 SemanticAnalyzer 类**：为未来的静态代码分析和优化提供基础架构
-- **类型检查支持**：为实现编译时类型验证做准备
-- **代码优化基础**：为后续性能优化和代码生成奠定基础
+## 内置函数
 
-#### 开发体验改进
-- **更好的调试支持**：异常信息包含完整的上下文信息，便于问题排查
-- **统一的错误处理**：所有组件使用一致的异常处理机制
-- **扩展性增强**：为未来添加更多静态分析功能提供了架构基础
+- `log(message, type="info")`：输出日志（info/warn/error）。
+- `concat(a, b, ...)`：连接字符串。
+- `random(digits=2)`：0..1 的随机数，保留指定位数。
+- `random_range(min, max, digits=2)`：范围随机数。
+- `dice(sides, count=1)`：掷骰返回总和。
+- `visited(node)` / `visit_count(node)`：基于 `DialogueStorage` 的访问统计。
 
-### 版本 0.5.2 - 解析器性能优化
+## Unity 编辑器集成
 
-#### 性能优化
-- **StringBuilder 对象池**：新增线程不安全的 StringBuilder 池，减少内存分配和GC压力
-- **内联方法优化**：为关键路径方法添加 `MethodImpl(AggressiveInlining)` 特性
-- **静态缓存优化**：优化运算符优先级和文本终止条件判断，使用静态方法替代字典查找
-- **LINQ替换**：用高性能的循环替代LINQ操作，减少运行时开销
+- `.mds` 导入：ScriptedImporter 自动将 `.mds` 以 `TextAsset` 导入。
+- 校验工具：编辑器启动与资源变更时自动校验；菜单 `Tools/MookDialogue/Validate All Scripts` 可手动触发。
 
-#### 代码结构优化
-- **去除 System.Linq 依赖**：使用自定义轻量级方法替代LINQ操作
-- **错误处理增强**：优化错误恢复机制，增加前置检查避免死循环
-- **字符串处理优化**：仅去除末尾空白，保留有意义的前导空格
-- **内存管理改进**：统一使用对象池管理临时对象，避免大对象回池
+## 性能与缓存
 
-#### 技术改进
-- **运算符判定优化**：使用 switch 语句替代字典查找，提升判断性能
-- **文本解析优化**：统一文本终止条件判断，减少重复代码分支
-- **容器初始化优化**：为集合类型指定合适的初始容量，减少扩容开销
-- **前进保护机制**：增加解析过程中的死循环检测和防护
+- 解析与解释内部包含缓存与对象池优化；可获取统计或清理缓存。
+```csharp
+// 在示例中，通过 Runner.Context 暴露
+var stats = runner.Context.GetPerformanceStatistics();
+runner.Context.ClearAllCaches();
+```
 
-### 版本 0.5.1 - 代码质量优化与性能改进
+说明：README 不再描述未在代码中实现的“缓存预设/一键配置”等接口；若需增量缓存的编辑器侧细节，可参考 `Assets/MookDialogueScript/Documentation/CacheIntegrationGuide.md` 与 `CacheIntegrationReport.md`（其中部分内容为规划/报告，可能先于实现）。
 
-#### 代码格式化与优化
-- **代码格式统一**：全面格式化所有源代码文件，统一缩进和空白符使用
-- **现代C#语法优化**：进一步优化代码结构，使用表达式体成员和模式匹配
-- **性能微调**：优化字符串格式化和集合操作，减少不必要的内存分配
-- **错误处理改进**：统一异常处理机制，提供更清晰的错误信息
+## 测试与打包（命令行）
 
-#### 技术改进
-- **RuntimeValue结构优化**：进一步完善值语义比较性能
-- **Helper类重构**：优化类型转换逻辑，提升运行效率
-- **DialogueContext重构**：简化对象注册逻辑，优化内存使用
-- **FunctionManager改进**：优化函数注册和调用性能
+- 运行 EditMode 测试（Windows 示例）
+```
+"<UnityPath>\\Unity.exe" -batchmode -projectPath . -runTests -testPlatform EditMode -testResults .\\TestResults.xml -quit
+```
 
-#### 测试与文档
-- **测试覆盖率提升**：增强词法分析器和解析器测试用例
-- **文档更新**：完善API文档和使用示例
+- 运行 PlayMode 测试（如有）
+```
+"<UnityPath>\\Unity.exe" -batchmode -projectPath . -runTests -testPlatform PlayMode -testResults .\\PlayResults.xml -quit
+```
 
-### 版本 0.5.0 - 架构重构与性能优化
+- 导出 UnityPackage（仅导出运行时代码与编辑器工具）
+```
+"<UnityPath>\\Unity.exe" -batchmode -quit -projectPath . -exportPackage Assets/MookDialogueScript MookDialogueScript.unitypackage
+```
 
-#### 核心架构优化
-- **RuntimeValue性能优化**：重构为只读结构体，实现高性能值语义比较和优化的哈希计算
-- **Helper工具类完善**：统一类型转换逻辑，优化性能，减少重复代码
-- **现代C#语法应用**：全面采用模式匹配、表达式体方法等现代语法特性
-- **内存管理优化**：减少GC压力，优化对象分配策略
+## VSCode 语法高亮
 
-#### 功能增强
-- **错误处理机制完善**：改进解析错误恢复机制，提供更友好的错误信息
-- **代码剥离支持**：添加Preserve特性支持Unity代码剥离优化
-- **测试覆盖率提升**：完善单元测试，提高代码质量保证
-- **API设计优化**：简化接口使用，提升开发者体验
+扩展：MookDialogueScript Language（https://github.com/mook-wenyu/mookdialoguescript-lang）
 
-#### 性能提升
-- **解析器性能优化**：优化词法分析和语法解析算法
-- **执行效率提升**：优化解释器执行逻辑，减少运行时开销
-- **缓存机制改进**：优化变量和函数查找缓存策略
-- **集合操作优化**：使用现代C#集合操作方法，提升性能
+- 语法高亮、代码片段、自动缩进与折叠。
+- 创建 `.mds` 文件即可生效。
 
-#### 代码质量改进
-- **统一编码规范**：严格遵循项目编码标准
-- **注释文档完善**：增加详细的中文注释说明
-- **架构设计优化**：改进组件间职责分离，提升可维护性
-- **单元测试扩展**：增加更全面的测试用例覆盖
+## 许可证
 
-### 版本 0.3.0 - 语法重构与性能优化
+Apache-2.0，详见 `LICENSE.txt`。
 
-#### 新语法特性
-- **统一的命令语法**：所有命令现在都使用 `<<命令>>` 格式，包括变量操作、函数调用、条件语句等
-- **元数据前置**：节点元数据现在在 `---` 之前定义，使用 `key: value` 格式
-- **自动行标签**：每行对话会自动生成唯一的行号标签（如 `#line:start1`）
-- **嵌套内容支持**：对话和选项支持嵌套内容，使用缩进表示层级关系
-- **中括号文本支持**：文本中的中括号（如 `[动作描述]`）不再被截断，可以正常显示
+## 贡献
 
-#### 性能优化
-- **RuntimeValue优化**：重构为只读结构体，实现了高性能的值语义相等比较
-- **类型转换优化**：重构类型转换逻辑到Helper类，提升转换性能
-- **内存优化**：减少不必要的内存分配，优化GC压力
-- **代码重构**：使用现代C#语法模式匹配，提升代码可读性和执行效率
+欢迎通过 Issue/PR 反馈问题与改进建议。提交前请遵循：
+- 代码规范：C# 9，四空格缩进，UTF-8，命名与 `.asmdef` 分离规范。
+- 不提交生成目录：`Library/`、`Temp/`、`Logs/`、`obj/`。
+- 变更应附带清晰说明与最小可审计差异。
 
-#### 语法变更
-- 变量操作：`var $name "value"` → `<<var $name "value">>`
-- 条件语句：`if condition` → `<<if condition>>`
-- 函数调用：`call function()` → `<<call function()>>`
-- 节点跳转：`=> node` → `<<jump node>>`
-- 等待命令：`wait 1` → `<<wait 1>>`
-
-#### 向后兼容性
-- **破坏性更新**：此版本包含语法变更，旧版本脚本需要手动更新语法格式
-- 建议使用新的语法格式编写脚本以获得更好的解析性能和错误处理能力
-
-
-本项目采用 Apache License 2.0 开源协议。详情请参阅 [LICENSE](LICENSE.txt) 文件。
-
-## 联系方式
-
-如有任何问题或建议，请通过以下方式联系我们：
-
-- 提交 Issue
-- 发送邮件至 [1317578863@qq.com]
